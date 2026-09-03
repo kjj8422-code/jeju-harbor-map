@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://kjj8422-code.github.io/jeju-harbor-map/sitemap.xml
