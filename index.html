@@ -4,6 +4,28 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>제주 어항 해도</title>
+<meta name="description" content="2027년 시행되는 항·포구 물놀이 금지법, 제주 금어기·금지체장, 오늘의 물때를 한 페이지에서 확인하세요." />
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0b2a3d" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="어항해도" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png" />
+
+<!-- 카카오톡 등 공유 미리보기 카드 -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="제주 어항 해도" />
+<meta property="og:title" content="제주 어항 해도 — 항·포구 물놀이 금지 지도" />
+<meta property="og:description" content="2027.4.22 시행 항·포구 물놀이 금지법, 제주 금어기·금지체장, 오늘의 물때까지 한눈에." />
+<meta property="og:image" content="https://kjj8422-code.github.io/jeju-harbor-map/og-image.png" />
+<meta property="og:url" content="https://kjj8422-code.github.io/jeju-harbor-map/" />
+<meta property="og:locale" content="ko_KR" />
+<meta name="twitter:card" content="summary_large_image" />
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
@@ -339,10 +361,31 @@
   .live-card .live-icon{ font-size:19px; }
   .live-card .live-title{ font-size:13.5px; font-weight:600; color: var(--paper); }
   .live-card .live-sub{ font-family:"IBM Plex Mono", monospace; font-size:10.5px; color: var(--muted); }
+
+  /* ---------- INSTALL BAR (PWA) ---------- */
+  .install-bar{
+    display:flex; align-items:center; gap:10px;
+    background: var(--card); border:1px solid var(--teal); border-radius:6px;
+    padding:10px 14px; margin-bottom:14px; font-size:12.5px; color: var(--muted-strong);
+  }
+  .install-bar span{ flex:1; }
+  .install-bar button{
+    font-family:"Noto Sans KR", sans-serif; font-weight:600; font-size:12px;
+    border-radius:5px; padding:6px 12px; cursor:pointer; border:1px solid var(--teal);
+    background: transparent; color: var(--teal);
+  }
+  #installBtn:hover{ background: var(--teal); color: var(--sea-deep); }
+  #installDismiss{ border:none; background:transparent; color: var(--muted); padding:4px 6px; font-size:13px; }
 </style>
 </head>
 <body>
 <div class="page">
+
+  <div class="install-bar" id="installBar" hidden>
+    <span id="installBarText">홈 화면에 추가하면 앱처럼 오프라인에서도 열립니다</span>
+    <button id="installBtn">추가하기</button>
+    <button id="installDismiss" aria-label="닫기">✕</button>
+  </div>
 
   <header class="hero">
     <div class="eyebrow">어촌·어항법 개정 &nbsp;·&nbsp; 시행 2027.04.22</div>
@@ -1108,6 +1151,57 @@
     todayTag.textContent = "오늘";
     svg.appendChild(todayTag);
   }
+})();
+</script>
+
+<script>
+(function(){
+  "use strict";
+  // ---------- PWA: 서비스워커 등록 + 홈 화면 추가 안내 ----------
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", ()=>{
+      navigator.serviceWorker.register("sw.js").catch(()=>{});
+    });
+  }
+
+  const bar = document.getElementById("installBar");
+  const textEl = document.getElementById("installBarText");
+  const btn = document.getElementById("installBtn");
+  const dismissBtn = document.getElementById("installDismiss");
+  if(!bar) return;
+
+  let dismissed = false;
+  try{ dismissed = localStorage.getItem("installBarDismissed") === "1"; }catch(e){}
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  let deferredPrompt = null;
+
+  window.addEventListener("beforeinstallprompt", (e)=>{
+    e.preventDefault();
+    deferredPrompt = e;
+    if(!dismissed && !standalone) bar.hidden = false;
+  });
+
+  if(isIOS && !standalone && !dismissed){
+    textEl.textContent = "공유 버튼 → \"홈 화면에 추가\"를 누르면 앱처럼 쓸 수 있어요";
+    btn.textContent = "확인";
+    bar.hidden = false;
+  }
+
+  btn && btn.addEventListener("click", async ()=>{
+    if(deferredPrompt){
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+    }
+    bar.hidden = true;
+  });
+
+  dismissBtn && dismissBtn.addEventListener("click", ()=>{
+    bar.hidden = true;
+    try{ localStorage.setItem("installBarDismissed", "1"); }catch(e){}
+  });
 })();
 </script>
 </body>
