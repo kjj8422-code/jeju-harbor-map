@@ -1691,7 +1691,8 @@
   }
 
   const GEAR_SKIN = [
-    {icon:"🥽", name:"마스크·스노클 세트", desc:"시야 확보와 호흡을 위한 기본 장비. 얼굴에 맞는 사이즈가 중요해요.", q:"다이빙 마스크 스노클 세트"},
+    {icon:"🥽", name:"마스크·스노클 세트", desc:"시야 확보와 호흡을 위한 기본 장비. 얼굴에 맞는 사이즈가 중요해요.", q:"다이빙 마스크 스노클 세트",
+      urls:["https://link.coupang.com/a/gQehf2kddk","https://link.coupang.com/a/gQej1lqZ7A","https://link.coupang.com/a/gQekUbZuou"]},
     {icon:"🦶", name:"오리발(핀)", desc:"추진력을 높여 힘을 덜 들이고 이동할 수 있어요.", q:"스킨 다이빙 오리발 핀"},
     {icon:"🤿", name:"스킨 슈트(잠수복)", desc:"제주 바다 수온에서 체온 유지에 필수예요.", q:"스킨 다이빙 잠수복 슈트"},
     {icon:"🧤", name:"다이빙 장갑·부츠", desc:"바위·조개 등으로부터 손발을 보호해줘요.", q:"다이빙 장갑 부츠 세트"},
@@ -1718,12 +1719,17 @@
     items.forEach(item=>{
       const card = document.createElement("div");
       card.className = "gear-card";
+      // urls(여러 옵션 배열) > url(단일 링크) > 검색 링크 순으로 사용
+      const links = item.urls && item.urls.length ? item.urls : [item.url || coupangSearchUrl(item.q)];
+      const buyButtons = links.length > 1
+        ? links.map((u,i)=>`<a class="gear-buy" href="${u}" target="_blank" rel="noopener sponsored">구매하러 가기 (옵션${i+1})</a>`).join("")
+        : `<a class="gear-buy" href="${links[0]}" target="_blank" rel="noopener sponsored">구매하러 가기</a>`;
       card.innerHTML = `
         <span class="gear-icon">${item.icon}</span>
         ${item.required ? '<span class="gear-required">법적 필수장비</span>' : ""}
         <span class="gear-name">${escapeHtml(item.name)}</span>
         <span class="gear-desc">${escapeHtml(item.desc)}</span>
-        <a class="gear-buy" href="${item.url || coupangSearchUrl(item.q)}" target="_blank" rel="noopener sponsored">구매하러 가기</a>
+        ${buyButtons}
       `;
       el.appendChild(card);
     });
