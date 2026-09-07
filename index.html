@@ -65,7 +65,7 @@
     background: var(--sea-deep);
     color: var(--paper);
     font-family:"Noto Sans KR", "Malgun Gothic", sans-serif;
-    line-height:1.5;
+    line-height:1.65;
   }
   ::selection{ background: var(--danger); color:#fff; }
 
@@ -111,7 +111,7 @@
   h1.stamp .hl{ color: var(--danger); }
   .hero p{
     margin:0; max-width: 62ch; color: var(--muted-strong);
-    font-size:14.5px; position:relative;
+    font-size:16px; line-height:1.6; position:relative;
   }
   .hero .penalty{
     display:inline-flex; gap:6px; align-items:baseline;
@@ -206,7 +206,7 @@
     font-size: 16.5px; font-weight:700; color: var(--paper); margin:0 0 4px;
   }
   .detail-card .daddr{
-    font-size: 12.5px; color: var(--muted-strong); margin:0 0 8px;
+    font-size: 13.5px; color: var(--muted-strong); margin:0 0 8px;
   }
   .badge{
     display:inline-flex; align-items:center; gap:5px;
@@ -261,8 +261,8 @@
     cursor:pointer;
   }
   .row:hover, .row.active{ background: rgba(255,255,255,0.045); }
-  .row .rname{ font-size:13.5px; color: var(--paper); font-weight:500; }
-  .row .raddr{ font-size:11px; color: var(--muted); margin-top:1px; }
+  .row .rname{ font-size:14.5px; color: var(--paper); font-weight:500; }
+  .row .raddr{ font-size:12.5px; color: var(--muted); margin-top:2px; }
   .row[hidden]{ display:none; }
   .region-head[data-empty="true"]{ display:none; }
 
@@ -274,7 +274,7 @@
     margin-top:20px; padding:14px 18px;
     background: rgba(226,72,61,0.08);
     border:1px solid var(--danger); border-radius:6px;
-    font-size:12.5px; color: var(--muted-strong);
+    font-size:14.5px; line-height:1.6; color: var(--muted-strong);
   }
   .notice b{ color:#fff; }
   footer.sources{
@@ -306,39 +306,49 @@
     font-size: clamp(22px,3.4vw,32px); margin:0; color: var(--paper); text-wrap:balance; line-height:1.28;
   }
   .section-head h2 .hl{ color: var(--gold); }
-  .section-head p{ margin:0; max-width:70ch; color: var(--muted-strong); font-size:14px; }
+  .section-head p{ margin:0; max-width:70ch; color: var(--muted-strong); font-size:16px; line-height:1.6; }
 
   .callout-jeju{
     border:1px solid var(--gold); background: rgba(217,164,65,0.10);
     border-radius:6px; padding:14px 18px; margin-bottom: 18px;
-    font-size:13px; color: var(--muted-strong);
+    font-size:15px; line-height:1.6; color: var(--muted-strong);
   }
   .callout-jeju b{ color: var(--gold); }
   .callout-jeju ul{ margin:8px 0 0; padding-left:18px; }
-  .callout-jeju li{ margin-bottom:5px; }
+  .callout-jeju li{ margin-bottom:8px; }
 
   .rules-card{
     background: var(--sea); border:1px solid var(--line); border-radius:6px;
     padding:16px; margin-bottom: 16px;
   }
+  /* rules-card는 <details>로 바뀌어, 기본은 접혀있고 눌러야 펼쳐집니다(정보량이 많아 보이지 않도록) */
+  .rules-summary{
+    list-style:none; cursor:pointer; font-size:16px; font-weight:700; color: var(--paper);
+    padding:6px 4px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  }
+  .rules-summary::-webkit-details-marker{ display:none; }
+  .rules-summary::before{ content:"▸"; color: var(--teal); font-size:14px; transition:transform 0.15s; }
+  .rules-card[open] > .rules-summary::before{ content:"▾"; }
+  .rules-summary-sub{ font-size:13px; font-weight:500; color: var(--muted); }
+  .rules-card[open] > .rules-summary{ margin-bottom:12px; border-bottom:1px solid var(--line); padding-bottom:14px; }
   .rules-controls{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
-  .rules-controls input{ flex:1 1 240px; }
+  .rules-controls input{ flex:1 1 240px; font-size:15px; }
 
   .rules-table-wrap{ overflow:auto; border:1px solid var(--line); border-radius:6px; max-height:640px; }
-  table.rules-table{ width:100%; border-collapse:collapse; font-size:13px; min-width:640px; }
+  table.rules-table{ width:100%; border-collapse:collapse; font-size:14.5px; min-width:640px; }
   table.rules-table thead th{
     position:sticky; top:0; background: var(--card); text-align:left;
-    font-family:"IBM Plex Mono", monospace; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase;
-    color: var(--muted-strong); padding:9px 12px; border-bottom:1px solid var(--line); z-index:1;
+    font-family:"IBM Plex Mono", monospace; font-size:11px; letter-spacing:0.06em; text-transform:uppercase;
+    color: var(--muted-strong); padding:10px 12px; border-bottom:1px solid var(--line); z-index:1;
   }
-  table.rules-table td{ padding:9px 12px; border-bottom:1px solid rgba(255,255,255,0.05); vertical-align:top; }
+  table.rules-table td{ padding:11px 12px; border-bottom:1px solid rgba(255,255,255,0.05); vertical-align:top; }
   table.rules-table tr.cat-head td{
-    background: rgba(255,255,255,0.03); font-family:"IBM Plex Mono",monospace; font-size:10.5px;
-    letter-spacing:0.06em; text-transform:uppercase; color: var(--muted-strong); padding:6px 12px;
+    background: rgba(255,255,255,0.03); font-family:"IBM Plex Mono",monospace; font-size:11px;
+    letter-spacing:0.06em; text-transform:uppercase; color: var(--muted-strong); padding:7px 12px;
   }
   table.rules-table tr[hidden]{ display:none; }
   table.rules-table .rname{ font-weight:600; color: var(--paper); white-space:nowrap; }
-  table.rules-table .rnote{ color: var(--muted); font-size:11.5px; }
+  table.rules-table .rnote{ color: var(--muted); font-size:12.5px; }
   .cat-badge{
     display:inline-block; font-family:"IBM Plex Mono", monospace; font-size:9.5px;
     padding:1px 6px; border-radius:9px; border:1px solid currentColor; white-space:nowrap; margin-left:4px;
@@ -360,7 +370,7 @@
   .tide-label{ font-size:15px; font-weight:600; color: var(--paper); }
   .tide-gauge{ margin-top:16px; }
   .tide-gauge svg{ width:100%; height:auto; display:block; }
-  .tide-foot{ margin-top:12px; font-size:11.5px; color: var(--muted); line-height:1.6; }
+  .tide-foot{ margin-top:12px; font-size:13.5px; color: var(--muted); line-height:1.6; }
 
   .live-links{
     display:grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr));
@@ -373,25 +383,26 @@
   }
   .live-card:hover{ border-color: var(--teal); }
   .live-card .live-icon{ font-size:19px; }
-  .live-card .live-title{ font-size:13.5px; font-weight:600; color: var(--paper); }
-  .live-card .live-sub{ font-family:"IBM Plex Mono", monospace; font-size:10.5px; color: var(--muted); }
+  .live-card .live-title{ font-size:15px; font-weight:600; color: var(--paper); }
+  .live-card .live-sub{ font-family:"IBM Plex Mono", monospace; font-size:11.5px; color: var(--muted); }
 
   /* ---------- AD SLOTS ---------- */
   .ad-slot{ margin: 0 0 22px; text-align:center; }
   /* 주석/공백만 있으면(:empty만으로는 안 걸러짐) JS가 붙여주는 클래스로 완전히 숨김 */
   .ad-slot:empty, .ad-slot.is-empty{ display:none; margin:0; }
 
-  /* ---------- WINDY EMBED ---------- */
-  .windy-card{
+  /* ---------- 외부 서비스 임베드 카드 (Windy, 바다타임 등 공용) ---------- */
+  .embed-card{
     background: var(--sea); border:1px solid var(--line); border-radius:6px;
     padding:18px 18px 16px; margin-bottom:16px;
   }
-  .windy-head{ display:flex; align-items:flex-start; gap:10px; margin-bottom:14px; }
-  .windy-embed{
+  .embed-head{ display:flex; align-items:flex-start; gap:10px; margin-bottom:14px; }
+  .embed-frame{
     position:relative; width:100%; padding-top:62%;
     border:1px solid var(--line); border-radius:6px; overflow:hidden; background:var(--sea-deep);
   }
-  .windy-embed iframe{
+  .embed-frame.embed-frame-tall{ padding-top:120%; }
+  .embed-frame iframe{
     position:absolute; inset:0; width:100%; height:100%; border:0;
   }
 
@@ -408,7 +419,7 @@
   }
   .board-item .board-meta{ font-family:"IBM Plex Mono", monospace; font-size:11px; color: var(--muted); margin-bottom:4px; }
   .board-item .board-name{ font-weight:600; color: var(--teal); }
-  .board-item .board-text{ font-size:13.5px; color: var(--paper); white-space:pre-wrap; }
+  .board-item .board-text{ font-size:15px; line-height:1.6; color: var(--paper); white-space:pre-wrap; }
   .board-item .board-photo{ margin-top:8px; max-width:100%; border-radius:5px; display:block; }
 
   /* ---------- INSTALL BAR (PWA) ---------- */
@@ -528,7 +539,8 @@
       </ul>
     </div>
 
-    <div class="rules-card">
+    <details class="rules-card">
+      <summary class="rules-summary">🐟 품종별 금어기·금지체장 표 전체 보기 <span class="rules-summary-sub">(<span id="statRulesInSummary">-</span>개 품종 · 탭해서 펼치기)</span></summary>
       <div class="rules-controls">
         <input id="ruleSearch" type="text" placeholder="품종 이름 검색 (예: 소라, 갈치, 전복)" />
         <div class="chips" id="ruleChips">
@@ -549,7 +561,7 @@
           <tbody id="rulesBody"></tbody>
         </table>
       </div>
-    </div>
+    </details>
 
     <div class="notice">
       <b>수치 안내.</b> 위 표는 해양수산부가 2024년 4월 기준으로 발표한 전국 금어기·금지체장 리플렛과 제주특별자치도 관련 조례·보도자료를 근거로 정리했습니다. 수산자원관리법 시행령은 이후에도 수시로 개정되므로, 낚시·채취 전에는 <b>국가법령정보센터(law.go.kr, "수산자원관리법 시행령" 별표2)</b>, <b>국립수산과학원</b>, <b>제주특별자치도청 해양수산국</b>에서 최신 기준을 다시 확인하시기 바랍니다. 표에 없는 어종·패류·해조류에도 별도 기준이 있을 수 있고, 꽃게·민꽃게·대게·붉은대게 4종은 크기·시기와 무관하게 <b>알을 밴 암컷(외포란)</b>을 연중 포획할 수 없습니다.
@@ -577,15 +589,15 @@
       <p class="tide-foot">평균 삭망월(29.53일)을 기준으로 한 근사 계산이며, 실제 물때·조위와 최대 하루 정도 차이 날 수 있습니다. 물때 세는 방식은 지역마다 조금씩 달라, 아래 <b>바다타임 제주 물때표</b>나 <b>국립해양조사원</b>에서 정확한 값을 다시 확인하시기 바랍니다.</p>
     </div>
 
-    <div class="windy-card">
-      <div class="windy-head">
+    <div class="embed-card">
+      <div class="embed-head">
         <span class="live-icon">🌬️</span>
         <div>
           <div class="live-title">실시간 바람·파도·너울 상세 지도</div>
           <div class="live-sub">Windy.com — 손가락(마우스)으로 드래그·확대 가능, 하단에서 바람/파도/너울/기압 등 레이어 전환</div>
         </div>
       </div>
-      <div class="windy-embed">
+      <div class="embed-frame">
         <iframe
           title="Windy 제주 앞바다 바람·파도 지도"
           src="https://embed.windy.com/embed2.html?lat=33.38&lon=126.55&detailLat=33.38&detailLon=126.55&width=650&height=450&zoom=9&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=true&type=map&location=coordinates&detail=true&metricWind=default&metricTemp=default&radarRange=-1"
@@ -594,6 +606,24 @@
         ></iframe>
       </div>
       <p class="tide-foot" style="margin-top:10px">지도 하단 메뉴에서 <b>바람(wind) · 너울(swell) · 파도(waves) · 기온 · 강수</b> 등으로 레이어를 바꿀 수 있고, 좌측 하단 시간축을 옮기면 최대 10일 뒤 예보까지 볼 수 있습니다. Windy가 제공하는 공식 무료 임베드 위젯입니다.</p>
+    </div>
+
+    <div class="embed-card">
+      <div class="embed-head">
+        <span class="live-icon">🌙</span>
+        <div>
+          <div class="live-title">바다타임 — 제주 물때·바다날씨 앱처럼 보기</div>
+          <div class="live-sub">badatime.com — 국립해양조사원 데이터 기반, 스크롤해서 날짜별 물때 확인 가능</div>
+        </div>
+      </div>
+      <div class="embed-frame embed-frame-tall">
+        <iframe
+          title="바다타임 제주 물때표"
+          src="https://www.badatime.com/67.html"
+          loading="lazy"
+        ></iframe>
+      </div>
+      <p class="tide-foot" style="margin-top:10px">이 화면은 <b>바다타임(badatime.com)</b> 페이지를 그대로 가져와 보여드리는 거예요 — 안에서 직접 스크롤·날짜 이동이 가능합니다. 잘 안 보이면 아래 "제주 물때표(월간)" 카드를 눌러 새 창에서 열어주세요.</p>
     </div>
 
     <div class="live-links">
@@ -647,7 +677,8 @@
       </ul>
     </div>
 
-    <div class="rules-card">
+    <details class="rules-card">
+      <summary class="rules-summary">🤿 인정단체 전체 표 보기 <span class="rules-summary-sub">(50곳 · 탭해서 펼치기)</span></summary>
       <div class="rules-controls">
         <input id="orgSearch" type="text" placeholder="단체명 또는 자격증 이름 검색 (예: PADI, 레스큐)" />
       </div>
@@ -660,7 +691,7 @@
         </table>
       </div>
       <p class="tide-foot" style="margin-top:10px">해양수산부가 2026년 5월 기준으로 배포한 원본 PDF를 근거로 정리한 요약입니다. 자격증 명칭은 단체 사정에 따라 수시로 바뀔 수 있으니, 실제 참여 전에는 <b>원본 PDF</b> 또는 해당 단체에 꼭 다시 확인하세요. <a href="docs/underwater-leisure-cert-orgs-2026-05.pdf" target="_blank" rel="noopener">📄 원본 PDF 보기</a></p>
-    </div>
+    </details>
 
     <div class="notice">
       <b>자격 확인은 직접.</b> 참여하려는 단체·강사의 자격이 요건을 충족하는지는 아래 해양경찰청 공식 정보에서 확인하시거나 문의하시기 바랍니다. 이 요건은 국가 법령 기준이며, 지역별로 조례가 추가될 수 있습니다.
@@ -1192,6 +1223,7 @@
   ];
 
   document.getElementById("statRules").textContent = RULES.length;
+  document.getElementById("statRulesInSummary").textContent = RULES.length;
 
   const CAT_ORDER = ["fish","cephalopod","crustacean","shellfish","seaweed","other"];
   const byCat = {};
