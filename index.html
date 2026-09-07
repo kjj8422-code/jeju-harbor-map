@@ -82,6 +82,9 @@
     color: var(--paper);
     font-family:"Noto Sans KR", "Malgun Gothic", sans-serif;
     line-height:1.65;
+    /* 좁은 화면에서 "페이지에서"가 "페이지에"+"서"처럼 단어 중간이 잘리는 걸 방지 */
+    word-break: keep-all;
+    overflow-wrap: break-word;
   }
   ::selection{ background: var(--danger); color:#fff; }
 
@@ -188,10 +191,10 @@
 
   svg#chart{ width:100%; height:auto; display:block; }
   .pin{ cursor:pointer; }
-  .pin circle, .pin rect{ transition: r .12s ease, filter .12s ease; }
-  .pin:hover circle, .pin.active circle{ filter: brightness(1.35); }
+  .pin circle:not(.pin-hit), .pin rect{ transition: r .12s ease, filter .12s ease; }
+  .pin:hover circle:not(.pin-hit), .pin.active circle:not(.pin-hit){ filter: brightness(1.35); }
   .pin:hover rect, .pin.active rect{ filter: brightness(1.35); }
-  .pin.active circle, .pin.active rect{ stroke: #fff; stroke-width:1.6; }
+  .pin.active circle:not(.pin-hit), .pin.active rect{ stroke: #fff; stroke-width:1.6; }
 
   @media (prefers-reduced-motion: no-preference){
     .pulse{ animation: pulse 2.6s ease-in-out infinite; transform-origin: center; }
@@ -208,6 +211,8 @@
   }
   .legend .item{ display:flex; align-items:center; gap:7px; }
   .legend svg{ flex:0 0 auto; }
+  .hint-text{ margin:10px 4px 0; font-size:12px; color: var(--muted); line-height:1.5; }
+  @media (min-width: 641px){ .scroll-hint-mobile{ display:none; } }
 
   /* ---------- SIDEBAR ---------- */
   .directory{ display:flex; flex-direction:column; gap:12px; min-width:0; }
@@ -259,7 +264,7 @@
   input#search{
     width:100%; padding: 10px 12px;
     background: var(--sea); border:1px solid var(--line); border-radius:5px;
-    color: var(--paper); font-family:"Noto Sans KR", sans-serif; font-size:13.5px;
+    color: var(--paper); font-family:"Noto Sans KR", sans-serif; font-size:16px;
   }
   input#search::placeholder{ color: var(--muted); }
   .chips{ display:flex; gap:6px; flex-wrap:wrap; }
@@ -368,7 +373,7 @@
   .rules-summary-sub{ font-size:13px; font-weight:500; color: var(--muted); }
   .rules-card[open] > .rules-summary{ margin-bottom:12px; border-bottom:1px solid var(--line); padding-bottom:14px; }
   .rules-controls{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
-  .rules-controls input{ flex:1 1 240px; font-size:15px; }
+  .rules-controls input{ flex:1 1 240px; font-size:16px; }
 
   .rules-table-wrap{ overflow:auto; border:1px solid var(--line); border-radius:6px; max-height:640px; }
   table.rules-table{ width:100%; border-collapse:collapse; font-size:14.5px; min-width:640px; }
@@ -543,12 +548,15 @@
   }
   .install-bar span{ flex:1; }
   .install-bar button{
-    font-family:"Noto Sans KR", sans-serif; font-weight:600; font-size:12px;
-    border-radius:5px; padding:6px 12px; cursor:pointer; border:1px solid var(--teal);
-    background: transparent; color: var(--teal);
+    font-family:"Noto Sans KR", sans-serif; font-weight:600; font-size:13px;
+    border-radius:5px; padding:10px 14px; cursor:pointer; border:1px solid var(--teal);
+    background: transparent; color: var(--teal); min-height:40px;
   }
   #installBtn:hover{ background: var(--teal); color: var(--sea-deep); }
-  #installDismiss{ border:none; background:transparent; color: var(--muted); padding:4px 6px; font-size:13px; }
+  #installDismiss{
+    border:none; background:transparent; color: var(--muted); font-size:16px;
+    min-width:40px; min-height:40px; padding:0;
+  }
 </style>
 </head>
 <body>
@@ -649,6 +657,7 @@
           <button class="chip" data-f="jeju" aria-pressed="false">제주 전용 기준</button>
         </div>
       </div>
+      <p class="hint-text scroll-hint-mobile">👉 표를 옆으로 밀면 나머지 항목도 볼 수 있어요.</p>
       <div class="rules-table-wrap">
         <table class="rules-table">
           <thead>
@@ -685,6 +694,7 @@
       <div class="rules-controls">
         <input id="orgSearch" type="text" placeholder="단체명 또는 자격증 이름 검색 (예: PADI, 레스큐)" />
       </div>
+      <p class="hint-text scroll-hint-mobile">👉 표를 옆으로 밀면 나머지 항목도 볼 수 있어요.</p>
       <div class="rules-table-wrap">
         <table class="rules-table">
           <thead>
@@ -774,6 +784,7 @@
           <span class="item"><svg width="16" height="16"><circle cx="8" cy="8" r="3.6" fill="#6fb8b0" stroke="#0b2a3d" stroke-width="1.2"/></svg> 어촌정주어항 (46)</span>
           <span class="item"><svg width="20" height="12"><line x1="0" y1="6" x2="20" y2="6" stroke="#e2483d" stroke-width="2" stroke-dasharray="3,3"/></svg> 금지구역 상징선 (실제 경계 아님)</span>
         </div>
+        <p class="hint-text">💡 점들이 촘촘히 몰려있나요? 화면을 확대하거나, 아래 목록에서 이름으로 검색하는 게 더 정확해요.</p>
       </section>
 
       <aside class="directory">
@@ -1302,6 +1313,12 @@
     const g = el("g", {class:"pin", "data-id":i, "data-name":d.n, "data-addr":d.a, "data-type":d.t});
     const title = el("title", {}); title.textContent = `${d.n} · ${TYPE_LABEL[d.t]}`;
     g.appendChild(title);
+
+    // 실제 마커(점)는 아주 작아서(특히 모바일 축소 시) 손가락으로 정확히 찍기 어려우므로,
+    // 눈에는 안 보이지만 훨씬 넓은 반경의 터치 영역을 마커 밑에 깔아준다.
+    // (촘촘하게 몰린 지역은 이렇게 해도 옆 마커와 겹칠 수 있어, 그런 곳은 아래 목록에서
+    //  이름으로 찾는 걸 권장 — 지도는 "대략 어디쯤"을 보여주는 용도)
+    g.appendChild(el("circle", {cx:x, cy:y, r:20, fill:"transparent", class:"pin-hit"}));
 
     if(d.t === "national"){
       const halo = el("circle", {cx:x, cy:y, r:9, fill:TYPE_COLOR.national, class:"pulse"});
