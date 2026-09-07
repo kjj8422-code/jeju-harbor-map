@@ -1,0 +1,50 @@
+{
+  "_readme": "매일 자동으로 변경 여부를 확인할 법령·고시 페이지 목록입니다. 새 감시 대상을 추가하려면 아래 배열에 항목을 하나 더 넣으면 됩니다. id는 영문/숫자/하이픈만 사용하세요(파일명으로 쓰입니다).",
+  "sources": [
+    {
+      "id": "fisheries-decree",
+      "label": "수산자원관리법 시행령 (금어기·금지체장 별표2의 모법)",
+      "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=287151",
+      "affects": "① 금어기·금지체장 표 전체",
+      "priority": "high",
+      "note": "별표2 자체는 화면이 자바스크립트로 그려져 자동 수집이 안 되므로, 시행령 본문 페이지를 감시합니다. 별표2는 시행령의 일부라서 별표가 바뀌려면 반드시 시행령이 개정되고 [시행일자]·[대통령령 호수]가 바뀌므로, 이 페이지 감시로 변경을 잡아낼 수 있습니다. 2026-09-07 확인 시점 기준: [시행 2026. 7. 1.] [대통령령 제36423호, 2026. 6. 23., 타법개정]"
+    },
+    {
+      "id": "fisheries-enforcement-rule",
+      "label": "수산자원관리법 시행규칙 (비어업인 사용 가능 어구 별표1 포함)",
+      "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=262229",
+      "affects": "③ 추천장비 탭의 금지장비 안내",
+      "priority": "high"
+    },
+    {
+      "id": "underwater-leisure-rule",
+      "label": "수중레저활동의 안전 및 활성화 등에 관한 법률 시행규칙",
+      "url": "https://law.go.kr/LSW/lsInfoP.do?lsiSeq=194016",
+      "affects": "② 야간 해루질 안전기준(야간 금지시간·안전관리요원 배치 기준)",
+      "priority": "high"
+    },
+    {
+      "id": "fipa-jeju-village-harbors",
+      "label": "한국어촌어항공단 정주어항 현황(제주)",
+      "url": "https://www.fipa.or.kr/fipa/pgm/i-248/fixed/front/list.do?searchCl1=17",
+      "affects": "④ 어항구역 지도의 어촌정주어항 46곳 목록",
+      "priority": "medium"
+    },
+    {
+      "id": "mof-press",
+      "label": "해양수산부 보도자료 목록",
+      "url": "https://www.mof.go.kr/doc/ko/selectDocList.do?menuSeq=971&bbsSeq=10",
+      "affects": "금어기 고시 변경·항포구 물놀이 금지법 시행 관련 발표",
+      "priority": "medium",
+      "keywords": ["금어기", "금지체장", "포획", "채취", "해루질", "수중레저", "어항", "포구", "물놀이", "수산자원", "비어업인", "고시"]
+    },
+    {
+      "id": "jeju-notice",
+      "label": "제주특별자치도 보도자료·공고",
+      "url": "https://www.jeju.go.kr/news/bodo/list.htm",
+      "affects": "제주 전용 기준(소라·전복·오분자기·참문어·넓미역) 고시 변경",
+      "priority": "medium",
+      "keywords": ["금어기", "금지체장", "소라", "전복", "오분자기", "참문어", "넓미역", "해루질", "수중레저", "어항", "포구", "물놀이", "수산자원", "채취", "고시"]
+    }
+  ]
+}

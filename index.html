@@ -389,6 +389,40 @@
   }
   .group-title:first-of-type{ margin-top:4px; }
 
+  /* ---------- 법령 변경 이력 ---------- */
+  .changes-card{
+    background: var(--sea); border:1px solid var(--line); border-left:3px solid var(--gold);
+    border-radius:6px; padding:16px 18px; margin-bottom:16px;
+  }
+  .changes-head{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; justify-content:space-between; }
+  .changes-title{ margin:0; font-size:15.5px; font-weight:700; color: var(--paper); }
+  .changes-checked{ font-family:"IBM Plex Mono", monospace; font-size:11px; color: var(--muted); }
+  .changes-sub{ margin:6px 0 12px; font-size:13px; color: var(--muted); line-height:1.55; }
+  .change-item{
+    border-top:1px solid var(--line); padding:12px 0 4px;
+  }
+  .change-item:last-child{ padding-bottom:0; }
+  .change-meta{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+  .change-status{
+    font-size:10.5px; font-weight:700; border-radius:9px; padding:2px 9px; white-space:nowrap;
+  }
+  .change-status.now{ color: var(--sea-deep); background: var(--teal); }
+  .change-status.soon{ color: var(--gold); border:1px solid var(--gold); }
+  .change-date{ font-family:"IBM Plex Mono", monospace; font-size:11.5px; color: var(--muted-strong); }
+  .change-scope{ font-size:11.5px; color: var(--muted); }
+  .change-title{ font-size:14.5px; font-weight:700; color: var(--paper); margin-bottom:8px; line-height:1.5; }
+  .change-ba{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .change-ba span{ font-size:13.5px; line-height:1.55; }
+  .change-before{ color: var(--muted); text-decoration:line-through; text-decoration-color: rgba(226,72,61,0.5); }
+  .change-after{ color: var(--paper); }
+  .change-note{ font-size:12.5px; color: var(--muted); line-height:1.55; margin:0 0 6px; }
+  .change-source{ font-size:11.5px; color: var(--muted); }
+  .change-source a{ color: var(--muted-strong); }
+  .row-changed-badge{
+    display:inline-block; font-size:10px; font-weight:700; margin-left:5px;
+    color: var(--gold); border:1px solid var(--gold); border-radius:8px; padding:0 6px; white-space:nowrap;
+  }
+
   /* ---------- PART: 추천장비 (제휴 링크 카드) ---------- */
   .gear-grid{
     display:grid; grid-template-columns: repeat(auto-fill, minmax(190px,1fr));
@@ -545,6 +579,15 @@
         <li><b>참문어(돌문어)</b> — 제주는 <b>8.1~9.15</b>가 금채기(전국 기본값 5.16~6.30과 다름) — 제주 수온이 남해안보다 2~3℃ 낮아 산란기가 8~9월이라 도(道) 자체 고시로 별도 지정</li>
         <li><b>넓미역</b> — 금채기 9.1~11.30, 제주 고시로 5.1~11.30 중 3개월 이상 지정 가능(전국 공통 기준 없음, 제주 한정 품목)</li>
       </ul>
+    </div>
+
+    <div class="changes-card">
+      <div class="changes-head">
+        <h3 class="changes-title">📌 최근 법령 변경 이력</h3>
+        <span class="changes-checked" id="lawCheckedAt">자동 점검 상태 확인 중…</span>
+      </div>
+      <p class="changes-sub">언제부터 무엇이 어떻게 바뀌었는지 정리했습니다. 표에서 🆕 표시가 붙은 품종이 최근에 바뀐 항목이에요.</p>
+      <div id="lawChangesList"></div>
     </div>
 
     <details class="rules-card">
@@ -1260,12 +1303,12 @@
   const RULES = [
     {n:"명태", season:"1.1 ~ 12.31 (사실상 연중 금지)", size:"-", cat:"fish"},
     {n:"대구", season:"1.16 ~ 2.15", size:"35cm", cat:"fish"},
-    {n:"고등어", season:"4.1~6.30 중 1개월(고시로 지정)", size:"21cm", cat:"fish", note:"금지체장 3년 유예('23.3.3~'26.6.30, TAC 참여종)"},
+    {n:"고등어", season:"4.1~6.30 중 1개월(고시로 지정)", size:"21cm", cat:"fish", changed:"2026-06-24", note:"금지체장 유예 '23.3.3~<b>'27.6.30</b>(1년 연장) — <b>대형선망 어업인만</b> 해당, 비어업인에게는 유예 없이 21cm 그대로 적용"},
     {n:"감성돔", season:"5.1 ~ 5.31", size:"25cm", cat:"fish"},
     {n:"삼치", season:"5.1 ~ 5.31", size:"-", cat:"fish"},
     {n:"말쥐치", season:"5.1 ~ 7.31", size:"18cm", cat:"fish"},
     {n:"참홍어", season:"6.1 ~ 7.15", size:"42cm (체반폭)", cat:"fish"},
-    {n:"갈치", season:"7.1 ~ 7.31 (근해채낚기·연안복합 제외)", size:"18cm (항문장)", cat:"fish"},
+    {n:"갈치", season:"7.1 ~ 7.31 (근해채낚기·연안복합 제외)", size:"18cm (항문장)", cat:"fish", changed:"2026-06-24", note:"북위 33도 이북 7월 금어기가 <b>'27.6.30까지 한시 유예</b> — <b>근해연승 어업인만</b> 해당, 비어업인에게는 7월 금어기 그대로 적용"},
     {n:"참조기", season:"7.1 ~ 7.31 (유자망은 4.22~8.10)", size:"15cm", cat:"fish"},
     {n:"옥돔", season:"7.21 ~ 8.20", size:"-", cat:"fish"},
     {n:"쥐노래미", season:"11.1 ~ 12.31", size:"20cm", cat:"fish"},
@@ -1285,7 +1328,7 @@
     {n:"민어", season:"-", size:"33cm", cat:"fish"},
     {n:"갯장어(하모)", season:"-", size:"40cm", cat:"fish"},
     {n:"미거지", season:"-", size:"40cm", cat:"fish"},
-    {n:"도루묵", season:"-", size:"11cm", cat:"fish", note:"금지체장 3년 유예('23.3.3~'26.6.30, TAC 참여종)"},
+    {n:"도루묵", season:"-", size:"11cm", cat:"fish", changed:"2026-06-24", note:"금지체장 유예 '23.3.3~<b>'27.6.30</b>(1년 연장) — <b>동해구외끌이중형저인망 어업인만</b> 해당, 비어업인에게는 11cm 그대로 적용"},
     {n:"전어", season:"5.1 ~ 7.15 (강원·경북 제외)", size:"-", cat:"fish"},
     {n:"연어", season:"10.1 ~ 11.30", size:"-", cat:"fish"},
 
@@ -1298,13 +1341,13 @@
     {n:"꽃게", season:"6.21~8.20 (연평 7.1~8.31 / 백령·대청·소청 7.16~9.15)", size:"6.4cm (각장)", cat:"crustacean", note:"외포란 암컷 연중 포획 금지"},
     {n:"민꽃게", season:"-", size:"-", cat:"crustacean", note:"외포란 암컷 연중 포획 금지"},
     {n:"대게", season:"6.1 ~ 11.30", size:"9cm (두흉갑장)", cat:"crustacean", note:"외포란 암컷 연중 포획 금지"},
-    {n:"붉은대게", season:"7.10~8.25 (강원 연안자망은 6.1~7.10)", size:"-", cat:"crustacean", note:"금어기 3년 유예('23.3.3~'26.6.30, TAC 참여종) · 외포란 암컷 연중 포획 금지"},
+    {n:"붉은대게", season:"7.10~8.25 (강원 연안자망은 6.1~7.10)", size:"-", cat:"crustacean", changed:"2026-06-24", note:"금어기 유예 '23.3.3~<b>'27.6.30</b>(1년 연장) — <b>근해통발 어업인만</b> 해당, 비어업인에게는 금어기 그대로 적용 · 외포란 암컷 연중 포획 금지"},
     {n:"대하", season:"5.1 ~ 6.30", size:"-", cat:"crustacean"},
 
     {n:"코끼리조개", season:"5.1~6.30 (강원·경북, 완화 적용)", size:"-", cat:"shellfish"},
     {n:"가리비", season:"3.1 ~ 6.30", size:"-", cat:"shellfish"},
     {n:"새조개", season:"6.16~9.30 (부산·울산·경남·전남·제주는 6.1~9.30)", size:"9cm", cat:"shellfish"},
-    {n:"키조개", season:"7.1 ~ 8.31", size:"18cm (부산·울산·강원·경북·경남)", cat:"shellfish", note:"금지체장 3년 유예('23.3.3~'26.6.30, TAC 참여종)"},
+    {n:"키조개", season:"7.1 ~ 8.31", size:"18cm (부산·울산·강원·경북·경남)", cat:"shellfish", changed:"2026-06-24", note:"금지체장 유예 '23.3.3~<b>'27.6.30</b>(1년 연장) — <b>제1·2구잠수기 어업인만</b> 해당, 비어업인에게는 18cm 그대로 적용"},
     {n:"기수재첩", season:"-", size:"1.5cm", cat:"shellfish"},
     {n:"전복류", season:"9.1~10.31 (제주는 10.1~12.31)", size:"7cm (제주 10cm)", cat:"shellfish", jeju:true, note:"제주 전용 기준"},
     {n:"소라", season:"6.1~8.31(제주 본섬) · 7.1~8.31(제주 추자도) · 6.1~6.30(여수 삼산면) · 6.1~7.31(울릉·독도)", size:"5cm (제주·울릉·독도 7cm)", cat:"shellfish", jeju:true, note:"제주 전용 기준"},
@@ -1324,6 +1367,105 @@
   const byCat = {};
   RULES.forEach(r=>{ (byCat[r.cat]=byCat[r.cat]||[]).push(r); });
 
+  // ---------- 법령 변경 이력 ----------
+  // 새 변경이 확인되면 여기에 항목을 하나 추가하세요. 최신 시행일이 위로 자동 정렬됩니다.
+  // status: "시행중" 또는 "시행 예정" / species: 표에서 🆕 뱃지를 붙일 품종 이름들
+  const LAW_CHANGES = [
+    {
+      effective: "2027-04-22",
+      status: "시행 예정",
+      scope: "항·포구 이용",
+      title: "제주 모든 항·포구에서 물놀이·다이빙·취사 금지",
+      before: "어항구역 내 물놀이를 직접 금지하는 규정 없음",
+      after: "어항구역 내 물놀이·다이빙·취사 금지 — 위반 시 과태료 50만원 이하",
+      note: "어촌·어항법 개정에 따른 것으로, 최종 적용 대상 포구 목록은 시행 전까지 확정될 예정입니다. 구체적인 적용 여부는 제주특별자치도청(064-710-2114)에 확인하세요.",
+      source: "어촌·어항법 개정",
+      sourceUrl: "https://www.mof.go.kr/doc/ko/selectDoc.do?docSeq=66748&listUpdtDt=2025-05-27++10%3A00&menuSeq=972&bbsSeq=11",
+    },
+    {
+      effective: "2026-07-01",
+      status: "시행중",
+      scope: "금어기·금지체장",
+      title: "고등어·도루묵·키조개 금지체장, 붉은대게·갈치 금어기 유예 1년 연장",
+      before: "유예 기간 2023.3.3 ~ 2026.6.30",
+      after: "유예 기간 2027.6.30까지 1년 연장",
+      note: "⚠️ 이 유예는 대형선망·동해구외끌이중형저인망·제1·2구잠수기·근해통발·근해연승 등 해당 어업 업종의 어업인에게만 적용됩니다. 해루질·낚시를 하는 <b>비어업인에게는 유예가 적용되지 않으므로, 기존 금어기·금지체장을 그대로 지켜야 합니다.</b>",
+      source: "해양수산부 보도자료(2026.6.24)",
+      sourceUrl: "https://www.korea.kr/news/policyNewsView.do?newsId=148967051",
+      species: ["고등어", "도루묵", "키조개", "붉은대게", "갈치"],
+    },
+    {
+      effective: "2024-05-01",
+      status: "시행중",
+      scope: "비어업인 사용 어구",
+      title: "비어업인이 쓸 수 있는 어구 목록이 법에 명시됨",
+      before: "비어업인이 쓸 수 있는 도구 목록이 명확하지 않았음",
+      after: "투망·뜰채·반두·손들망·외줄낚시·가리·통발·낫대·집게·갈고리·호미·삽·손 등으로 제한 (작살·수중총, 압축공기 스쿠버 장비, 집어등은 사용 불가)",
+      note: "자세한 내용은 ③ 추천장비 탭의 '금지장비' 안내를 확인하세요.",
+      source: "수산자원관리법 시행규칙 별표1 신설(2024.2.29)",
+      sourceUrl: "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=262229",
+    },
+  ];
+
+  // 아래 LAW_CHANGES는 사용자 입력이 아니라 우리가 직접 작성한 고정 문구이고,
+  // note 안의 <b> 같은 강조 태그가 그대로 표시돼야 하므로 이스케이프하지 않는다.
+  // (외부에서 들어오는 값을 여기에 넣으면 안 된다 — 게시판처럼 이용자 입력을 다루는
+  //  곳에서는 반드시 escapeHtml을 쓸 것)
+  function renderLawChanges(){
+    const box = document.getElementById("lawChangesList");
+    if(!box) return;
+    const sorted = [...LAW_CHANGES].sort((a,b)=> b.effective.localeCompare(a.effective));
+    box.innerHTML = sorted.map(c=>{
+      const soon = c.status !== "시행중";
+      return `
+        <div class="change-item">
+          <div class="change-meta">
+            <span class="change-status ${soon ? "soon" : "now"}">${c.status}</span>
+            <span class="change-date">${c.effective.replace(/-/g,".")}${soon ? " 부터" : " 부터 적용중"}</span>
+            <span class="change-scope">· ${c.scope}</span>
+          </div>
+          <div class="change-title">${c.title}</div>
+          <div class="change-ba">
+            <span class="change-before">이전: ${c.before}</span>
+            <span class="change-after">변경 후: ${c.after}</span>
+          </div>
+          ${c.note ? `<p class="change-note">${c.note}</p>` : ""}
+          <div class="change-source">근거: ${c.sourceUrl
+            ? `<a href="${c.sourceUrl}" target="_blank" rel="noopener">${c.source}</a>`
+            : c.source}</div>
+        </div>`;
+    }).join("");
+  }
+
+  // GitHub Actions가 매일 갱신하는 law-watch/status.json을 읽어 "마지막 점검일"을 보여준다.
+  // (파일이 없거나 실패해도 사이트는 정상 동작하도록 조용히 넘어간다)
+  function initLawWatchStatus(){
+    const el = document.getElementById("lawCheckedAt");
+    if(!el) return;
+    fetch("law-watch/status.json", { cache: "no-store" })
+      .then(res=>{
+        if(!res.ok) throw new Error("status.json 없음");
+        return res.json();
+      })
+      .then(data=>{
+        const sources = Object.values(data.sources || {});
+        const errors = sources.filter(s => s.status === "error").length;
+        const checked = (data.checkedAt || "").replace(/-/g, ".");
+        el.textContent = errors
+          ? `🟡 ${checked} 자동 점검 (${sources.length - errors}/${sources.length}곳 확인)`
+          : `🟢 ${checked} 법령 자동 점검 완료 (${sources.length}곳)`;
+      })
+      .catch(()=>{ el.textContent = ""; });
+  }
+
+  renderLawChanges();
+  initLawWatchStatus();
+
+  // 최근 180일 안에 바뀐 품종은 표에 🆕 뱃지를 붙인다.
+  const CHANGED_SPECIES = new Set(
+    LAW_CHANGES.flatMap(c => c.species || [])
+  );
+
   const tbody = document.getElementById("rulesBody");
   CAT_ORDER.forEach(cat=>{
     const items = byCat[cat];
@@ -1339,7 +1481,7 @@
       tr.dataset.jeju = r.jeju ? "1" : "0";
       tr.dataset.search = r.n.toLowerCase();
       tr.innerHTML = `
-        <td><span class="rname">${r.n}</span>${r.jeju ? ' <span class="cat-badge" style="color:var(--gold)">제주 전용</span>' : ""}</td>
+        <td><span class="rname">${r.n}</span>${r.jeju ? ' <span class="cat-badge" style="color:var(--gold)">제주 전용</span>' : ""}${CHANGED_SPECIES.has(r.n) ? ` <span class="row-changed-badge" title="${r.changed || ""} 변경">🆕 변경</span>` : ""}</td>
         <td>${r.season}</td>
         <td>${r.size}</td>
         <td class="rnote">${r.note || ""}</td>
