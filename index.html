@@ -1413,9 +1413,22 @@
 (function(){
   "use strict";
   // ---------- PWA: 서비스워커 등록 + 홈 화면 추가 안내 ----------
+  // updateViaCache:"none" → 브라우저가 sw.js 파일을 절대 캐시하지 않고 매번 새로 확인함
+  // (기본값은 브라우저마다 최대 24시간까지 sw.js 갱신 확인을 미룰 수 있어, 배포 직후에도
+  // 새 서비스워커가 한참 뒤에야 반영되는 문제가 있었음).
+  // 새 서비스워커가 활성화되면(controllerchange) 페이지를 한 번 자동 새로고침해서,
+  // 사용자가 수동으로 여러 번 새로고침하지 않아도 바로 최신 버전이 보이게 함.
   if("serviceWorker" in navigator){
     window.addEventListener("load", ()=>{
-      navigator.serviceWorker.register("sw.js").catch(()=>{});
+      navigator.serviceWorker.register("sw.js", { updateViaCache: "none" })
+        .then((reg)=>{ reg.update().catch(()=>{}); })
+        .catch(()=>{});
+    });
+    let swRefreshed = false;
+    navigator.serviceWorker.addEventListener("controllerchange", ()=>{
+      if(swRefreshed) return;
+      swRefreshed = true;
+      window.location.reload();
     });
   }
 
