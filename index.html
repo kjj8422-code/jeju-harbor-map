@@ -415,6 +415,9 @@
     color: var(--sea-deep); background: var(--teal); border-radius:5px; padding:8px 10px;
   }
   .gear-card .gear-buy:hover{ opacity:0.88; }
+  .gear-card .gear-buy-soon{
+    background: transparent; border:1px dashed var(--line); color: var(--muted); cursor:default;
+  }
   .live-card{
     display:flex; flex-direction:column; gap:4px;
     background: var(--sea); border:1px solid var(--line); border-radius:6px;
@@ -1688,12 +1691,9 @@
   initBoard();
 
   // ---------- 추천장비 (제휴 링크 카드) ----------
-  // 관리자용: href는 지금 전부 "쿠팡 일반 검색 링크"(수익 미발생)입니다. 쿠팡파트너스
-  // (partners.coupang.com) 가입 후 각 상품의 제휴 딥링크를 받으면, 아래 href 값만
-  // 그 링크로 바꿔치기하면 됩니다. HANDOFF.md "추천장비 제휴 링크 연결하기" 참고.
-  function coupangSearchUrl(keyword){
-    return "https://www.coupang.com/np/search?component=&q=" + encodeURIComponent(keyword);
-  }
+  // 관리자용: 각 상품 객체에 urls(배열) 또는 url(단일 문자열)을 채우면 "구매하러 가기"
+  // 버튼이 생기고, 없으면 "준비중"으로 표시됩니다. HANDOFF.md "추천장비 제휴 링크
+  // 연결하기" 참고.
 
   const GEAR_SKIN = [
     {icon:"🥽", name:"마스크·스노클 세트", desc:"시야 확보와 호흡을 위한 기본 장비. 얼굴에 맞는 사이즈가 중요해요.", q:"다이빙 마스크 스노클 세트",
@@ -1708,7 +1708,8 @@
     {icon:"👢", name:"다이빙 장화(부츠)", desc:"미끄러운 바위·펄에서 발을 보호해줘요.", q:"다이빙 부츠 장화",
       urls:["https://link.coupang.com/a/gQeZCLM4B2"]},
     {icon:"⚖️", name:"웨이트벨트(중량벨트)", desc:"슈트 부력을 상쇄해 잠수를 편하게 도와줘요.", q:"다이빙 웨이트벨트"},
-    {icon:"🔦", name:"방수 다이빙 손전등", desc:"야간 탐조등으로도 쓰이는 필수품이에요.", q:"다이빙 방수 손전등 랜턴", required:true},
+    {icon:"🔦", name:"방수 다이빙 손전등", desc:"야간 탐조등으로도 쓰이는 필수품이에요.", q:"다이빙 방수 손전등 랜턴", required:true,
+      urls:["https://link.coupang.com/a/gQe8eRaHUO"]},
     {icon:"🎒", name:"채집망(어망)", desc:"잡은 것을 안전하게 보관하는 그물망이에요.", q:"다이빙 채집망 어망",
       urls:["https://link.coupang.com/a/gQeFLjBEg8"]},
     {icon:"🚩", name:"다이빙 부이(안전깃발)", desc:"내 위치를 배·다른 사람에게 알려 안전사고를 예방해요.", q:"다이빙 부이 안전깃발"},
@@ -1734,11 +1735,13 @@
     items.forEach(item=>{
       const card = document.createElement("div");
       card.className = "gear-card";
-      // urls(여러 옵션 배열) > url(단일 링크) > 검색 링크 순으로 사용
-      const links = item.urls && item.urls.length ? item.urls : [item.url || coupangSearchUrl(item.q)];
-      const buyButtons = links.length > 1
-        ? links.map((u,i)=>`<a class="gear-buy" href="${u}" target="_blank" rel="noopener sponsored">구매하러 가기 (옵션${i+1})</a>`).join("")
-        : `<a class="gear-buy" href="${links[0]}" target="_blank" rel="noopener sponsored">구매하러 가기</a>`;
+      // 실제 제휴 링크(urls/url)가 아직 없으면, 검색 링크로 대충 연결하는 대신 "준비중"으로 표시
+      const links = item.urls && item.urls.length ? item.urls : (item.url ? [item.url] : null);
+      const buyButtons = !links
+        ? `<span class="gear-buy gear-buy-soon">준비중</span>`
+        : links.length > 1
+          ? links.map((u,i)=>`<a class="gear-buy" href="${u}" target="_blank" rel="noopener sponsored">구매하러 가기 (옵션${i+1})</a>`).join("")
+          : `<a class="gear-buy" href="${links[0]}" target="_blank" rel="noopener sponsored">구매하러 가기</a>`;
       card.innerHTML = `
         <span class="gear-icon">${item.icon}</span>
         ${item.required ? '<span class="gear-required">법적 필수장비</span>' : ""}
