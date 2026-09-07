@@ -376,6 +376,41 @@
   .live-card .live-title{ font-size:13.5px; font-weight:600; color: var(--paper); }
   .live-card .live-sub{ font-family:"IBM Plex Mono", monospace; font-size:10.5px; color: var(--muted); }
 
+  /* ---------- AD SLOTS ---------- */
+  .ad-slot{ margin: 0 0 22px; text-align:center; }
+  /* 주석/공백만 있으면(:empty만으로는 안 걸러짐) JS가 붙여주는 클래스로 완전히 숨김 */
+  .ad-slot:empty, .ad-slot.is-empty{ display:none; margin:0; }
+
+  /* ---------- WINDY EMBED ---------- */
+  .windy-card{
+    background: var(--sea); border:1px solid var(--line); border-radius:6px;
+    padding:18px 18px 16px; margin-bottom:16px;
+  }
+  .windy-head{ display:flex; align-items:flex-start; gap:10px; margin-bottom:14px; }
+  .windy-embed{
+    position:relative; width:100%; padding-top:62%;
+    border:1px solid var(--line); border-radius:6px; overflow:hidden; background:var(--sea-deep);
+  }
+  .windy-embed iframe{
+    position:absolute; inset:0; width:100%; height:100%; border:0;
+  }
+
+  /* ---------- PART 5: BOARD (조과자랑) ---------- */
+  .board-card{
+    background: var(--sea); border:1px solid var(--line); border-radius:6px;
+    padding:20px 22px; margin-bottom:16px;
+  }
+  .board-form-wrap iframe{ width:100%; min-height:520px; border:0; border-radius:6px; background:#fff; }
+  .board-form-wrap .empty, .board-list .empty{ color: var(--muted); font-size:13px; margin:0; }
+  .board-list{ display:flex; flex-direction:column; gap:10px; }
+  .board-item{
+    border:1px solid var(--line); border-radius:6px; padding:12px 14px; background: var(--card);
+  }
+  .board-item .board-meta{ font-family:"IBM Plex Mono", monospace; font-size:11px; color: var(--muted); margin-bottom:4px; }
+  .board-item .board-name{ font-weight:600; color: var(--teal); }
+  .board-item .board-text{ font-size:13.5px; color: var(--paper); white-space:pre-wrap; }
+  .board-item .board-photo{ margin-top:8px; max-width:100%; border-radius:5px; display:block; }
+
   /* ---------- INSTALL BAR (PWA) ---------- */
   .install-bar{
     display:flex; align-items:center; gap:10px;
@@ -417,8 +452,21 @@
       <a href="#rules">🐟 ② 금어기·금지체장</a>
       <a href="#sea-now">🌊 ③ 오늘의 물때·날씨</a>
       <a href="#haerujil">🤿 ④ 야간 해루질 안전기준</a>
+      <a href="#board">🎣 ⑤ 조과자랑</a>
     </div>
   </header>
+
+  <div class="ad-slot" id="adSlotTop" aria-label="광고 영역">
+    <!--
+      광고(Google AdSense) 삽입 위치.
+      1) Google AdSense 승인을 받으면 발급되는 <script>/<ins> 코드를 이 주석 아래에 그대로 붙여넣으세요.
+      2) 코드를 넣기 전까지는 이 영역이 자동으로 숨겨져 화면에 빈 상자가 보이지 않습니다.
+      예)
+      <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX"></script>
+      <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-XXXXXXXXXXXXXXXX" data-ad-slot="XXXXXXXXXX" data-ad-format="auto" data-full-width-responsive="true"></ins>
+      <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+    -->
+  </div>
 
   <main class="layout" id="map">
     <section class="map-card">
@@ -453,7 +501,7 @@
   </main>
 
   <div class="notice">
-    <b>개략도 안내.</b> 이 지도는 제주 어항구역의 위치를 쉽게 파악하도록 만든 개략도이며, 실제 좌표·정확한 구역 경계와 100% 일치하지 않습니다. 한국어촌어항공단 공개 자료 기준 제주 국가어항 5곳·지방어항 18곳 전체와, 어촌정주어항 48곳 중 소재지가 확인된 46곳을 표시했습니다. 특정 포구의 정확한 어항구역 경계, 개정법의 최종 적용 범위·제외 여부는 <b>제주특별자치도청(064-710-2114)</b> 또는 <b>한국어촌어항공단 제주지사(064-727-0268)</b>에 문의해 확인하시기 바랍니다.
+    <b>개략도 안내.</b> 이 지도는 제주 어항구역의 위치를 쉽게 파악하도록 만든 개략도이며, 실제 좌표·정확한 구역 경계와 100% 일치하지 않습니다. 한국어촌어항공단 공식 사이트(fipa.or.kr) "정주어항 현황"을 2026년 9월 기준으로 다시 확인한 결과 제주 어촌정주어항은 <b>46곳 전체</b>이며(이전에 알려졌던 "48곳" 표기는 갱신 전 자료였습니다), 국가어항 5곳·지방어항 18곳과 함께 총 69곳 전부를 이 지도에 표시했습니다. 특정 포구의 정확한 어항구역 경계, 개정법의 최종 적용 범위·제외 여부는 <b>제주특별자치도청(064-710-2114)</b> 또는 <b>한국어촌어항공단 제주지사(064-727-0268)</b>에 문의해 확인하시기 바랍니다.
   </div>
 
   <section id="rules">
@@ -529,6 +577,25 @@
       <p class="tide-foot">평균 삭망월(29.53일)을 기준으로 한 근사 계산이며, 실제 물때·조위와 최대 하루 정도 차이 날 수 있습니다. 물때 세는 방식은 지역마다 조금씩 달라, 아래 <b>바다타임 제주 물때표</b>나 <b>국립해양조사원</b>에서 정확한 값을 다시 확인하시기 바랍니다.</p>
     </div>
 
+    <div class="windy-card">
+      <div class="windy-head">
+        <span class="live-icon">🌬️</span>
+        <div>
+          <div class="live-title">실시간 바람·파도·너울 상세 지도</div>
+          <div class="live-sub">Windy.com — 손가락(마우스)으로 드래그·확대 가능, 하단에서 바람/파도/너울/기압 등 레이어 전환</div>
+        </div>
+      </div>
+      <div class="windy-embed">
+        <iframe
+          title="Windy 제주 앞바다 바람·파도 지도"
+          src="https://embed.windy.com/embed2.html?lat=33.38&lon=126.55&detailLat=33.38&detailLon=126.55&width=650&height=450&zoom=9&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=true&type=map&location=coordinates&detail=true&metricWind=default&metricTemp=default&radarRange=-1"
+          frameborder="0"
+          loading="lazy"
+        ></iframe>
+      </div>
+      <p class="tide-foot" style="margin-top:10px">지도 하단 메뉴에서 <b>바람(wind) · 너울(swell) · 파도(waves) · 기온 · 강수</b> 등으로 레이어를 바꿀 수 있고, 좌측 하단 시간축을 옮기면 최대 10일 뒤 예보까지 볼 수 있습니다. Windy가 제공하는 공식 무료 임베드 위젯입니다.</p>
+    </div>
+
     <div class="live-links">
       <a class="live-card" href="https://www.weather.go.kr/w/ocean/warning.do" target="_blank" rel="noopener">
         <span class="live-icon">⚠️</span><span class="live-title">해상특보</span><span class="live-sub">기상청 날씨누리</span>
@@ -554,8 +621,14 @@
       <a class="live-card" href="https://www.seogwipo.go.kr/field/safety/live.htm" target="_blank" rel="noopener">
         <span class="live-icon">📹</span><span class="live-title">실시간 재난안전 CCTV</span><span class="live-sub">서귀포시청</span>
       </a>
+      <a class="live-card" href="https://www.jejuits.go.kr/jido/mainView.do?DEVICE_KIND=CCTV" target="_blank" rel="noopener">
+        <span class="live-icon">🚗</span><span class="live-title">해안도로 실시간 CCTV(276대)</span><span class="live-sub">제주특별자치도 교통정보센터</span>
+      </a>
+      <a class="live-card" href="http://www.jeju.go.kr/tool/halla/cctv.html" target="_blank" rel="noopener">
+        <span class="live-icon">⛰️</span><span class="live-title">한라산 실시간 CCTV</span><span class="live-sub">제주특별자치도청</span>
+      </a>
     </div>
-    <p class="tide-foot" style="margin-top:10px">CCTV 링크 중 "제주 재난안전대책본부"는 법환포구·옹포항·신창리포구·온평 등 이 지도에 나온 항·포구 상당수를 실제로 비춥니다. 해루질 입수 전 상태를 눈으로 먼저 확인해보세요.</p>
+    <p class="tide-foot" style="margin-top:10px">CCTV 링크 중 "제주 재난안전대책본부"는 법환포구·옹포항·신창리포구·온평 등 이 지도에 나온 항·포구 상당수를 실제로 비춥니다. 해루질 입수 전 상태를 눈으로 먼저 확인해보세요. (참고: 민간 CCTV 통합 사이트 "cctv.trendworld.kr"도 있지만, 확인 시점 기준 보안 인증서 오류가 있어 이 페이지에는 연결하지 않았습니다 — 아래 채팅에서 자세히 설명드릴게요.)</p>
   </section>
 
   <section id="haerujil">
@@ -606,6 +679,36 @@
     </div>
   </section>
 
+  <section id="board">
+    <div class="section-head">
+      <div class="eyebrow" style="color:var(--teal)">이용자 참여 &nbsp;·&nbsp; 구글 폼 연동</div>
+      <h2>오늘 어디서 뭘 낚으셨나요? <span class="hl" style="color:var(--teal)">조과자랑 게시판</span></h2>
+      <p>장소·날짜·조과(잡은 것)를 남겨주시면, 다른 분들이 어느 항·포구에 뭐가 잘 나오는지 참고할 수 있어요. 사진은 파일 첨부 대신 <b>사진 링크(URL)</b>로 받습니다 — 응답자가 구글 로그인을 하지 않아도 되도록 하기 위해서예요.</p>
+    </div>
+
+    <div class="board-card">
+      <div id="boardFormWrap" class="board-form-wrap">
+        <p class="empty">게시판 폼이 아직 연결되지 않았습니다. 관리자가 구글 폼을 만들어 연결하면 이 자리에 바로 표시됩니다.</p>
+      </div>
+      <a id="boardFormLink" class="live-card" style="display:none;margin-top:12px" target="_blank" rel="noopener">
+        <span class="live-icon">📝</span><span class="live-title">조과자랑 새 글 남기기</span><span class="live-sub">구글 폼으로 이동</span>
+      </a>
+
+      <h3 style="margin:22px 0 10px;font-size:15px;color:var(--paper)">최근 조과자랑</h3>
+      <div id="boardList" class="board-list">
+        <p class="empty">아직 등록된 글이 없거나, 게시판이 준비 중입니다.</p>
+      </div>
+    </div>
+
+    <div class="notice" style="border-color:var(--teal)">
+      <b>관리자 안내(사용자용, 방문자에게는 안 보임 — HANDOFF.md 참고).</b> 이 섹션은 구글 폼 + 구글 시트로 동작하도록 미리 만들어둔 틀입니다. <code>index.html</code> 안의 <code>GOOGLE_FORM_URL</code>과 <code>SHEET_CSV_URL</code> 두 값만 채워 넣으면 바로 작동합니다. 만드는 방법은 HANDOFF.md의 "조과자랑 게시판 만들기" 항목을 참고하세요.
+    </div>
+  </section>
+
+  <div class="ad-slot" id="adSlotBottom" aria-label="광고 영역">
+    <!-- 광고(Google AdSense) 삽입 위치 — adSlotTop과 동일하게, 승인 후 받은 코드를 이 주석 아래에 붙여넣으세요. -->
+  </div>
+
   <footer class="sources">
     <span>출처:</span>
     <a href="https://www.mof.go.kr/doc/ko/selectDoc.do?docSeq=66748&listUpdtDt=2025-05-27++10%3A00&menuSeq=972&bbsSeq=11" target="_blank" rel="noopener">해양수산부 설명자료(항·포구)</a>
@@ -615,6 +718,9 @@
     <a href="https://law.go.kr/LSW/lsInfoP.do?lsiSeq=194016" target="_blank" rel="noopener">수중레저활동법 시행규칙(국가법령정보센터)</a>
     <a href="https://boat.kcg.go.kr/home/main.do" target="_blank" rel="noopener">해양경찰청 수상레저종합정보</a>
     <a href="https://bangjae.jeju.go.kr/realtimeinfor/cctv/danger.htm" target="_blank" rel="noopener">제주 재난안전대책본부 CCTV</a>
+    <a href="https://www.jejuits.go.kr/jido/mainView.do?DEVICE_KIND=CCTV" target="_blank" rel="noopener">제주 교통정보센터 CCTV</a>
+    <a href="https://www.windy.com" target="_blank" rel="noopener">Windy.com</a>
+    <a href="https://www.fipa.or.kr/fipa/pgm/i-248/fixed/front/list.do?searchCl1=17" target="_blank" rel="noopener">한국어촌어항공단 정주어항 현황(제주)</a>
     <a href="https://www.mof.go.kr/jfile/readDownloadFile.do?fileType=MOF_ARTICLE&fileTypeSeq=57138&fileNum=1" target="_blank" rel="noopener">해수부 금어기·금지체장 리플렛</a>
     <a href="https://law.go.kr/LSW/lsBylInfoPLinkR.do?lsiSeq=287151&bylNo=0002&bylBrNo=00&bylCls=BE" target="_blank" rel="noopener">국가법령정보센터(시행령 별표2)</a>
     <a href="https://jejunews.com/news/articleView.html?idxno=316422" target="_blank" rel="noopener">제주일보(소라 금채기)</a>
@@ -1357,6 +1463,97 @@
       });
     });
   }
+
+  // ---------- PART 5: 조과자랑 게시판 (구글 폼 + 구글 시트 연동) ----------
+  // 관리자용: 아래 두 값만 채우면 게시판이 바로 작동합니다. 만드는 방법은 HANDOFF.md "조과자랑
+  // 게시판 만들기" 항목을 참고하세요. 값이 비어있으면 방문자에게는 "준비 중" 안내만 보입니다.
+  const GOOGLE_FORM_URL = "";       // 예: "https://docs.google.com/forms/d/e/xxxx/viewform"
+  const GOOGLE_FORM_EMBED_URL = ""; // 예: 위 URL 끝에 "?embedded=true" 를 붙인 값
+  const SHEET_CSV_URL = "";         // 예: 구글 시트 "웹에 게시"로 얻은 CSV 링크
+
+  function escapeHtml(str){
+    return String(str ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  }
+
+  // 구글 시트 "웹에 게시" CSV는 따옴표+콤마 조합이 많아, 따옴표 안의 콤마는 무시하고
+  // 한 줄씩 셀 단위로 나누는 간단한 파서입니다.
+  function parseCsv(text){
+    const lines = text.trim().split(/\r?\n/);
+    return lines.slice(1).map(line=>{
+      const cells = [];
+      let cur = "", inQuotes = false;
+      for(let i=0;i<line.length;i++){
+        const ch = line[i];
+        if(ch === '"'){ inQuotes = !inQuotes; }
+        else if(ch === ',' && !inQuotes){ cells.push(cur); cur = ""; }
+        else{ cur += ch; }
+      }
+      cells.push(cur);
+      return cells;
+    });
+  }
+
+  function renderBoardList(rows){
+    const list = document.getElementById("boardList");
+    if(!list) return;
+    if(!rows.length){
+      list.innerHTML = `<p class="empty">아직 등록된 글이 없습니다. 첫 조과자랑을 남겨보세요!</p>`;
+      return;
+    }
+    // 구글 폼 응답 시트 기본 컬럼 순서: [타임스탬프, 닉네임, 장소·날짜, 조과 내용, 사진링크]
+    const recent = rows.slice(-20).reverse();
+    list.innerHTML = "";
+    recent.forEach(cols=>{
+      const [timestamp, nickname, place, content, photoUrl] = cols;
+      if(!nickname && !content) return;
+      const item = document.createElement("div");
+      item.className = "board-item";
+      item.innerHTML = `
+        <div class="board-meta"><span class="board-name">${escapeHtml(nickname||"익명")}</span> · ${escapeHtml(place||"")} · ${escapeHtml((timestamp||"").slice(0,16))}</div>
+        <div class="board-text">${escapeHtml(content||"")}</div>
+        ${photoUrl ? `<img class="board-photo" src="${escapeHtml(photoUrl)}" alt="조과 사진" loading="lazy" onerror="this.remove()">` : ""}
+      `;
+      list.appendChild(item);
+    });
+  }
+
+  function initBoard(){
+    const formWrap = document.getElementById("boardFormWrap");
+    const formLink = document.getElementById("boardFormLink");
+    const list = document.getElementById("boardList");
+    if(!formWrap || !list) return;
+
+    try{
+      if(GOOGLE_FORM_EMBED_URL){
+        formWrap.innerHTML = `<iframe src="${GOOGLE_FORM_EMBED_URL}" title="조과자랑 게시판 글쓰기 폼">불러오는 중…</iframe>`;
+      }
+      if(GOOGLE_FORM_URL && formLink){
+        formLink.href = GOOGLE_FORM_URL;
+        formLink.style.display = "flex";
+      }
+      if(!SHEET_CSV_URL) return; // 관리자가 아직 시트를 연결하기 전 — 기본 안내 문구 유지
+
+      fetch(SHEET_CSV_URL)
+        .then(res=>{
+          if(!res.ok) throw new Error("시트 응답 오류: " + res.status);
+          return res.text();
+        })
+        .then(csvText => renderBoardList(parseCsv(csvText)))
+        .catch(err=>{
+          console.error("조과자랑 게시판 로딩 실패:", err);
+          list.innerHTML = `<p class="empty">최근 글을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.</p>`;
+        });
+    }catch(err){
+      console.error("조과자랑 게시판 초기화 실패:", err);
+    }
+  }
+
+  initBoard();
+
+  // 광고 자리: 실제 광고 태그(요소)가 없으면(주석/공백만 있으면) 완전히 숨김
+  document.querySelectorAll(".ad-slot").forEach(slot=>{
+    if(!slot.querySelector("*")) slot.classList.add("is-empty");
+  });
 })();
 </script>
 </body>
