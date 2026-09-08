@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>야간 해루질 챌린지 — 제주 어항 해도</title>
+<meta name="description" content="20마리 고정 코스, 정확히 잡을수록 고득점. 친구·가족과 순위를 겨뤄보세요.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="제주 어항 해도">
+<meta property="og:title" content="🌙 야간 해루질 챌린지 — 내 순위는 몇 등?">
+<meta property="og:description" content="금어기 품종은 피하고, 적정 크기일 때만 정확히 탭하세요. 20마리 고정 코스, 3~4점 차이로 순위가 갈립니다.">
+<meta property="og:image" content="https://kjj8422-code.github.io/jeju-harbor-map/og-image.png">
+<meta property="og:url" content="https://kjj8422-code.github.io/jeju-harbor-map/haerujil-game.html">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+:root{
+  --bg:#0b2a3d; --bg2:#0e3550; --panel:#0f3a58; --line:#1c4e6e;
+  --ink:#EAF2F6; --dim:#8FB2C4; --gold:#F2C14E; --bad:#E0554A; --good:#4FBF8A;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;overscroll-behavior:none;}
+#app{max-width:460px;margin:0 auto;padding:12px 12px 26px;}
+
+.backLink{display:inline-block;font-size:11.5px;color:var(--dim);text-decoration:none;
+  border:1px solid var(--line);border-radius:20px;padding:5px 11px;margin-bottom:10px;}
+.backLink:active{background:var(--panel);}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.brand{font-size:15px;font-weight:800;}
+.timer{font-size:14px;color:var(--gold);font-weight:700;}
+
+.hud{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;}
+.hbox{background:var(--panel);border:1px solid var(--line);padding:7px 9px;}
+.hbox .k{font-size:10.5px;color:var(--dim);}
+.hbox .v{font-size:17px;font-weight:800;}
+
+.banBar{display:flex;align-items:center;gap:8px;background:#3A1B18;border:1px solid #7A2C24;
+  padding:8px 10px;margin-bottom:10px;font-size:12.5px;}
+.banBar b{color:#FF9E90;}
+.banBar .ic{font-size:20px;}
+
+#field{position:relative;background:linear-gradient(180deg,#0a2233,#071825);
+  border:1px solid var(--line);overflow:hidden;aspect-ratio:1/1.05;}
+.grid{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);
+  grid-template-rows:repeat(3,1fr);gap:8px;padding:10px;}
+.hole{position:relative;background:radial-gradient(circle at 50% 60%,#12384f 0%,#081a26 70%);
+  border:1px solid #163d54;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  overflow:visible;cursor:pointer;}
+
+.critter{position:relative;width:64%;height:64%;display:flex;align-items:center;justify-content:center;
+  font-size:26px;pointer-events:none;filter:drop-shadow(0 0 6px rgba(0,0,0,.6));}
+.gaugeWrap{position:absolute;inset:-6%;border-radius:50%;pointer-events:none;}
+.gaugeRing{position:absolute;left:50%;top:50%;border-radius:50%;border:3px solid;
+  transform:translate(-50%,-50%);transition:width .05s linear,height .05s linear;}
+.legalBand{position:absolute;left:50%;top:50%;border-radius:50%;
+  border:2px dashed rgba(79,191,138,.85);transform:translate(-50%,-50%);pointer-events:none;}
+.ban-tag{position:absolute;top:-6px;right:-2px;font-size:13px;}
+
+.msg{position:absolute;font-size:13px;font-weight:800;pointer-events:none;
+  animation:pop .55s ease-out forwards;}
+@keyframes pop{0%{opacity:1;transform:translateY(0) scale(1);}100%{opacity:0;transform:translateY(-26px) scale(1.15);}}
+.msg.good{color:#8FF0C4;} .msg.bad{color:#FF9E90;} .msg.perfect{color:#F2C14E;font-size:15px;}
+
+.legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;font-size:11px;color:var(--dim);}
+.legend span{background:var(--panel);border:1px solid var(--line);padding:3px 6px;}
+
+.startWrap,.overWrap{position:absolute;inset:0;background:rgba(6,17,26,.92);
+  display:flex;align-items:center;justify-content:center;padding:20px;z-index:20;}
+.startWrap.hidden,.overWrap.hidden{display:none;}
+.card{text-align:center;max-width:320px;}
+.card h2{font-size:19px;margin:0 0 8px;}
+.card p{font-size:12.5px;color:var(--dim);line-height:1.7;margin:0 0 14px;}
+.card input{width:100%;padding:10px;font-size:14px;background:#08202F;border:1px solid var(--line);
+  color:var(--ink);margin-bottom:10px;text-align:center;}
+button.cta{width:100%;background:var(--gold);color:#1A1408;border:none;font-weight:800;
+  font-size:14.5px;padding:12px;cursor:pointer;}
+button.ghost{width:100%;background:transparent;color:var(--dim);border:1px solid var(--line);
+  font-size:12.5px;padding:9px;margin-top:8px;cursor:pointer;}
+
+.board{margin-top:12px;text-align:left;}
+.board h3{font-size:13px;margin:0 0 6px;color:var(--gold);}
+.row{display:flex;justify-content:space-between;font-size:12.5px;padding:5px 8px;
+  border-bottom:1px solid var(--line);}
+.row.me{background:#1E3A2E;}
+.rk{color:var(--dim);width:22px;}
+.small{font-size:10.5px;color:#5C7A8C;margin-top:8px;line-height:1.6;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <a href="./" class="backLink">← 제주 어항 해도로 돌아가기</a>
+
+  <div class="top">
+    <div class="brand">🌙 야간 해루질 챌린지</div>
+    <div class="timer" id="leftCount">20마리 남음</div>
+  </div>
+
+  <div class="hud">
+    <div class="hbox"><div class="k">점수</div><div class="v" id="score">0</div></div>
+    <div class="hbox"><div class="k">정확도</div><div class="v" id="accuracy">-</div></div>
+  </div>
+
+  <div class="banBar">
+    <div class="ic" id="banIcon">🚫</div>
+    <div>이번 판 금어기 품종: <b id="banName">-</b> — 크기와 상관없이 잡으면 감점</div>
+  </div>
+
+  <div id="field">
+    <div class="grid" id="grid"></div>
+
+    <div class="startWrap" id="startWrap">
+      <div class="card">
+        <h2>야간 해루질 챌린지</h2>
+        <p>구멍에서 생물이 나타나면, <b>크기 게이지가 초록 점선 구간</b>에 있을 때 탭하세요.<br>
+           정중앙에 가까울수록 점수가 더 붙습니다. 이번 판의 <b>금어기 품종</b>은 건드리지 마세요.<br>
+           모두 <b>20마리</b>로 승부합니다 — 누구나 같은 기회입니다.</p>
+        <button class="cta" id="btnStart">게임 시작</button>
+        <div class="small">※ 실제 금어기·금지체장 수치와는 다른, 게임을 위한 가상 규칙입니다.</div>
+      </div>
+    </div>
+
+    <div class="overWrap hidden" id="overWrap">
+      <div class="card">
+        <h2 id="finalTitle">종료!</h2>
+        <p><b id="finalScore" style="color:#F2C14E;font-size:20px;">0</b>점 획득
+           <br><span id="bestLine" style="font-size:11.5px;color:var(--dim);"></span></p>
+        <input id="nameInput" maxlength="8" placeholder="공유할 때 표시할 이름 (최대 8자)">
+        <button class="cta" id="btnShare">📤 카톡으로 결과 공유하기</button>
+        <button class="ghost" id="btnRetry">다시 도전</button>
+        <div id="shareHint" style="font-size:11px;color:#5C7A8C;margin-top:8px;display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span>정중앙에 가까울수록 +점수</span><span>모두 20마리, 기회는 동일</span><span>금어기 품종만 조심</span>
+  </div>
+  <div class="small">해루질 나가시기 전엔 실제 금어기·금지체장을 꼭 <a href="./" style="color:#8FB2C4;">본 사이트 안내</a>에서 확인하세요.</div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+var GAME_URL = 'https://kjj8422-code.github.io/jeju-harbor-map/haerujil-game.html';
+
+var SPECIES = [
+  {id:'sora',    name:'소라',    emoji:'🐚', value:3, band:78, period:2300},
+  {id:'jeonbok', name:'전복',    emoji:'🐌', value:5, band:72, period:2150},
+  {id:'obun',    name:'오분자기', emoji:'🦪', value:2, band:86, period:2500},
+  {id:'munuh',   name:'참문어',  emoji:'🐙', value:4, band:74, period:2250}
+];
+var ROUND_SPAWNS = 20;   // 시간이 아니라 '고정 20마리'로 승부 — 누구나 같은 기회
+
+/* 모든 플레이어가 완전히 동일하게 겪는 고정 코스.
+   등장 순서·품종·적정구간 중심을 미리 정해둬서, 점수 차이가 순전히
+   '탭 타이밍 정확도'에서만 나오게 합니다. (운으로 순위가 갈리지 않도록) */
+var FIXED_PLAN = [
+  {sp:'sora',center:46.2},{sp:'sora',center:45.6},{sp:'obun',center:45.1},{sp:'munuh',center:46.1},
+  {sp:'sora',center:48.8},{sp:'jeonbok',center:45.3},{sp:'obun',center:47.6},{sp:'jeonbok',center:51.0},
+  {sp:'jeonbok',center:50.6},{sp:'obun',center:47.1},{sp:'munuh',center:48.4},{sp:'jeonbok',center:54.8},
+  {sp:'sora',center:47.2},{sp:'sora',center:45.5},{sp:'munuh',center:49.9},{sp:'munuh',center:46.0},
+  {sp:'obun',center:49.4},{sp:'jeonbok',center:52.7},{sp:'obun',center:54.7},{sp:'munuh',center:52.4}
+];
+var BAN_SPECIES_ID = 'jeonbok';  // 이번 코스의 고정 금어기 품종
+
+var $=function(id){return document.getElementById(id);};
+var grid=$('grid'), field=$('field');
+var holes=[];
+
+/* ============ 소리 (외부 파일 없이 코드로 생성) ============ */
+var AC=null;
+function ac(){
+  if(!AC){ AC = new (window.AudioContext||window.webkitAudioContext)(); }
+  if(AC.state==='suspended'){ AC.resume(); }
+  return AC;
+}
+function tone(freq,start,dur,type,peakGain){
+  var ctx=ac();
+  var osc=ctx.createOscillator();
+  var g=ctx.createGain();
+  osc.type=type||'sine';
+  osc.frequency.setValueAtTime(freq, ctx.currentTime+start);
+  g.gain.setValueAtTime(0, ctx.currentTime+start);
+  g.gain.linearRampToValueAtTime(peakGain||0.18, ctx.currentTime+start+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+start+dur);
+  osc.connect(g); g.connect(ctx.destination);
+  osc.start(ctx.currentTime+start);
+  osc.stop(ctx.currentTime+start+dur+0.02);
+}
+function sfx(kind){
+  try{
+    if(kind==='perfect'){ tone(880,0,0.09,'sine',0.20); tone(1320,0.08,0.16,'sine',0.16); }
+    else if(kind==='good'){ tone(660,0,0.14,'sine',0.18); }
+    else if(kind==='success'){ tone(440,0,0.13,'sine',0.15); }
+    else if(kind==='wrong'){ tone(200,0,0.10,'sawtooth',0.14); }
+    else if(kind==='ban'){ tone(140,0,0.12,'square',0.16); tone(110,0.10,0.16,'square',0.14); }
+  }catch(e){ /* 오디오 미지원 브라우저는 조용히 무시 */ }
+}
+
+function buildGrid(){
+  grid.innerHTML='';
+  holes=[];
+  for(var i=0;i<9;i++){
+    var h=document.createElement('div');
+    h.className='hole';
+    h.dataset.idx=i;
+    h.addEventListener('pointerdown',function(e){ onTap(+e.currentTarget.dataset.idx); });
+    grid.appendChild(h);
+    holes.push({el:h,occ:null});
+  }
+}
+buildGrid();
+
+var G={running:false,score:0,startAt:0,spawnTimer:0,ban:null,rafId:null,spawned:0,resolved:0};
+
+function progress(){ // 0~1, 스폰될수록 1에 가까워짐(아주 완만하게 어려워짐)
+  return Math.max(0,Math.min(1, G.spawned/ROUND_SPAWNS));
+}
+
+function spawnOne(){
+  if(G.spawned>=ROUND_SPAWNS) return;
+  var free=[];
+  holes.forEach(function(h,i){ if(!h.occ) free.push(i); });
+  if(!free.length) return;
+  var idx=free[Math.floor(Math.random()*free.length)];
+
+  var plan=FIXED_PLAN[G.spawned];
+  var sp=SPECIES.filter(function(x){return x.id===plan.sp;})[0];
+  var p=progress();
+  G.spawned++;
+  $('leftCount').textContent=(ROUND_SPAWNS-G.spawned)+'마리 남음';
+  var band = sp.band * (1 - p*0.02);          // 후반에도 거의 그대로
+  var period = sp.period * (1 - p*0.01);      // 후반에도 거의 그대로
+  var life = 3400 - p*200;                    // 매우 넉넉한 반응 시간
+  var phase = 0;                              // 고정 — 등장 시점 기준으로만 진동
+  var bandCenter = plan.center;               // 고정 코스: 모두에게 동일
+
+  var wrap=document.createElement('div'); wrap.className='gaugeWrap';
+  var ring=document.createElement('div'); ring.className='gaugeRing';
+  var bandEl=document.createElement('div'); bandEl.className='legalBand';
+  var cr=document.createElement('div'); cr.className='critter'; cr.textContent=sp.emoji;
+  var isBan = sp.id===BAN_SPECIES_ID;
+  if(isBan){ var tag=document.createElement('div'); tag.className='ban-tag'; tag.textContent='🚫'; cr.appendChild(tag); }
+
+  bandEl.style.width=bandEl.style.height=bandCenter+'%';
+  wrap.appendChild(bandEl); wrap.appendChild(ring);
+  holes[idx].el.appendChild(wrap);
+  holes[idx].el.appendChild(cr);
+
+  holes[idx].occ={sp:sp,born:performance.now(),life:life,period:period,phase:phase,
+                  bandCenter:bandCenter,band:band,ring:ring,wrap:wrap,cr:cr,el:holes[idx].el,isBan:isBan,idx:idx};
+}
+
+function currentSize(o,t){
+  var s = 50 + 50*Math.sin((t-o.born)/o.period*Math.PI*2 + o.phase); // 0~100
+  return s;
+}
+
+function clearHole(idx){
+  var h=holes[idx];
+  if(h.occ){
+    if(h.occ.wrap&&h.occ.wrap.parentNode) h.occ.wrap.parentNode.removeChild(h.occ.wrap);
+    if(h.occ.cr&&h.occ.cr.parentNode) h.occ.cr.parentNode.removeChild(h.occ.cr);
+    h.occ=null;
+  }
+}
+
+function floatMsg(el,text,cls){
+  var m=document.createElement('div');
+  m.className='msg '+cls; m.textContent=text;
+  m.style.left='50%'; m.style.top='40%'; m.style.transform='translate(-50%,-50%)';
+  el.appendChild(m);
+  setTimeout(function(){ if(m.parentNode) m.parentNode.removeChild(m); },560);
+}
+
+function onTap(idx){
+  if(!G.running) return;
+  var h=holes[idx];
+  if(!h.occ) return;
+  var o=h.occ;
+  var size=currentSize(o,performance.now());
+  var lo=o.bandCenter-o.band/2, hi=o.bandCenter+o.band/2;
+  var inBand = size>=lo && size<=hi;
+
+  if(o.isBan){
+    G.score=Math.max(0,G.score-3);
+    floatMsg(o.el,'금어기 위반! -3','bad');
+    sfx('ban');
+  } else if(inBand){
+    var dist=Math.abs(size-o.bandCenter);
+    var norm=1-(dist/(o.band/2));           // 1=정중앙, 0=경계
+    var bonus=Math.round(norm*6);            // 0~6점 정밀도 보너스
+    var gain=o.sp.value+bonus;
+    G.score+=gain;
+    G.precisionSum+=norm; G.precisionCount++;
+    if(norm>=0.85){ floatMsg(o.el,'+'+gain+' 완벽!','perfect'); sfx('perfect'); }
+    else if(norm>=0.5){ floatMsg(o.el,'+'+gain+' 좋음','good'); sfx('good'); }
+    else{ floatMsg(o.el,'+'+gain+' 성공','good'); sfx('success'); }
+  } else {
+    floatMsg(o.el, size<lo?'너무 작음 (감점 없음)':'너무 큼 (감점 없음)','bad');
+    sfx('wrong');
+  }
+  G.resolved++;
+  updHud();
+  clearHole(idx);
+  maybeEnd();
+}
+
+function updHud(){
+  $('score').textContent=G.score;
+  $('accuracy').textContent = G.precisionCount ? Math.round(G.precisionSum/G.precisionCount*100)+'%' : '-';
+}
+
+function loop(){
+  if(!G.running) return;
+  var now=performance.now();
+
+  holes.forEach(function(h,i){
+    if(!h.occ) return;
+    var o=h.occ;
+    var size=currentSize(o,now);
+    var lo=o.bandCenter-o.band/2, hi=o.bandCenter+o.band/2;
+    o.ring.style.width=o.ring.style.height=size+'%';
+    o.ring.style.borderColor = o.isBan? 'rgba(224,85,74,.9)' : (size>=lo&&size<=hi?'rgba(79,191,138,.9)':'rgba(242,193,78,.85)');
+    if(now-o.born>o.life){ clearHole(i); G.resolved++; }
+  });
+
+  G.spawnTimer-=16;
+  if(G.spawnTimer<=0 && G.spawned<ROUND_SPAWNS){
+    var p=progress();
+    G.spawnTimer = 1150 - p*50;
+    spawnOne();
+  }
+
+  maybeEnd();
+  if(G.running) G.rafId=requestAnimationFrame(loop);
+}
+
+function maybeEnd(){
+  if(G.spawned>=ROUND_SPAWNS && G.resolved>=ROUND_SPAWNS){
+    endGame();
+  }
+}
+
+function startGame(){
+  holes.forEach(function(h,i){ clearHole(i); });
+  G.running=true; G.score=0; G.spawnTimer=300;
+  G.spawned=0; G.resolved=0; G.precisionSum=0; G.precisionCount=0;
+  var banSp=SPECIES.filter(function(x){return x.id===BAN_SPECIES_ID;})[0];
+  $('banIcon').textContent=banSp.emoji;
+  $('banName').textContent=banSp.name;
+  $('leftCount').textContent=ROUND_SPAWNS+'마리 남음';
+  updHud();
+  $('startWrap').classList.add('hidden');
+  $('overWrap').classList.add('hidden');
+  $('shareHint').style.display='none';
+  $('shareHint').textContent='';
+  if(G.rafId) cancelAnimationFrame(G.rafId);
+  G.rafId=requestAnimationFrame(loop);
+}
+
+function endGame(){
+  if(!G.running) return;
+  G.running=false;
+  if(G.rafId) cancelAnimationFrame(G.rafId);
+  holes.forEach(function(h,i){ clearHole(i); });
+  $('finalScore').textContent=G.score;
+  var r=saveBestIfHigher(G.score);
+  $('bestLine').textContent = r.renewed
+    ? '🎉 이 기기 최고 기록을 갱신했습니다!'
+    : '이 기기 최고 기록: '+r.best+'점';
+  $('overWrap').classList.remove('hidden');
+}
+
+$('btnStart').addEventListener('click',startGame);
+$('btnRetry').addEventListener('click',startGame);
+
+/* ============ 개인 최고 기록 (이 기기에만 저장, 서버 불필요) ============ */
+function getBest(){
+  var v = Number(localStorage.getItem('haerujil_best')||0);
+  return isNaN(v)?0:v;
+}
+function saveBestIfHigher(score){
+  var best=getBest();
+  if(score>best){ localStorage.setItem('haerujil_best', String(score)); return {best:score, renewed:true}; }
+  return {best:best, renewed:false};
+}
+
+/* ============ 카톡 등으로 결과 공유 ============ */
+$('btnShare').addEventListener('click', async function(){
+  var name=($('nameInput').value||'').trim().slice(0,8);
+  var who = name? name+'님이 ' : '';
+  var text = '🌙 야간 해루질 챌린지\n'+who+G.score+'점을 기록했습니다! 이겨보실 수 있나요?';
+  var hint=$('shareHint');
+
+  if(navigator.share){
+    try{
+      await navigator.share({ title:'야간 해루질 챌린지', text:text, url:GAME_URL });
+      return;
+    }catch(e){ /* 사용자가 공유를 취소한 경우 등은 조용히 무시 */ return; }
+  }
+
+  var full = text+'\n'+GAME_URL;
+  try{
+    await navigator.clipboard.writeText(full);
+    hint.textContent='결과가 복사되었습니다. 카톡방에 붙여넣기 해보세요.';
+  }catch(e){
+    hint.textContent='복사에 실패했습니다. 아래 링크를 직접 공유해주세요: '+GAME_URL;
+  }
+  hint.style.display='block';
+});
+
+})();
+</script>
+</body>
+</html>

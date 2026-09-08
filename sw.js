@@ -7,13 +7,14 @@
 // 새 버전은 "다음번 방문 때"에야 반영되는 문제가 있었음 — 그래서 배포 직후 사용자가
 // 새로고침해도 계속 이전 화면이 보이는 원인이 됐음. 지금 방식은 온라인이면 항상 최신을
 // 받아오고, 인터넷이 안 될 때만 저장된 버전으로 대체함(오프라인 기능은 그대로 유지).
-const CACHE = "jeju-harbor-map-v2";
+const CACHE = "jeju-harbor-map-v3";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
+  "./haerujil-game.html",
 ];
 
 self.addEventListener("install", (event) => {

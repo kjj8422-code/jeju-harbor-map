@@ -456,6 +456,24 @@
     color: var(--gold); border:1px solid var(--gold); border-radius:8px; padding:0 6px; white-space:nowrap;
   }
 
+  /* ---------- PART: 미니게임 ---------- */
+  .game-card{
+    background: linear-gradient(160deg, var(--card), var(--sea) 70%);
+    border:1px solid var(--gold); border-radius:6px;
+    padding:18px; display:flex; flex-direction:column; gap:16px;
+  }
+  .game-card-info{ display:flex; gap:14px; align-items:flex-start; }
+  .game-emoji{ font-size:34px; line-height:1; flex:0 0 auto; }
+  .game-title{ font-size:16px; font-weight:700; color: var(--paper); margin-bottom:4px; }
+  .game-desc{ font-size:13px; color: var(--muted); line-height:1.55; }
+  .game-best{ font-size:12px; color: var(--gold); margin-top:6px; font-weight:600; }
+  .game-play-btn{
+    display:block; text-align:center; text-decoration:none;
+    background: var(--gold); color:#1A1408; font-weight:800; font-size:15px;
+    border-radius:6px; padding:13px; min-height:40px;
+  }
+  .game-play-btn:active{ opacity:0.88; }
+
   /* ---------- PART: 추천장비 (제휴 링크 카드) ---------- */
   .gear-grid{
     display:grid; grid-template-columns: repeat(auto-fill, minmax(190px,1fr));
@@ -587,6 +605,7 @@
       <button type="button" class="tab-btn" data-panel="sea-now" role="tab" aria-selected="false">🌊 ⑤ 오늘의 물때·날씨</button>
       <button type="button" class="tab-btn" data-panel="cctv" role="tab" aria-selected="false">📹 ⑥ 실시간 CCTV</button>
       <button type="button" class="tab-btn" data-panel="board" role="tab" aria-selected="false">🎣 ⑦ 조과자랑</button>
+      <button type="button" class="tab-btn" data-panel="game" role="tab" aria-selected="false">🎮 ⑧ 미니게임</button>
     </div>
   </header>
 
@@ -942,6 +961,30 @@
 
     <div class="notice" style="border-color:var(--teal)">
       <b>관리자 안내(사용자용, 방문자에게는 안 보임 — HANDOFF.md 참고).</b> 이 섹션은 구글 폼 + 구글 시트로 동작하도록 미리 만들어둔 틀입니다. <code>index.html</code> 안의 <code>GOOGLE_FORM_URL</code>과 <code>SHEET_CSV_URL</code> 두 값만 채워 넣으면 바로 작동합니다. 만드는 방법은 HANDOFF.md의 "조과자랑 게시판 만들기" 항목을 참고하세요.
+    </div>
+  </section>
+
+  <section id="game" class="tab-panel" hidden>
+    <div class="section-head">
+      <div class="eyebrow" style="color:var(--gold)">미니게임 · 20마리 고정 코스, 모두 동일한 조건</div>
+      <h2>심심할 때 한 판, <span class="hl" style="color:var(--gold)">야간 해루질 챌린지</span></h2>
+      <p>구멍에서 생물이 나타나면 크기 게이지가 초록 구간일 때 탭하세요. 정중앙에 가까울수록 고득점, 금어기 품종을 잘못 잡으면 감점입니다. 누구나 똑같은 20마리 코스라 실력만으로 순위가 갈려요.</p>
+    </div>
+
+    <div class="game-card">
+      <div class="game-card-info">
+        <div class="game-emoji">🌙</div>
+        <div>
+          <div class="game-title">야간 해루질 챌린지</div>
+          <div class="game-desc">20마리 고정 코스 · 정확히 탭할수록 고득점 · 카톡으로 결과 공유</div>
+          <div class="game-best" id="gameBestLine"></div>
+        </div>
+      </div>
+      <a class="game-play-btn" href="haerujil-game.html">🎮 게임 시작하기</a>
+    </div>
+
+    <div class="notice" style="margin-top:16px">
+      <b>실제 규칙과는 달라요.</b> 게임 속 금어기·크기 기준은 재미를 위한 가상 설정입니다. 실제 해루질 전에는 반드시 ① 금어기·금지체장 탭에서 정확한 기준을 확인하세요.
     </div>
   </section>
 
@@ -2015,6 +2058,21 @@
     }
   }
   initGear();
+
+  // ---------- 미니게임: 최고 기록 표시 ----------
+  // haerujil-game.html이 같은 사이트(같은 출처)에 저장해둔 최고 점수를 그대로 읽어와 보여준다.
+  function initGameBest(){
+    const el = document.getElementById("gameBestLine");
+    if(!el) return;
+    try{
+      const best = Number(localStorage.getItem("haerujil_best") || 0);
+      el.textContent = best > 0 ? `🏆 내 최고 기록: ${best}점` : "아직 기록이 없어요 — 첫 도전을 해보세요!";
+    }catch(err){
+      console.error("최고 기록 불러오기 실패:", err);
+      el.textContent = "첫 도전을 해보세요!";
+    }
+  }
+  initGameBest();
 
   // 광고 자리: 실제 광고 태그(요소)가 없으면(주석/공백만 있으면) 완전히 숨김
   document.querySelectorAll(".ad-slot").forEach(slot=>{
