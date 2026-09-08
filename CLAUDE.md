@@ -5,13 +5,15 @@
 
 ## 이 프로젝트만의 예외: 기술 스택
 - 상위 CLAUDE.md의 "Next.js / TypeScript / Zustand" 규칙은 **이 프로젝트엔 적용하지 않는다.**
-- 이 프로젝트는 **순수 HTML + CSS + JS 파일 1개(`index.html`)** 구조를 그대로 유지한다
-  (빌드 과정 없음, `npm install` 불필요).
+- 이 프로젝트는 **순수 HTML + CSS + JS, 빌드 과정 없음**(`npm install` 불필요) 구조를 그대로
+  유지한다. 메인 사이트는 `index.html` 한 파일 안에 다 있고, 미니게임(`haerujil-game.html`)이나
+  개인정보처리방침(`privacy.html`)처럼 독립된 페이지가 필요하면 같은 방식(빌드 없는 단일 HTML)
+  으로 새 파일을 추가한다 — index.html에 억지로 합치지 않는다.
 - 이유: GitHub Pages 무료 호스팅 + 빌드 없이 즉시 수정·배포 가능 + 이미 완성도 높은
   라이브 서비스라 구조를 바꿀 이유가 없음.
-- 새 기능을 추가할 때도 이 구조(단일 HTML, 바닐라 JS)를 유지한다. 데이터 배열은
-  `const DATA = [...]`, `const RULES = [...]`, `const ORGS = [...]` 형태로
-  `index.html` 안에 있다 (정확한 위치는 텍스트 검색으로 찾을 것, 줄 번호는 수시로 바뀜).
+- index.html 안 데이터는 `const DATA = [...]`, `const RULES = [...]`, `const ORGS = [...]`,
+  `const GEAR_SKIN/GEAR_WALKING = [...]`, `const LAW_CHANGES = [...]`, `const COAST_GUARD = {...}`
+  형태로 들어있다 (정확한 위치는 텍스트 검색으로 찾을 것, 줄 번호는 수시로 바뀜).
 
 ## 배포 방법
 ```bash

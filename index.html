@@ -2039,9 +2039,12 @@
           ? links.map((u,i)=>`<a class="gear-buy" href="${u}" target="_blank" rel="noopener sponsored">구매하러 가기 (옵션${i+1})</a>`).join("")
           : `<a class="gear-buy" href="${links[0]}" target="_blank" rel="noopener sponsored">구매하러 가기</a>`;
       card.innerHTML = `
-        <span class="gear-icon">${item.icon}</span>
+        ${item.image
+          ? `<img class="gear-photo" src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="this.remove()">`
+          : `<span class="gear-icon">${item.icon}</span>`}
         ${item.required ? '<span class="gear-required">법적 필수장비</span>' : ""}
         <span class="gear-name">${escapeHtml(item.name)}</span>
+        ${item.price ? `<span class="gear-price">${escapeHtml(item.price)}</span>` : ""}
         <span class="gear-desc">${escapeHtml(item.desc)}</span>
         ${buyButtons}
       `;

@@ -9,8 +9,9 @@ Claude가 필요한 건 오직 "코드를 수정해서 다시 올리는 작업�
 
 - **라이브 사이트**: https://kjj8422-code.github.io/jeju-harbor-map/
 - **소스코드 저장소**: https://github.com/kjj8422-code/jeju-harbor-map
-- **로컬 작업 사본**: `C:\Users\KOCOwj\jeju-harbor-map` (임시 폴더 아님, 컴퓨터에 영구 보관됨)
-- **원본 실습 파일**: `C:\Users\KOCOwj\실습파일\제주_어항_해도.html` (동일 내용, 처음 만든 위치)
+- **로컬 작업 사본(현재 컴퓨터, 2026-09-07~)**: `C:\HANSSAK\SecureGate\Download\클로드 김정재\jeju-harbor-map`
+- ~~이전 컴퓨터 작업 사본: `C:\Users\KOCOwj\jeju-harbor-map`~~ (더 이상 사용하는 컴퓨터가 아님 —
+  참고용으로만 남겨둠. 항상 **현재 컴퓨터의 경로**를 기준으로 작업할 것)
 
 ## ⚠ 계정 관리 — 가장 중요
 
@@ -25,27 +26,41 @@ Claude가 필요한 건 오직 "코드를 수정해서 다시 올리는 작업�
 
 ```
 jeju-harbor-map/
-├── index.html          ← 전체 사이트 (지도+표+계산기 전부 이 한 파일 안에 있음)
-├── manifest.json        ← PWA 설정(홈 화면 추가용)
-├── sw.js                 ← 오프라인 캐시용 서비스워커
+├── index.html            ← 메인 사이트 (탭 8개 전부 이 한 파일 안에 있음)
+├── haerujil-game.html    ← 미니게임(야간 해루질 챌린지), 메인 사이트와 별개 페이지
+├── privacy.html          ← 개인정보처리방침 (애드센스 승인용)
+├── manifest.json         ← PWA 설정(홈 화면 추가용)
+├── sw.js                 ← 오프라인 캐시용 서비스워커 (network-first 전략)
+├── ads.txt               ← 애드센스 승인 후 한 줄 채워 넣는 파일
 ├── og-image.png          ← 카카오톡 공유 미리보기 이미지
 ├── robots.txt / sitemap.xml  ← 검색엔진용
 ├── icons/                ← 앱 아이콘들
 ├── docs/
 │   └── underwater-leisure-cert-orgs-2026-05.pdf  ← 해수부 원본 자료(안전관리요원 인정단체)
-└── HANDOFF.md            ← 이 문서
+├── law-watch/            ← 법령 자동 감시 스크립트·데이터 (자세한 설명은 아래 참고)
+├── .github/workflows/    ← 매일 법령 점검·매월 재확인 알림 자동화(GitHub Actions)
+├── HANDOFF.md            ← 이 문서
+└── PROMOTION.md          ← 사이트 홍보 실행 가이드
 ```
 
-`index.html` 하나가 전부입니다 (순수 HTML/CSS/JS, 빌드 과정 없음 — 그냥 파일을 고치고
-그대로 올리면 끝). 안에 4개 섹션 + 3개의 핵심 JS 데이터 배열이 있습니다:
+`index.html`이 메인 사이트 전체입니다 (순수 HTML/CSS/JS, 빌드 과정 없음 — 그냥 파일을
+고치고 그대로 올리면 끝). 게임은 `haerujil-game.html`이라는 별도 파일입니다.
+메인 사이트는 **탭 방식**(`.tab-panel` + `#tabNav`, `initTabs()` 함수)이고, 현재 탭 순서는:
 
-| 섹션 | 내용 | index.html 안 데이터 배열 위치(대략 줄) |
+| 탭 | 내용 | index.html 안 데이터 위치 |
 |---|---|---|
-| ① 어항구역 지도 | 제주 어항 69곳 위치·검색 | `const DATA = [...]` |
-| ② 금어기·금지체장 | 수산물 52종 규정 | `const RULES = [...]` |
-| ③ 오늘의 물때·날씨 | 물때 자동계산(수식) + 실시간 링크 + Windy 바람·파도 지도 + CCTV | 계산 로직만 있고 데이터 배열 없음 |
-| ④ 야간 해루질 안전기준 | 안전관리요원 인정단체 50곳 | `const ORGS = [...]` |
-| ⑤ 조과자랑 게시판 | 구글 폼+시트 연동 게시판 (설정 필요) | `GOOGLE_FORM_URL` / `GOOGLE_FORM_EMBED_URL` / `SHEET_CSV_URL` |
+| ① 금어기·금지체장 | 수산물 52종 규정 + 최근 법령 변경 이력 | `const RULES = [...]`, `const LAW_CHANGES = [...]` |
+| ② 야간 해루질 안전기준 | 안전관리요원 인정단체 50곳 | `const ORGS = [...]` |
+| ③ 추천장비 | 스킨/워킹 해루질 장비 + 쿠팡 제휴 링크 | `const GEAR_SKIN`, `const GEAR_WALKING` |
+| ④ 어항구역 지도 | 제주 어항 69곳 위치·검색 + 관할 해경 연락처 | `const DATA = [...]`, `const COAST_GUARD = {...}` |
+| ⑤ 오늘의 물때·날씨 | 물때 자동계산(수식) + Windy·바다타임 임베드 | 계산 로직만 있고 데이터 배열 없음 |
+| ⑥ 실시간 CCTV | 공식 CCTV 링크 모음(재난안전/도로) | 데이터 배열 없음, 정적 링크 |
+| ⑦ 조과자랑 게시판 | 구글 폼+시트 연동 게시판 (설정 필요) | `GOOGLE_FORM_URL` / `GOOGLE_FORM_EMBED_URL` / `SHEET_CSV_URL` |
+| ⑧ 미니게임 | haerujil-game.html로 연결되는 소개 카드 | `#gameBestLine`(localStorage `haerujil_best` 조회) |
+
+새 탭을 추가할 땐: `<section class="tab-panel" hidden>`으로 만들고 `#tabNav`에 버튼 하나
+추가(순서는 버튼 순서 = 화면 순서). 탭 순서를 바꾸면 이 표도 같이 고쳐줄 것 — 실제로
+2026-09-08에 탭 순서가 여러 번 바뀌었는데 이 표는 예전 5탭 구조 그대로 남아있었음(정리 완료).
 
 줄 번호는 수정하면서 계속 바뀌니, 텍스트 에디터에서 `const DATA = [` 같은 문자열로
 검색해서 찾는 게 제일 확실합니다.
@@ -69,14 +84,18 @@ jeju-harbor-map/
 ### 방법 A — 컴퓨터에서 (Claude 없이, git 사용)
 
 ```bash
-cd C:\Users\KOCOwj\jeju-harbor-map
+cd "C:\HANSSAK\SecureGate\Download\클로드 김정재\jeju-harbor-map"
 # index.html 등을 원하는 대로 수정
 git add -A
 git commit -m "수정 내용 설명"
 git push
 ```
 `git push`가 성공하면 1~2분 안에 https://kjj8422-code.github.io/jeju-harbor-map/ 에 자동 반영됩니다.
-(이 컴퓨터에는 이미 git과 GitHub CLI(`gh`)가 설치·로그인되어 있습니다.)
+(경로는 실제 작업 중인 컴퓨터의 저장 위치로 바꿔서 쓸 것 — 컴퓨터마다 다를 수 있음. `git`은
+Windows에 기본 설치되어 있는 경우가 많지만, GitHub CLI(`gh`)는 컴퓨터마다 설치·로그인 여부가
+다를 수 있음. `git push`가 처음 인증을 요구하면 브라우저 로그인 창이 뜨는데, 회사 PC 등
+로그인이 막힌 네트워크라면 "기기 코드(device code)" 방식으로 우회 가능 — Claude에게
+"회사 PC라 로그인이 막혀"라고 말하면 안내받을 수 있음.)
 
 ### 방법 B — 브라우저만으로 (아무 도구도 필요 없음)
 
