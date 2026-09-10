@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-09-10",
+  "checkedAt": "2026-09-11",
   "sources": {
     "fisheries-decree": {
       "label": "수산자원관리법 시행령 (금어기·금지체장 별표2의 모법)",
@@ -9,7 +9,7 @@
       "status": "ok",
       "hash": "4ad1c0537a724b4f979209f937c31bf0a60917d360b6f6fcac16a7f46edb676e",
       "length": 1632,
-      "lastCheckedAt": "2026-09-10",
+      "lastCheckedAt": "2026-09-11",
       "lastChangedAt": null,
       "failCount": 0
     },
@@ -21,7 +21,7 @@
       "status": "ok",
       "hash": "ee4ec2cd9d92a7a6fde78e7478cb5319e7ffe784859f3a0706a21bcbb1b7ae65",
       "length": 1648,
-      "lastCheckedAt": "2026-09-10",
+      "lastCheckedAt": "2026-09-11",
       "lastChangedAt": null,
       "failCount": 0
     },
@@ -33,7 +33,7 @@
       "status": "ok",
       "hash": "c43672bf69633f12d57cb9a6505a9f513db16df4e45afb845e308edab6233a23",
       "length": 1702,
-      "lastCheckedAt": "2026-09-10",
+      "lastCheckedAt": "2026-09-11",
       "lastChangedAt": null,
       "failCount": 0
     },
@@ -42,12 +42,13 @@
       "url": "https://www.fipa.or.kr/fipa/pgm/i-248/fixed/front/list.do?searchCl1=17",
       "affects": "④ 어항구역 지도의 어촌정주어항 46곳 목록",
       "priority": "medium",
-      "status": "ok",
+      "status": "error",
       "hash": "08c9f1b8f3d63cb2fdf44f1a43df78e363286bd54341dcb472db6b6b8ffed13e",
       "length": 2838,
-      "lastCheckedAt": "2026-09-10",
+      "lastCheckedAt": "2026-09-11",
       "lastChangedAt": null,
-      "failCount": 0
+      "failCount": 1,
+      "error": "fetch failed"
     },
     "mof-press": {
       "label": "해양수산부 보도자료 목록",
@@ -57,7 +58,7 @@
       "status": "ok",
       "hash": "4dda758b029250b938202f23a37973b1a93b65fe4d5e9c3e45fbb792edbf6196",
       "length": 63,
-      "lastCheckedAt": "2026-09-10",
+      "lastCheckedAt": "2026-09-11",
       "lastChangedAt": "2026-09-09",
       "failCount": 0
     },
@@ -69,7 +70,7 @@
       "status": "ok",
       "hash": "5e3915e959216e31397dede509bd2cb1f172850b2b2ac1099d81ca6830a2fa98",
       "length": 43,
-      "lastCheckedAt": "2026-09-10",
+      "lastCheckedAt": "2026-09-11",
       "lastChangedAt": null,
       "failCount": 0
     }
