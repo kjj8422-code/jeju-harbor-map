@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "//": "node로 js/sim.js를 headless 테스트하기 위한 설정. npm install은 필요 없습니다."
+}
