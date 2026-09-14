@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>삼국지 99일 생존 3D — 1막</title>
+<meta name="description" content="삼국지 서바이벌 1막(1~33일) 3D 프로토타입. 설치 없이 브라우저에서 바로 플레이.">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap">
+<style>
+:root{
+  --bg:#12110f; --panel:#221f1b; --line:#3a342c;
+  --ink:#F0E9DC; --dim:#9E9384; --gold:#E0B44A; --red:#C6412F;
+  --good:#5FAE72; --blue:#5B8FC7; --orange:#E08B3C;
+  --serif:'Gowun Batang','Nanum Myeongjo',Batang,serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;
+  overscroll-behavior:none;}
+body{padding-bottom:20px;}
+#app{max-width:1100px;margin:0 auto;padding:10px 12px;}
+.backLink{display:inline-block;font-size:11.5px;color:var(--dim);text-decoration:none;
+  border:1px solid var(--line);border-radius:20px;padding:5px 11px;margin-bottom:8px;}
+.topbar{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px;}
+.brand{font-size:18px;font-weight:700;font-family:var(--serif);letter-spacing:-.3px;}
+.brand small{font-size:11px;color:var(--dim);font-weight:600;margin-left:6px;font-family:inherit;}
+.btn{background:var(--panel);border:1px solid var(--line);color:var(--ink);font-size:12px;
+  font-weight:700;padding:7px 12px;border-radius:6px;cursor:pointer;font-family:inherit;}
+.btn:active{background:#2d2823;}
+.btn.primary{background:var(--red);border-color:#8f2e21;color:#fff;}
+.btn.gold{background:var(--gold);border-color:#a8842f;color:#22200f;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+
+/* ---- 3D 무대 ---- */
+#stage{position:relative;border:1px solid var(--line);background:#0d1017;overflow:hidden;
+  height:min(62vh,560px);touch-action:none;}
+#stage canvas{display:block;width:100%;height:100%;}
+
+#hud{position:absolute;inset:0;pointer-events:none;padding:8px;
+  display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+.hudBox{background:rgba(18,17,15,.8);border:1px solid var(--line);border-radius:6px;
+  padding:6px 9px;font-size:11.5px;line-height:1.5;backdrop-filter:blur(3px);}
+.hudDay{font-size:19px;font-weight:700;color:var(--gold);font-family:var(--serif);}
+.hudDay span{font-size:11px;color:var(--dim);}
+.bar{height:6px;background:#0c0b09;border:1px solid var(--line);border-radius:3px;
+  overflow:hidden;margin-top:3px;width:118px;}
+.bar>div{height:100%;transition:width .15s linear;}
+.res{display:flex;gap:10px;font-weight:700;font-size:12px;justify-content:flex-end;}
+.res i{font-style:normal;color:var(--dim);font-weight:600;}
+
+#minimapWrap{position:absolute;right:8px;bottom:8px;pointer-events:none;
+  border:1px solid var(--line);border-radius:4px;overflow:hidden;background:rgba(18,17,15,.85);}
+#minimap{display:block;width:132px;height:98px;}
+#mmLabel{position:absolute;left:4px;top:2px;font-size:9px;color:var(--dim);}
+
+#objective{position:absolute;left:50%;transform:translateX(-50%);bottom:10px;
+  background:rgba(18,17,15,.88);border:1px solid var(--line);border-left:3px solid var(--gold);
+  border-radius:5px;padding:6px 12px;font-size:12px;font-weight:700;pointer-events:none;
+  max-width:60%;text-align:center;}
+#objective b{color:var(--gold);}
+
+#waveAlert{position:absolute;left:50%;top:32%;transform:translate(-50%,-50%);
+  text-align:center;pointer-events:none;display:none;}
+#waveAlert .t{font-size:30px;font-weight:700;color:var(--red);font-family:var(--serif);
+  text-shadow:0 2px 14px #000,0 0 34px rgba(198,65,47,.7);}
+#waveAlert .s{font-size:13px;font-weight:700;margin-top:4px;text-shadow:0 2px 8px #000;}
+
+#fxLayer{position:absolute;inset:0;pointer-events:none;overflow:hidden;}
+.fxItem{position:absolute;font-size:12px;font-weight:800;text-shadow:0 1px 3px #000;
+  transform:translate(-50%,-50%);white-space:nowrap;}
+#toast{position:absolute;left:50%;top:12%;transform:translateX(-50%);
+  display:flex;flex-direction:column;gap:4px;align-items:center;pointer-events:none;}
+.toastItem{background:rgba(18,17,15,.9);border:1px solid var(--line);border-radius:20px;
+  padding:5px 13px;font-size:12px;font-weight:700;animation:tfade 2.6s ease forwards;}
+@keyframes tfade{0%{opacity:0;transform:translateY(8px);}12%{opacity:1;transform:none;}
+  75%{opacity:1;}100%{opacity:0;transform:translateY(-8px);}}
+#perf{position:absolute;left:8px;bottom:8px;font-size:10px;color:var(--dim);
+  background:rgba(18,17,15,.7);padding:3px 7px;border-radius:4px;pointer-events:none;}
+
+/* ---- 조작 ---- */
+#controls{display:flex;gap:10px;align-items:center;justify-content:space-between;
+  margin-top:8px;flex-wrap:wrap;}
+#stick{width:112px;height:112px;border-radius:50%;background:var(--panel);
+  border:1px solid var(--line);position:relative;touch-action:none;flex:0 0 auto;}
+#stick .knob{position:absolute;left:56px;top:56px;width:46px;height:46px;margin:-23px 0 0 -23px;
+  border-radius:50%;background:#463f35;border:1px solid #5d5245;}
+#stick .hint{position:absolute;left:0;right:0;bottom:-17px;text-align:center;font-size:10px;color:var(--dim);}
+.ctrlRight{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:1 1 auto;}
+#modeTag{font-size:11px;color:var(--dim);align-self:center;}
+
+.secTitle{font-size:12px;font-weight:800;color:var(--dim);margin:14px 0 6px;
+  display:flex;align-items:center;gap:6px;}
+.secTitle::after{content:'';flex:1;height:1px;background:var(--line);}
+.cardRow{display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;}
+.bcard{flex:0 0 auto;width:120px;background:var(--panel);border:1px solid var(--line);
+  border-radius:7px;padding:8px;cursor:pointer;text-align:left;color:var(--ink);font-family:inherit;}
+.bcard:disabled{opacity:.45;cursor:not-allowed;}
+.bcard.on{border-color:var(--gold);background:#2c2519;box-shadow:0 0 0 1px var(--gold) inset;}
+.bcard .e{font-size:19px;} .bcard .n{font-size:12.5px;font-weight:800;margin-top:2px;}
+.bcard .c{font-size:10.5px;color:var(--dim);margin-top:3px;line-height:1.45;}
+.bcard .lock{font-size:10px;color:var(--red);font-weight:700;margin-top:3px;}
+
+#soldierPanel{margin-top:12px;background:var(--panel);border:1px solid var(--line);
+  border-radius:7px;padding:10px;}
+.sldRow{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;}
+.sldChip{background:#2b261f;border:1px solid var(--line);border-radius:16px;padding:5px 11px;
+  font-size:11.5px;font-weight:700;cursor:pointer;color:var(--ink);font-family:inherit;}
+
+.panel{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:7px;
+  padding:12px;font-size:12.5px;line-height:1.72;color:#d9d0c2;}
+.panel h3{margin:0 0 7px;font-size:13.5px;color:var(--ink);}
+.panel b{color:var(--gold);}
+.panel ul{margin:6px 0 0;padding-left:17px;}
+details.panel summary{cursor:pointer;font-weight:800;color:var(--ink);font-size:13px;list-style:none;}
+details.panel summary::-webkit-details-marker{display:none;}
+details.panel summary::before{content:'▸ ';color:var(--gold);}
+details.panel[open] summary::before{content:'▾ ';}
+
+/* ---- 오버레이 ---- */
+.screen{position:fixed;inset:0;background:rgba(10,9,8,.95);z-index:50;display:none;
+  overflow-y:auto;padding:18px 12px 40px;}
+.screen.on{display:block;}
+.sheet{max-width:760px;margin:0 auto;}
+.sheet h2{font-size:23px;margin:4px 0;font-family:var(--serif);font-weight:700;}
+.sheet .sub{font-size:12.5px;color:var(--dim);line-height:1.7;margin-bottom:14px;}
+.gcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:9px;}
+.gcard{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px;
+  cursor:pointer;text-align:left;color:var(--ink);font-family:inherit;border-top-width:3px;}
+.gcard.on{box-shadow:0 0 0 2px var(--gold) inset;}
+.gcard .gr{font-size:10.5px;font-weight:800;}
+.gcard .nm{font-size:18px;font-weight:700;margin:3px 0 2px;font-family:var(--serif);}
+.gcard .ds{font-size:11.5px;color:var(--dim);line-height:1.6;margin-bottom:7px;}
+.stat{display:flex;justify-content:space-between;font-size:11px;padding:2px 0;border-top:1px solid #2c2820;}
+.up{color:var(--good);} .down{color:var(--red);}
+.repRow{display:flex;justify-content:space-between;padding:8px 2px;border-bottom:1px solid var(--line);font-size:13px;}
+.repRow b{font-weight:900;font-size:15px;}
+.big{font-size:38px;font-weight:700;font-family:var(--serif);}
+
+@media (max-width:640px){
+  #stage{height:min(54vh,420px);}
+  #minimap{width:96px;height:72px;}
+  #objective{font-size:11px;max-width:82%;bottom:6px;}
+  .hudBox{font-size:10.5px;padding:5px 7px;} .bar{width:86px;}
+  .gcards{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <a href="./" class="backLink">← 제주 어항 해도로 돌아가기</a>
+  <div class="topbar">
+    <div class="brand">삼국지 99일 생존 3D<small>1막 · Day 1~33 · 설치 불필요</small></div>
+    <div style="display:flex;gap:6px;">
+      <button class="btn" id="btnSound">🔊</button>
+      <button class="btn" id="btnPause">⏸ 일시정지</button>
+    </div>
+  </div>
+
+  <div id="stage">
+    <div id="hud">
+      <div class="hudBox">
+        <div class="hudDay" id="hDay">Day 1 <span>/ 33</span></div>
+        <div id="hPhase" style="color:var(--dim);">봄 · 개척기</div>
+        <div style="margin-top:4px;">거점 <span id="hBaseHp">1300</span>
+          <div class="bar"><div id="hBaseBar" style="width:100%;background:var(--gold);"></div></div></div>
+        <div style="margin-top:4px;"><span id="hHeroName">장수</span>
+          <div class="bar"><div id="hHeroBar" style="width:100%;background:var(--red);"></div></div></div>
+      </div>
+      <div class="hudBox" style="text-align:right;">
+        <div class="res"><span><i>목재</i> <span id="hWood">0</span></span>
+          <span><i>석재</i> <span id="hStone">0</span></span>
+          <span><i>철</i> <span id="hIron">0</span></span></div>
+        <div style="color:var(--dim);margin-top:3px;">병사 <span id="hSol">0</span>/<span id="hSolMax">0</span>
+          · 옥새 <span id="hShard">0</span></div>
+        <div style="color:var(--red);font-weight:800;margin-top:3px;" id="hNext">다음 대란 D-10</div>
+      </div>
+    </div>
+    <div id="fxLayer"></div>
+    <div id="toast"></div>
+    <div id="waveAlert"><div class="t" id="waTitle"></div><div class="s" id="waSub"></div></div>
+    <div id="objective">목표를 불러오는 중…</div>
+    <div id="minimapWrap"><canvas id="minimap"></canvas><div id="mmLabel">미니맵</div></div>
+    <div id="perf"></div>
+  </div>
+
+  <div id="controls">
+    <div id="stick"><div class="knob" id="knob"></div><div class="hint">이동 (PC: WASD)</div></div>
+    <div class="ctrlRight">
+      <span id="modeTag">🖱 드래그 = 카메라 회전 · 휠 = 확대</span>
+      <button class="btn" id="btnCancel">✕ 건설 취소</button>
+      <button class="btn" id="btnCraft">🔨 제작소</button>
+      <button class="btn gold" id="btnShop">💎 가챠·확률표</button>
+    </div>
+  </div>
+
+  <p class="secTitle">건설 — 카드를 누른 뒤 땅을 클릭하면 설치됩니다</p>
+  <div class="cardRow" id="buildRow"></div>
+
+  <div id="soldierPanel">
+    <p class="secTitle" style="margin:0 0 2px;">병사 위임 — 반복 노동은 병사에게</p>
+    <div style="font-size:11.5px;color:var(--dim);line-height:1.6;">
+      병영을 지으면 병사를 고용할 수 있습니다. 병사를 눌러 <b style="color:var(--gold)">목재 → 석재 → 방어</b> 순으로 역할을 바꿉니다.
+    </div>
+    <div class="sldRow" id="sldRow"></div>
+    <div style="margin-top:8px;"><button class="btn" id="btnHire">＋ 병사 고용 (목재 10 · 석재 5)</button></div>
+  </div>
+
+  <details class="panel" id="helpPanel">
+    <summary>조작법과 이 프로토타입이 검증하려는 것</summary>
+    <ul>
+      <li><b>이동</b> — WASD 또는 조이스틱. <b>카메라가 보는 방향 기준</b>으로 움직입니다</li>
+      <li><b>카메라</b> — 화면을 드래그하면 장수 주위를 돕니다. 마우스 휠로 확대·축소</li>
+      <li><b>채집·공격은 자동</b> — 자원 옆에 서 있으면 캐고, 적이 오면 싸웁니다</li>
+      <li><b>건설</b> — 카드를 고르면 드래그가 "설치"로 바뀝니다. 땅을 클릭(또는 끌기)해 배치</li>
+      <li><b>목책은 방어벽이 아니라 길을 조종하는 도구</b>입니다. 일부러 길을 터고 거기에 함정을 까세요</li>
+      <li><b>밤</b> — 11·22·33일에 대란이 옵니다. 5초 전에 공격 방향을 알려줍니다</li>
+    </ul>
+    <div style="margin-top:9px;color:var(--dim);font-size:11.5px;">
+      ※ 웨이브 리포트의 <b>함정 처치 비율</b>이 판마다 오르는지 보세요. 그게 이 프로토타입의 목적입니다.
+    </div>
+  </details>
+
+  <div class="panel" style="border-style:dashed;text-align:center;color:var(--dim);font-size:11.5px;">
+    광고 자리 (AdSense 승인 후 연결) — 플레이 화면을 가리지 않도록 바깥 하단에만 배치했습니다.
+  </div>
+</div>
+
+<!-- 시작 화면 -->
+<div class="screen on" id="scTitle">
+  <div class="sheet">
+    <h2>삼국지 99일 생존 <span style="color:var(--dim);font-size:13px;">3D 1막 프로토타입</span></h2>
+    <p class="sub">
+      1일차 맨손에서 시작해 <b style="color:var(--gold)">33일</b>을 버티면 승리입니다.
+      하루는 7초, 11·22·33일 밤에 <b style="color:var(--red)">대란</b>이 옵니다.<br>
+      출전할 장수를 고르세요. 등급이 높을수록 초반이 강한 대신 몬스터도 강하게 몰려옵니다.
+    </p>
+    <div class="gcards" id="heroCards"></div>
+    <div class="panel">
+      <h3>명성(名聲) 시스템 — 페이투윈 완화 장치</h3>
+      등급이 높은 장수는 이름값 때문에 <b>몬스터가 더 강하게 몰려오고 시작 자원이 적습니다.</b>
+      낮은 등급은 초반이 고되지만 <b>22일차 이후 성장 보정</b>으로 역전합니다.
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <button class="btn primary" id="btnStart" style="font-size:14px;padding:11px 22px;">▶ 1막 시작</button>
+      <span id="bestRec" style="font-size:12px;color:var(--dim);"></span>
+    </div>
+  </div>
+</div>
+
+<!-- 제작소 -->
+<div class="screen" id="scCraft">
+  <div class="sheet">
+    <h2>제작소</h2>
+    <p class="sub">도구 티어 게이팅 — 돌 곡괭이가 없으면 철광은 못 캡니다.</p>
+    <div class="gcards" id="craftList"></div>
+    <button class="btn primary" id="btnCraftClose" style="margin-top:14px;padding:10px 20px;">닫기</button>
+  </div>
+</div>
+
+<!-- 웨이브 리포트 -->
+<div class="screen" id="scReport">
+  <div class="sheet">
+    <h2 id="repTitle">웨이브 리포트</h2>
+    <p class="sub" id="repSub"></p>
+    <div class="panel" style="padding:6px 12px;">
+      <div class="repRow"><span>막아낸 몬스터</span><b id="repKill">0</b></div>
+      <div class="repRow"><span>함정이 처치한 비율</span><b id="repTrap">0%</b></div>
+      <div class="repRow"><span>병사가 처치한 비율</span><b id="repSold">0%</b></div>
+      <div class="repRow"><span>MVP 시설</span><b id="repMvp">-</b></div>
+      <div class="repRow"><span>거점이 입은 피해</span><b id="repDmg">0</b></div>
+      <div class="repRow" style="border-bottom:none;"><span>획득한 옥새 조각</span><b id="repShard">0</b></div>
+    </div>
+    <div class="panel" id="repAdvice"></div>
+    <button class="btn primary" id="btnRepClose" style="margin-top:12px;padding:11px 24px;font-size:14px;">▶ 다음 날로</button>
+  </div>
+</div>
+
+<!-- 종료 -->
+<div class="screen" id="scEnd">
+  <div class="sheet" style="text-align:center;">
+    <div class="big" id="endTitle"></div>
+    <p class="sub" id="endSub" style="text-align:center;"></p>
+    <div class="panel" style="text-align:left;" id="endStats"></div>
+    <div class="panel" style="text-align:left;" id="endNote"></div>
+    <button class="btn primary" id="btnAgain" style="margin-top:14px;padding:11px 24px;font-size:14px;">↻ 다시 한 판</button>
+  </div>
+</div>
+
+<!-- 가챠·확률표 -->
+<div class="screen" id="scShop">
+  <div class="sheet">
+    <h2>장수 가챠 <span style="color:var(--dim);font-size:13px;">화면 목업 · 실제 결제 없음</span></h2>
+    <p class="sub">재미가 검증되기 전에는 결제를 붙이지 않습니다. 게임으로 얻은 <b style="color:var(--gold)">옥새 조각</b>으로만 뽑습니다.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <button class="btn gold" id="btnPull" style="font-size:14px;padding:11px 20px;">🎲 1회 뽑기 (옥새 10)</button>
+      <span style="font-size:12.5px;">보유 <b id="shopShard">0</b></span>
+      <span style="font-size:12px;color:var(--dim);">천장까지 <b id="pityLeft">90</b>회</span>
+    </div>
+    <div class="panel" id="pullResult" style="display:none;text-align:center;"></div>
+    <div class="panel">
+      <h3>확률표 (확률형 아이템 정보공개 대상)</h3>
+      <div class="repRow"><span style="color:#9aa7b0;">일반</span><b>55.000%</b></div>
+      <div class="repRow"><span style="color:var(--blue);">희귀</span><b>30.000%</b></div>
+      <div class="repRow"><span style="color:#9B6FC9;">영웅</span><b>12.000%</b></div>
+      <div class="repRow"><span style="color:var(--orange);">전설</span><b>2.700%</b></div>
+      <div class="repRow" style="border-bottom:none;"><span style="color:var(--gold);">신화</span><b>0.300%</b></div>
+      <ul style="margin-top:8px;">
+        <li><b>천장</b> — 90회 이내 전설 이상, 180회 이내 신화 확정</li>
+        <li><b>중복 보상</b> — 보유 장수 중복 시 각성 재료로 전환</li>
+        <li><b>랭크전 정규화</b> — 랭크에서는 스탯이 정규화되어 과금 우위가 사라집니다</li>
+      </ul>
+    </div>
+    <div class="panel"><h3>도감</h3><div id="dexList" style="font-size:12px;line-height:1.9;color:var(--dim);">아직 없습니다.</div></div>
+    <button class="btn primary" id="btnShopClose" style="margin-top:14px;padding:10px 20px;">닫기</button>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
