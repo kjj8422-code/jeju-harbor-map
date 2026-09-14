@@ -9,6 +9,9 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="삼국지 99일 생존 — 1막 프로토타입">
 <meta property="og:description" content="채집·건설·함정 유도·웨이브 방어. 33일을 버티면 승리.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap">
 <style>
 /* ============================================================
    삼국지 99일 생존 — 1막 프로토타입
@@ -19,6 +22,7 @@
   --bg:#12110f; --bg2:#1a1815; --panel:#221f1b; --line:#3a342c;
   --ink:#F0E9DC; --dim:#9E9384; --gold:#E0B44A; --red:#C6412F;
   --good:#5FAE72; --blue:#5B8FC7; --purple:#9B6FC9; --orange:#E08B3C;
+  --serif:'Gowun Batang','Nanum Myeongjo',Batang,serif;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{margin:0;background:var(--bg);color:var(--ink);
@@ -32,7 +36,7 @@ body{padding-bottom:24px;}
 .backLink:active{background:var(--panel);}
 
 .topbar{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px;}
-.brand{font-size:16px;font-weight:800;letter-spacing:-.3px;}
+.brand{font-size:18px;font-weight:700;letter-spacing:-.3px;font-family:var(--serif);}
 .brand small{font-size:11px;color:var(--dim);font-weight:600;margin-left:6px;}
 .btn{background:var(--panel);border:1px solid var(--line);color:var(--ink);
   font-size:12px;font-weight:700;padding:7px 12px;border-radius:6px;cursor:pointer;
@@ -50,7 +54,7 @@ body{padding-bottom:24px;}
   display:flex;justify-content:space-between;gap:8px;align-items:flex-start;}
 .hudBox{background:rgba(18,17,15,.82);border:1px solid var(--line);border-radius:6px;
   padding:6px 9px;font-size:11.5px;line-height:1.5;backdrop-filter:blur(2px);}
-.hudDay{font-size:18px;font-weight:900;color:var(--gold);letter-spacing:-.5px;}
+.hudDay{font-size:19px;font-weight:700;color:var(--gold);letter-spacing:-.5px;font-family:var(--serif);}
 .hudDay span{font-size:11px;color:var(--dim);font-weight:700;}
 .res{display:flex;gap:10px;font-weight:700;font-size:12px;}
 .res i{font-style:normal;color:var(--dim);font-weight:600;}
@@ -69,7 +73,7 @@ body{padding-bottom:24px;}
 
 #waveAlert{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);
   text-align:center;pointer-events:none;display:none;}
-#waveAlert .t{font-size:26px;font-weight:900;color:var(--red);
+#waveAlert .t{font-size:30px;font-weight:700;color:var(--red);font-family:var(--serif);
   text-shadow:0 2px 12px #000,0 0 30px rgba(198,65,47,.7);letter-spacing:-1px;}
 #waveAlert .s{font-size:13px;color:var(--ink);font-weight:700;margin-top:4px;
   text-shadow:0 2px 8px #000;}
@@ -138,7 +142,7 @@ details.panel[open] summary::before{content:'▾ ';}
   display:none;overflow-y:auto;padding:18px 12px 40px;}
 .screen.on{display:block;}
 .sheet{max-width:720px;margin:0 auto;}
-.sheet h2{font-size:20px;margin:4px 0 4px;letter-spacing:-.5px;}
+.sheet h2{font-size:23px;margin:4px 0 4px;letter-spacing:-.5px;font-family:var(--serif);font-weight:700;}
 .sheet .sub{font-size:12.5px;color:var(--dim);line-height:1.7;margin-bottom:14px;}
 
 .gcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;}
@@ -146,7 +150,7 @@ details.panel[open] summary::before{content:'▾ ';}
   cursor:pointer;text-align:left;color:var(--ink);font-family:inherit;border-top-width:3px;}
 .gcard.on{box-shadow:0 0 0 2px var(--gold) inset;}
 .gcard .gr{font-size:10.5px;font-weight:800;letter-spacing:.5px;}
-.gcard .nm{font-size:17px;font-weight:900;margin:3px 0 2px;}
+.gcard .nm{font-size:18px;font-weight:700;margin:3px 0 2px;font-family:var(--serif);}
 .gcard .ds{font-size:11.5px;color:var(--dim);line-height:1.6;margin-bottom:7px;}
 .stat{display:flex;justify-content:space-between;font-size:11px;padding:2px 0;
   border-top:1px solid #2c2820;}
@@ -161,7 +165,7 @@ table.rate td.n{text-align:right;font-variant-numeric:tabular-nums;}
 .repRow{display:flex;justify-content:space-between;padding:8px 2px;
   border-bottom:1px solid var(--line);font-size:13px;}
 .repRow b{font-weight:900;font-size:15px;}
-.big{font-size:34px;font-weight:900;letter-spacing:-1px;}
+.big{font-size:38px;font-weight:700;letter-spacing:-1px;font-family:var(--serif);}
 
 .pullResult{text-align:center;padding:22px 12px;background:var(--panel);
   border:1px solid var(--line);border-radius:9px;margin-top:10px;}
@@ -170,9 +174,9 @@ table.rate td.n{text-align:right;font-variant-numeric:tabular-nums;}
 .pullResult .n{font-size:22px;font-weight:900;}
 
 @media (max-width:640px){
-  .brand{font-size:14px;}
+  .brand{font-size:15px;}
   .hudBox{font-size:10.5px;padding:5px 7px;}
-  .hudDay{font-size:15px;}
+  .hudDay{font-size:16px;}
   .bar{width:88px;}
   #objective{font-size:11px;padding:5px 9px;}
   .gcards{grid-template-columns:1fr;}
