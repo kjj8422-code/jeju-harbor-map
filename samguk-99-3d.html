@@ -51,12 +51,12 @@ body{padding-bottom:20px;}
 .res{display:flex;gap:10px;font-weight:700;font-size:12px;justify-content:flex-end;}
 .res i{font-style:normal;color:var(--dim);font-weight:600;}
 
-#minimapWrap{position:absolute;right:8px;bottom:8px;pointer-events:none;
+#minimapWrap{position:absolute;right:8px;bottom:70px;pointer-events:none;
   border:1px solid var(--line);border-radius:4px;overflow:hidden;background:rgba(18,17,15,.85);}
 #minimap{display:block;width:132px;height:98px;}
 #mmLabel{position:absolute;left:4px;top:2px;font-size:9px;color:var(--dim);}
 
-#objective{position:absolute;left:50%;transform:translateX(-50%);bottom:10px;
+#objective{position:absolute;left:50%;transform:translateX(-50%);bottom:76px;
   background:rgba(18,17,15,.88);border:1px solid var(--line);border-left:3px solid var(--gold);
   border-radius:5px;padding:6px 12px;font-size:12px;font-weight:700;pointer-events:none;
   max-width:60%;text-align:center;}
@@ -134,15 +134,15 @@ body{padding-bottom:20px;}
 .skillBtn.dodge.ready{border-color:#9fd8ff;}
 
 /* 설치 확인 */
-#buildConfirm{display:none;position:absolute;left:50%;bottom:52px;transform:translateX(-50%);
+#buildConfirm{display:none;position:absolute;left:50%;bottom:118px;transform:translateX(-50%);
   gap:6px;align-items:center;background:rgba(18,17,15,.92);border:1px solid var(--gold);
   border-radius:8px;padding:7px 10px;z-index:5;}
 #buildConfirm .t{font-size:11.5px;color:var(--dim);margin-right:2px;}
-#buildHint{display:none;position:absolute;left:50%;bottom:92px;transform:translateX(-50%);
+#buildHint{display:none;position:absolute;left:50%;bottom:158px;transform:translateX(-50%);
   background:rgba(140,30,20,.9);color:#fff;font-size:11.5px;font-weight:700;
   padding:4px 10px;border-radius:14px;pointer-events:none;z-index:5;}
 
-#perf{position:absolute;left:8px;bottom:8px;font-size:10px;color:var(--dim);
+#perf{position:absolute;left:8px;bottom:70px;font-size:10px;color:var(--dim);
   background:rgba(18,17,15,.7);padding:3px 7px;border-radius:4px;pointer-events:none;}
 
 /* ---- 조작 ---- */
@@ -207,7 +207,7 @@ details.panel[open] summary::before{content:'▾ ';}
 @media (max-width:640px){
   #stage{height:min(54vh,420px);}
   #minimap{width:96px;height:72px;}
-  #objective{font-size:11px;max-width:82%;bottom:6px;}
+  #objective{font-size:11px;max-width:82%;bottom:70px;}
   .hudBox{font-size:10.5px;padding:5px 7px;} .bar{width:86px;}
   .gcards{grid-template-columns:1fr;}
 }
@@ -264,6 +264,81 @@ details.panel[open] summary::before{content:'▾ ';}
 .packCard .pg{font-size:17px;font-weight:900;color:#9fd8ff;}
 .packCard .pb{font-size:10.5px;color:var(--gold);min-height:13px;}
 .packCard .pp{font-size:12px;color:var(--dim);margin-top:3px;}
+
+/* ── 하루 진행 ── */
+#dayTimer{margin-top:3px;}
+#dayTimer .dt{font-size:10.5px;color:var(--dim);}
+#dayTimer .dt b{color:var(--ink);font-variant-numeric:tabular-nums;}
+#dayTimer .dbar{height:4px;width:118px;background:#0c0b09;border:1px solid var(--line);
+  border-radius:3px;overflow:hidden;margin-top:2px;}
+#dayTimer .dbar>div{height:100%;width:0%;background:var(--gold);}
+#dayTimer.night .dbar>div{background:var(--red);}
+
+/* ── 화면 안 건설 바 ── */
+#buildDock{position:absolute;left:0;right:0;bottom:0;padding:5px 8px 6px;
+  background:linear-gradient(to top,rgba(12,11,9,.92),rgba(12,11,9,.55) 70%,transparent);
+  pointer-events:auto;z-index:4;}
+.bdRow{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;}
+.bdBtn{position:relative;display:flex;align-items:center;gap:6px;
+  background:rgba(34,31,27,.94);border:1px solid var(--line);border-radius:8px;
+  padding:6px 10px 6px 8px;color:var(--ink);font-family:inherit;cursor:pointer;
+  transition:border-color .1s,transform .1s;}
+.bdBtn:hover:not(:disabled){border-color:var(--gold);transform:translateY(-1px);}
+.bdBtn:disabled{opacity:.38;cursor:not-allowed;}
+.bdBtn.on{border-color:var(--gold);background:#3a2f1c;box-shadow:0 0 0 1px var(--gold) inset;}
+.bdBtn .num{position:absolute;left:3px;top:2px;font-size:8.5px;color:var(--dim);font-weight:800;}
+.bdBtn .ic{font-size:18px;line-height:1;}
+.bdBtn .tx{text-align:left;line-height:1.25;}
+.bdBtn .nm{font-size:12px;font-weight:800;display:block;}
+.bdBtn .cs{font-size:10px;color:var(--dim);display:block;white-space:nowrap;}
+.bdBtn .cs.lack{color:#e39184;}
+.bdTip{text-align:center;font-size:9.5px;color:var(--dim);margin-top:3px;}
+.bdTip b{color:var(--gold);}
+@media (max-width:640px){
+  .bdBtn{padding:5px 7px;} .bdBtn .nm{font-size:11px;} .bdBtn .cs{font-size:9px;}
+  .bdBtn .ic{font-size:15px;} .bdTip{display:none;}
+}
+/* 궁극기 버튼 */
+.skillBtn.ult{min-width:96px;}
+.skillBtn.ult.ready{border-color:#FFD98A;box-shadow:0 0 12px rgba(255,217,138,.35);}
+.skillBtn.ult .n{color:#FFD98A;}
+
+/* 침공로 위 함정 표시 */
+#trapInfo{font-size:10.5px;margin-top:2px;}
+#trapInfo.good{color:#9fdcae;} #trapInfo.bad{color:#e39184;}
+
+/* ── 장수 도감 카드 ── */
+.heroDex{display:flex;gap:10px;background:var(--panel);border:1px solid var(--line);
+  border-top-width:3px;border-radius:9px;padding:9px;margin-bottom:8px;}
+.heroDex.locked{opacity:.65;}
+.hdFace{flex:0 0 auto;width:58px;height:70px;border-radius:7px;position:relative;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.hdFace::after{content:'';position:absolute;inset:0;
+  background:radial-gradient(circle at 50% 22%,rgba(255,255,255,.28),transparent 58%);}
+.hdInit{font-family:var(--serif);font-size:32px;font-weight:700;color:rgba(20,16,12,.8);
+  text-shadow:0 1px 0 rgba(255,255,255,.3);}
+.hdWeapon{position:absolute;right:3px;bottom:2px;font-size:14px;}
+.hdBody{flex:1 1 auto;min-width:0;}
+.hdTop{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;}
+.hdName{font-size:16px;font-family:var(--serif);}
+.hdGrade{font-size:10.5px;font-weight:800;}
+.hdStar{margin-left:auto;font-size:12px;color:var(--gold);letter-spacing:1px;}
+.hdTag{font-size:11px;color:var(--dim);margin-top:1px;}
+.hdSkill{font-size:11.5px;color:#cfc6b8;margin:3px 0 5px;line-height:1.5;}
+.hdNow{font-size:10.5px;color:var(--dim);margin-top:3px;}
+.hdMax{font-size:11.5px;color:var(--good);font-weight:800;}
+.hdLock{font-size:11.5px;color:var(--dim);}
+.awBtn{font-size:11.5px;padding:5px 11px;}
+.awBtn:not(:disabled){border-color:#9B6FC9;color:#dcc6f5;}
+
+.dexCount{font-size:12px;color:var(--ink);margin-bottom:8px;}
+.dexCount b{color:var(--gold);}
+.dexGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px;}
+.dexCard{background:#2b261f;border:1px solid var(--line);border-radius:7px;
+  padding:6px 4px;text-align:center;}
+.dexCard .dg{font-size:19px;line-height:1.1;}
+.dexCard .dn{font-size:11px;font-weight:700;color:var(--ink);}
+.dexCard .dc{font-size:10px;color:var(--dim);}
 </style>
 </head>
 <body>
@@ -282,7 +357,11 @@ details.panel[open] summary::before{content:'▾ ';}
     <div id="hud">
       <div class="hudBox">
         <div class="hudDay" id="hDay">Day 1 <span>/ 99</span></div>
-        <div id="hPhase" style="color:var(--dim);">봄 · 개척기</div>
+        <div id="hPhase" style="color:var(--dim);">낮 · 채집과 건설</div>
+        <div id="dayTimer">
+          <div class="dt">다음 날까지 <b id="hDayLeft">8.0</b>초</div>
+          <div class="dbar"><div id="hDayBar"></div></div>
+        </div>
         <div style="margin-top:4px;">거점 <span id="hBaseHp">1300</span>
           <div class="bar"><div id="hBaseBar" style="width:100%;background:var(--gold);"></div></div></div>
         <div style="margin-top:4px;"><span id="hHeroName">장수</span>
@@ -299,6 +378,7 @@ details.panel[open] summary::before{content:'▾ ';}
           · 🧪 <span id="hPotion">0</span> · 옥새 <span id="hShard">0</span></div>
         <div style="color:var(--red);font-weight:800;margin-top:3px;" id="hNext">다음 대란 D-10</div>
         <div id="hDirs">침공 방향 —</div>
+        <div id="trapInfo"></div>
       </div>
     </div>
     <div id="fxLayer"></div>
@@ -316,6 +396,12 @@ details.panel[open] summary::before{content:'▾ ';}
       <div id="mmLabel">미니맵 · <span style="color:#E0554A">┅ 예상 침공로</span></div>
     </div>
     <div id="buildHint"></div>
+    <!-- 건설 바를 3D 화면 안에 둡니다.
+         화면 밖 아래까지 마우스를 내렸다 올리는 왕복이 사라집니다. 숫자키 1~4로도 됩니다. -->
+    <div id="buildDock">
+      <div class="bdRow" id="buildDockRow"></div>
+      <div class="bdTip" id="buildDockTip">숫자키 <b>1~4</b> 로도 고를 수 있습니다 · 오른쪽 버튼 = 취소</div>
+    </div>
     <div id="buildConfirm">
       <span class="t">여기에 지을까요?</span>
       <button class="btn gold" id="btnConfirmBuild">✔ 설치 (Enter)</button>
@@ -335,14 +421,22 @@ details.panel[open] summary::before{content:'▾ ';}
     </div>
   </div>
 
-  <p class="secTitle">스킬 — 적의 붉은 예고가 차오를 때 <b style="color:#9fd8ff">회피</b>하면 빗나갑니다</p>
+  <p class="secTitle">스킬 — <b>Q</b> 기본 · <b>E</b> 고유 · <b style="color:#FFD98A">Space 궁극기</b>(쓰는 동안 무적)</p>
   <div id="skillBar"></div>
 
-  <p class="secTitle">건설 — 카드를 고르고 땅을 눌러 위치를 잡은 뒤 확인하세요
+  <p class="secTitle">건설 — <b style="color:var(--gold)">화면 안 아래쪽 바</b>에서 고르세요 (숫자키 1~4)
     <label style="font-size:11px;color:var(--dim);font-weight:600;margin-left:8px;">
-      <input type="checkbox" id="chkInstant"> 바로 설치</label>
+      <input type="checkbox" id="chkInstant"> 바로 설치 (확인 단계 건너뛰기)</label>
   </p>
-  <div class="cardRow" id="buildRow"></div>
+  <div style="font-size:11.5px;color:var(--dim);line-height:1.7;background:var(--panel);
+              border:1px solid var(--line);border-radius:7px;padding:9px 11px;">
+    <b style="color:var(--gold)">1 목책</b> 적의 길을 막아 <b>돌아가게</b> 만듭니다 ·
+    <b style="color:var(--gold)">2 가시함정</b> 밟는 적에게 계속 피해 —
+    <b style="color:#E0554A">붉은 화살표 위</b>에 깔아야 일을 합니다 ·
+    <b style="color:var(--gold)">3 병영</b> 병사 <b>정원</b> +1 (고용은 아래 버튼으로 따로) ·
+    <b style="color:var(--gold)">4 대장간</b> 장비 제작이 열립니다 (한 채면 충분)
+    <br>자세한 설명과 필요 자원은 <b>📖 안내</b>에 있습니다.
+  </div>
 
   <div id="soldierPanel">
     <p class="secTitle" style="margin:0 0 2px;">병사 위임 — 반복 노동은 병사에게</p>
@@ -369,9 +463,10 @@ details.panel[open] summary::before{content:'▾ ';}
       <li><b>카메라</b> — 화면을 드래그하면 장수 주위를 돕니다. 마우스 휠로 확대·축소</li>
       <li><b>채집·공격은 자동</b> — 자원 옆에 서 있으면 캐고, 적이 오면 싸웁니다</li>
       <li><b>공격·채집 사거리</b> — 장수 발밑의 원이 닿는 범위입니다. 적이 들어오면 <b>하얗게</b> 밝아지고, 노리는 적과 캐는 자원에 <b>흰 테두리</b>가 생깁니다</li>
-      <li><b>회피</b> — <b>Space</b>(또는 Shift). 적 발밑의 <b style="color:#C6412F">붉은 원이 차오르는 동안</b> 구르면 공격이 빗나갑니다</li>
-      <li><b>스킬</b> — <b>Q</b> 기본 / <b>E</b> 고유. 스킬로 때리면 적의 공격을 끊을 수 있습니다(평타로는 안 끊깁니다)</li>
-      <li><b>건설</b> — 카드를 고르고 땅을 눌러 위치를 잡으면 <b>들어설 모습이 미리</b> 보입니다. 확인을 눌러야 실제로 지어집니다</li>
+      <li><b>적의 공격을 피하는 법</b> — 적 발밑에 <b style="color:#C6412F">붉은 원이 차오르는 동안 걸어서 물러나면</b> 빗나갑니다. 구르기는 없습니다</li>
+      <li><b>스킬</b> — <b>Q</b> 기본 / <b>E</b> 고유 / <b style="color:#FFD98A">Space 궁극기</b>. 스킬로 때리면 적의 공격이 끊깁니다(평타로는 안 끊깁니다)</li>
+      <li><b style="color:#FFD98A">궁극기(Space)</b> — 장수마다 다르고, <b>쓰는 동안 무적</b>입니다. 둘러싸였을 때 빠져나오는 수단으로 쓰세요</li>
+      <li><b>건설</b> — <b>화면 안 아래쪽 바</b>에서 고르거나 <b style="color:var(--gold)">숫자키 1~4</b>. 땅을 누르면 들어설 모습이 미리 보이고, 확인을 눌러야 지어집니다</li>
       <li><b>목책은 방어벽이 아니라 길을 조종하는 도구</b>입니다. 일부러 길을 터고 거기에 함정을 까세요</li>
       <li><b>설치 취소</b> — <b style="color:var(--gold)">마우스 오른쪽 버튼</b>으로 언제든 취소됩니다 (Esc 도 됩니다)</li>
       <li><b>밤</b> — 11일마다 대란이 옵니다(총 9회). 공격 방향과 <b style="color:#E0554A">예상 침공로</b>는 첫날부터 바닥에 보입니다</li>
@@ -484,11 +579,11 @@ details.panel[open] summary::before{content:'▾ ';}
       <ul>
         <li><b>이동</b> — W A S D (카메라가 보는 방향 기준) 또는 조이스틱</li>
         <li><b>공격</b> — 자동. <b>마우스 좌클릭</b>으로 직접 때릴 수도 있습니다</li>
-        <li><b>회피</b> — Space. 적 발밑 <b style="color:#C6412F">붉은 원이 차오를 때</b> 구르면 빗나갑니다</li>
-        <li><b>스킬</b> — Q(기본) / E(고유). 스킬로 때리면 적의 공격이 끊깁니다</li>
+        <li><b>적의 공격 피하기</b> — 적 발밑 <b style="color:#C6412F">붉은 원이 차오를 때 걸어서 물러나면</b> 빗나갑니다</li>
+        <li><b>스킬</b> — Q(기본) / E(고유) / <b style="color:#FFD98A">Space(궁극기 · 무적)</b></li>
         <li><b>치유약</b> — H</li>
         <li><b>카메라</b> — 드래그로 회전, 휠로 확대</li>
-        <li><b>건설</b> — 카드를 고르고 땅을 눌러 위치를 잡은 뒤 확인</li>
+        <li><b>건설</b> — 화면 안 아래 바 또는 <b style="color:var(--gold)">숫자키 1~4</b> → 땅을 눌러 위치 → 확인</li>
         <li><b>설치 취소</b> — <b style="color:var(--gold)">마우스 오른쪽 버튼</b> 또는 Esc</li>
       </ul>
     </div>
@@ -538,6 +633,7 @@ details.panel[open] summary::before{content:'▾ ';}
     <div class="walletRow">
       <span class="w"><i>🔶</i> 옥새 조각 <b id="shopShard">0</b></span>
       <span class="w"><i>💎</i> 보석 <b id="shopGem">0</b></span>
+      <span class="w"><i>🔮</i> 혼백 <b id="shopSoul">0</b></span>
       <span class="w dim">천장까지 <b id="pityLeft">90</b>회</span>
       <button class="btn" id="btnFreeGem">🎁 오늘의 무료 보석</button>
     </div>
@@ -573,9 +669,13 @@ details.panel[open] summary::before{content:'▾ ';}
       </ul>
     </div>
 
-    <div class="panel"><h3>플레이 가능한 장수</h3>
-      <div id="playableList" style="font-size:12px;line-height:1.9;"></div></div>
-    <div class="panel"><h3>도감</h3><div id="dexList" style="font-size:12px;line-height:1.9;color:var(--dim);">아직 없습니다.</div></div>
+    <div class="panel"><h3>출전 장수 · 각성</h3>
+      <div style="font-size:11.5px;color:var(--dim);margin-bottom:8px;">
+        이미 가진 장수가 또 나오면 <b style="color:#c9a3e8">혼백</b>으로 바뀝니다.
+        혼백을 모아 각성시키면 <b>한 단계마다 전투력 +6%</b>, ★5 면 <b>+30%</b>입니다.
+      </div>
+      <div id="playableList"></div></div>
+    <div class="panel"><h3>도감</h3><div id="dexList" style="font-size:12px;color:var(--dim);">아직 없습니다.</div></div>
     <button class="btn primary" id="btnShopClose" style="margin-top:14px;padding:10px 20px;">닫기</button>
   </div>
 </div>

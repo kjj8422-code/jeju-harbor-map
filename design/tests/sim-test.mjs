@@ -143,9 +143,12 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   const S = Sim.createSim('taesaja');
   S.res.wood = 999; S.res.stone = 999;
   S.hero.x = S.base.x; S.hero.y = S.base.y;
-  Sim.tryBuild(S, C.BASE_TX - 3, C.BASE_TY - 3, 'camp');
+  clearColumn(S, C.BASE_TX - 3, C.BASE_TY - 3, C.BASE_TY - 3);
+  const campOk = Sim.tryBuild(S, C.BASE_TX - 3, C.BASE_TY - 3, 'camp');
+  ok('병영이 지어진다', campOk === true && S.camps === 1);
   Sim.hireSoldier(S);
   ok('병영을 지으면 병사를 고용할 수 있다', S.soldiers.length === 1);
+  if (!S.soldiers.length) throw new Error('병사 고용 실패 — 이후 검사를 진행할 수 없습니다');
 
   S.res.wood = 0; S.got.wood = 0;
   run(S, 60);
@@ -235,48 +238,77 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
      `${before.toFixed(2)} → ${Sim.combatMul(S).toFixed(2)}`);
 }
 
-/* ── 12. 회피 (컨트롤로 극복하는 핵심) ───────────────── */
+/* ── 12. 궁극기 (Space) — 구르기를 대신하는 장치 ────── */
 {
-  const S = Sim.createSim('yohwa');
-  S.hero.x = 600; S.hero.y = 600;
-  const before = { x: S.hero.x, y: S.hero.y };
-  S.input.x = 1; S.input.y = 0;
-  ok('회피를 쓸 수 있다', Sim.dodgeRoll(S) === true);
-  ok('회피 중에는 무적이다', S.hero.invuln > 0);
-  run(S, C.DODGE_TIME + 0.05);
-  const moved = Math.hypot(S.hero.x - before.x, S.hero.y - before.y);
-  ok('회피하면 실제로 굴러서 이동한다', moved > C.DODGE_DIST * 0.7, `${Math.round(moved)} 유닛`);
-  ok('회피는 재사용 대기가 있다', Sim.dodgeRoll(S) === false);
+  for (const id of ['yohwa', 'taesaja', 'yeopo', 'hahudon', 'hwangchung', 'gwanwoo']) {
+    const S = Sim.createSim(id);
+    const ult = S.heroDef.skills[2];
+    ok(`${S.heroDef.name}: 궁극기(${ult ? ult.name : '없음'})가 Space 에 있다`,
+       !!ult && ult.ult === true && ult.key === 'Space');
+    ok(`${S.heroDef.name}: 궁극기는 쓰는 동안 무적이다`, !!ult && ult.invuln > 0);
+    S.hero.x = 600; S.hero.y = 600; S.hero.facing = Math.PI / 2;
+    S.waveStats = { killed:0, byTrap:0, bySoldier:0, byHero:0, baseDmg:0, trapKills:{} };
+    for (let i = 0; i < 6; i++)
+      S.monsters.push({ x: 620 + i * 14, y: 600, hp: 4000, maxHp: 4000, spd: 0, dmg: 1, cd: 99,
+                        boss: false, hitFlash: 0, dead: false, windup: 0, windupTgt: null,
+                        vx: 0, vy: 0, hitStop: 0, armor: 0 });
+    const hp0 = S.monsters.reduce((a, m) => a + m.hp, 0);
+    ok(`${S.heroDef.name}: 궁극기를 쓸 수 있다`, Sim.useSkill(S, 2) === true);
+    ok(`${S.heroDef.name}: 궁극기를 쓰면 무적이 걸린다`, S.hero.invuln > 0,
+       `${S.hero.invuln.toFixed(2)}초`);
+    run(S, 1.2);
+    const hp1 = S.monsters.reduce((a, m) => a + m.hp, 0);
+    ok(`${S.heroDef.name}: 궁극기가 실제로 피해를 준다`, hp1 < hp0,
+       `${Math.round(hp0)} → ${Math.round(hp1)}`);
+    ok(`${S.heroDef.name}: 궁극기는 재사용 대기가 길다`,
+       Sim.useSkill(S, 2) === false && S.heroDef.skills[2].cd >= 20);
+  }
+  // 구르기는 완전히 사라졌습니다
+  ok('구르기(dodgeRoll)는 더 이상 존재하지 않는다', typeof Sim.dodgeRoll === 'undefined');
 }
 
-/* ── 13. 적 예비 동작 → 회피로 빗나가게 만들기 ──────── */
+/* ── 13. 적 예비 동작 → 물러서서 빗나가게 만들기 ────── */
 {
   const S = Sim.createSim('yohwa');
   S.hero.x = 600; S.hero.y = 600;
   S.hero.hp = 100;
   S.monsters.push({ x: 620, y: 600, hp: 9999, maxHp: 9999, spd: 0, dmg: 40, cd: 0,
                     boss: false, hitFlash: 0, dead: false, windup: 0, windupTgt: null,
-                    vx: 0, vy: 0, hitStop: 0 });
+                    vx: 0, vy: 0, hitStop: 0, armor: 0 });
   run(S, 0.1);
   ok('몬스터는 곧바로 때리지 않고 예비 동작을 한다', S.monsters[0].windup > 0,
      `windup=${S.monsters[0].windup.toFixed(2)}`);
   const hpBefore = S.hero.hp;
   run(S, C.MONSTER_WINDUP + 0.1);
-  ok('가만히 있으면 맞는다', S.hero.hp < hpBefore, `${Math.round(hpBefore)} → ${Math.round(S.hero.hp)}`);
+  ok('가만히 있으면 맞는다', S.hero.hp < hpBefore, `${Math.round(hpBefore)} → ${Math.round(hpBefore)}→${Math.round(S.hero.hp)}`);
 
-  // 이번에는 예비 동작 중에 굴러서 피합니다
+  /* ★ 구르기를 뺀 뒤의 기본 방어 — 예비 동작 중에 걸어서 사거리 밖으로 나가면 빗나갑니다.
+     이게 성립하지 않으면 붉은 예고가 의미를 잃습니다. */
   const T = Sim.createSim('yohwa');
   T.hero.x = 600; T.hero.y = 600; T.hero.hp = 100;
   T.monsters.push({ x: 620, y: 600, hp: 9999, maxHp: 9999, spd: 0, dmg: 40, cd: 0,
                     boss: false, hitFlash: 0, dead: false, windup: 0, windupTgt: null,
-                    vx: 0, vy: 0, hitStop: 0 });
+                    vx: 0, vy: 0, hitStop: 0, armor: 0 });
   run(T, 0.1);
-  T.input.x = -1; T.input.y = 0;
-  Sim.dodgeRoll(T);
+  T.input.x = -1; T.input.y = 0;              // 반대 방향으로 걸어서 물러납니다
   const hp0 = T.hero.hp;
   run(T, C.MONSTER_WINDUP + 0.3);
-  ok('예비 동작 중에 구르면 빗나간다 ← 컨트롤로 극복', T.hero.hp === hp0,
-     `${Math.round(hp0)} → ${Math.round(T.hero.hp)}`);
+  ok('예비 동작 중에 걸어서 물러나면 빗나간다 ← 컨트롤로 극복', T.hero.hp === hp0,
+     `${Math.round(hp0)} → ${Math.round(T.hero.hp)} · 이동 ${Math.round(T.hero.x - 600)}유닛`);
+
+  /* 궁극기의 무적으로도 흘릴 수 있습니다 */
+  const U = Sim.createSim('yohwa');
+  U.hero.x = 600; U.hero.y = 600; U.hero.hp = 100;
+  U.waveStats = { killed:0, byTrap:0, bySoldier:0, byHero:0, baseDmg:0, trapKills:{} };
+  U.monsters.push({ x: 620, y: 600, hp: 99999, maxHp: 99999, spd: 0, dmg: 40, cd: 0,
+                    boss: true, hitFlash: 0, dead: false, windup: 0, windupTgt: null,
+                    vx: 0, vy: 0, hitStop: 0, armor: 0 });
+  run(U, 0.1);
+  Sim.useSkill(U, 2);                          // 궁극기 = 무적
+  const uhp = U.hero.hp;
+  run(U, C.MONSTER_WINDUP_BOSS + 0.1);
+  ok('궁극기의 무적으로도 적의 공격을 흘릴 수 있다', U.hero.hp === uhp,
+     `${Math.round(uhp)} → ${Math.round(U.hero.hp)}`);
 }
 
 /* ── 14. 스킬 ────────────────────────────────────────── */
@@ -527,12 +559,119 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   const I = Sim.createSim('taesaja');
   I.pickaxe = true; I.res.wood = 999; I.res.stone = 999;
   I.hero.x = I.base.x; I.hero.y = I.base.y;
+  clearColumn(I, C.BASE_TX - 3, C.BASE_TY - 3, C.BASE_TY - 3);
   Sim.tryBuild(I, C.BASE_TX - 3, C.BASE_TY - 3, 'camp');
   Sim.hireSoldier(I);
   I.soldiers[0].role = 'iron';
   I.got.iron = 0;
   run(I, 150);
   ok('병사가 철을 캐서 거점에 내려놓는다', I.got.iron > 0, `누적 철 ${I.got.iron}`);
+}
+
+/* ── 22. 자원 5종이 실제로 지도에 있고 캘 수 있는가 ──── */
+{
+  const S = Sim.createSim('taesaja');
+  const byType = {};
+  for (const n of S.nodes) byType[n.type] = (byType[n.type] || 0) + 1;
+  for (const t of ['wood', 'stone', 'iron', 'herb'])
+    ok(`지도에 ${C.RESOURCES[t].name}(${t}) 자원지가 생성된다`, (byType[t] || 0) > 0, `${byType[t] || 0}곳`);
+  ok('가죽은 자원지가 아니라 몬스터 전리품이다', !byType.hide);
+
+  // 약초는 도구 없이 캘 수 있어야 합니다
+  const H = Sim.createSim('taesaja');
+  const herb = H.nodes.find(n => n.type === 'herb');
+  H.hero.x = herb.x; H.hero.y = herb.y;
+  run(H, 3);
+  ok('약초는 도구 없이 캘 수 있다', H.res.herb > 0, `약초 ${H.res.herb}`);
+
+  // 철은 곡괭이가 있어야
+  const I = Sim.createSim('taesaja');
+  const iron = I.nodes.find(n => n.type === 'iron');
+  I.hero.x = iron.x; I.hero.y = iron.y;
+  run(I, 3);
+  ok('철은 곡괭이 없이는 안 캐진다', I.res.iron === 0);
+
+  // 철광은 지도 중앙에만
+  const mid = Math.floor(C.MAPW / 2);
+  ok('철광은 지도 중앙 지대에만 있다',
+     S.nodes.filter(n => n.type === 'iron').every(n => Math.abs(n.tx - mid) <= 4));
+}
+
+/* ── 23. 각성 (뽑기 중복이 전투력이 되는가) ──────────── */
+{
+  const a = Sim.createSim('taesaja', 0);
+  const b = Sim.createSim('taesaja', 5);
+  ok('각성하면 전투력이 오른다', Sim.combatMul(b) > Sim.combatMul(a),
+     `${Sim.combatMul(a).toFixed(2)} → ${Sim.combatMul(b).toFixed(2)}`);
+  ok(`★5 면 전투력이 정확히 +${Math.round(C.AWAKEN_BONUS * 5 * 100)}% 다`,
+     Math.abs(Sim.combatMul(b) / Sim.combatMul(a) - (1 + C.AWAKEN_BONUS * 5)) < 1e-9);
+  ok('각성 단계는 최대치를 넘지 않는다', Sim.createSim('taesaja', 99).awaken === C.AWAKEN_MAX);
+  ok('각성 비용표가 최대 단계 수와 맞는다', C.AWAKEN_COST.length === C.AWAKEN_MAX);
+  ok('등급이 높을수록 중복 혼백이 많다',
+     C.SOUL_BY_GRADE['신화'] > C.SOUL_BY_GRADE['전설']
+     && C.SOUL_BY_GRADE['전설'] > C.SOUL_BY_GRADE['영웅']
+     && C.SOUL_BY_GRADE['영웅'] > C.SOUL_BY_GRADE['희귀']
+     && C.SOUL_BY_GRADE['희귀'] > C.SOUL_BY_GRADE['일반']);
+}
+
+/* ── 24. 함정이 침공로 위에 있는가 (판단 도구) ───────── */
+{
+  const S = Sim.createSim('taesaja');
+  S.res.wood = 9999; S.res.stone = 9999;
+  const path = Sim.invasionPath(S, Sim.upcomingDirs(S)[0]);
+  const on = path[Math.floor(path.length / 2)];
+
+  // 경로 위 한 칸
+  clearColumn(S, on.tx, on.ty, on.ty);
+  S.hero.x = on.tx * C.TILE; S.hero.y = on.ty * C.TILE;
+  ok('경로 위에 함정을 깐다', Sim.tryBuild(S, on.tx, on.ty, 'trap') === true);
+  let r = Sim.trapsOnPath(S);
+  ok('경로 위 함정은 경로 위로 센다', r.on === 1 && r.total === 1, JSON.stringify(r));
+
+  // 경로에서 5칸 떨어진 곳
+  const off = { tx: on.tx, ty: on.ty + 5 };
+  clearColumn(S, off.tx, off.ty, off.ty);
+  S.hero.x = off.tx * C.TILE; S.hero.y = off.ty * C.TILE;
+  ok('경로 밖에도 함정을 깔 수는 있다', Sim.tryBuild(S, off.tx, off.ty, 'trap') === true);
+  r = Sim.trapsOnPath(S);
+  ok('경로에서 벗어난 함정은 따로 센다', r.on === 1 && r.total === 2, JSON.stringify(r));
+  ok('벗어난 함정에 표시가 남는다',
+     S.traps.find(t => t.ty === off.ty).onPath === false);
+
+  /* ★ 목책으로 길을 틀면, 같은 자리의 함정이 경로 밖이 될 수 있습니다.
+     "목책을 세웠더니 길이 바뀌었다" 를 숫자로 확인할 수 있어야 합니다. */
+  const before = Sim.trapsOnPath(S).on;
+  const wx = on.tx + 3;
+  clearColumn(S, wx, C.BASE_TY - 6, C.BASE_TY + 6);
+  S.hero.x = wx * C.TILE; S.hero.y = C.BASE_TY * C.TILE;
+  let built = 0;
+  for (let y = C.BASE_TY - 6; y <= C.BASE_TY + 6; y++) if (Sim.tryBuild(S, wx, y, 'wall')) built++;
+  const after = Sim.trapsOnPath(S);
+  ok('목책을 세우면 함정의 경로 판정이 다시 계산된다',
+     built > 0 && typeof after.on === 'number',
+     `목책 ${built}개 · 경로 위 함정 ${before} → ${after.on}`);
+}
+
+/* ── 25. 건물이 실제로 무슨 일을 하는가 ──────────────── */
+{
+  const S = Sim.createSim('taesaja');
+  S.res.wood = 999; S.res.stone = 999;
+  S.hero.x = S.base.x; S.hero.y = S.base.y;
+
+  ok('병영을 짓기 전에는 병사를 못 뽑는다', Sim.hireSoldier(S) === false);
+  clearColumn(S, C.BASE_TX - 4, C.BASE_TY - 3, C.BASE_TY - 3);
+  Sim.tryBuild(S, C.BASE_TX - 4, C.BASE_TY - 3, 'camp');
+  ok('병영 1채 = 병사 정원 1', S.camps === 1);
+  ok('병영을 지어도 병사는 저절로 생기지 않는다', S.soldiers.length === 0);
+  ok('병영이 있으면 병사를 뽑을 수 있다', Sim.hireSoldier(S) === true);
+  ok('정원을 넘겨서는 못 뽑는다', Sim.hireSoldier(S) === false);
+
+  ok('대장간을 짓기 전에는 제작이 안 된다', Sim.canCraft(S, 'pickaxe').why === '대장간이 필요합니다');
+  clearColumn(S, C.BASE_TX - 4, C.BASE_TY + 3, C.BASE_TY + 3);
+  Sim.tryBuild(S, C.BASE_TX - 4, C.BASE_TY + 3, 'forge');
+  ok('대장간을 지으면 제작이 열린다', S.forge === true && Sim.canCraft(S, 'pickaxe').ok === true);
+  ok('대장간은 한 채면 충분하다 (두 번째는 막힘)',
+     Sim.canBuildAt(S, C.BASE_TX - 5, C.BASE_TY + 3, 'forge').why === 'owned');
 }
 
 console.log(results.join('\n'));

@@ -73,6 +73,12 @@ function buildMaterials() {
   MAT.foliage  = new THREE.MeshStandardMaterial({ color: 0x3f6b3a, roughness: 1 });
   MAT.rock     = new THREE.MeshStandardMaterial({ color: 0x7d7871, roughness: 0.85 });
   MAT.ironRock = new THREE.MeshStandardMaterial({ color: 0x4d4842, roughness: 0.7, metalness: 0.25 });
+  // 철광의 광맥 — 어두운 바위에 박힌 주황빛 결정. 이게 있어야 그냥 돌과 구분됩니다.
+  MAT.ironVein = new THREE.MeshStandardMaterial({ color: 0xC98A4B, roughness: 0.35, metalness: 0.6,
+                                                  emissive: 0x5a3312, emissiveIntensity: 0.55 });
+  MAT.herbLeaf = new THREE.MeshStandardMaterial({ color: 0x6FBF7A, roughness: 0.85 });
+  MAT.herbFlower = new THREE.MeshStandardMaterial({ color: 0xE8E3A0, roughness: 0.7,
+                                                    emissive: 0x3a3a10, emissiveIntensity: 0.4 });
   MAT.trapMat  = new THREE.MeshStandardMaterial({ color: 0xC6412F, roughness: 0.6, metalness: 0.3 });
   MAT.flag     = new THREE.MeshStandardMaterial({ color: 0xE0B44A, roughness: 0.8, side: THREE.DoubleSide });
 }
@@ -319,14 +325,21 @@ export function buildWorld(S) {
 /* 나무·바위·철광은 InstancedMesh 로 묶습니다.
    131개를 따로 그리면 draw call 이 131번이지만, 묶으면 3번입니다. */
 function buildNodeInstances(S) {
-  const counts = { wood: 0, stone: 0, iron: 0 };
-  for (const n of S.nodes) counts[n.type]++;
+  /* ★ 예전 코드는 herb 를 세지 않고 iron 인스턴스에 같이 그려 넣었습니다.
+     철광 용량(14)보다 많은 40개를 쓰는 바람에 약초 26포기가 화면에서 통째로 사라졌고,
+     그려진 것들도 철광과 똑같은 회색 돌로 보였습니다.
+     ("나무랑 돌밖에 안 보인다" 의 원인이 이것입니다) */
+  const counts = { wood: 0, stone: 0, iron: 0, herb: 0 };
+  for (const n of S.nodes) counts[n.type] = (counts[n.type] || 0) + 1;
 
   const trunkGeo = new THREE.CylinderGeometry(0.09, 0.14, 0.9, 6);
   const leafGeo = new THREE.ConeGeometry(0.62, 1.35, 7);
   const leaf2Geo = new THREE.ConeGeometry(0.44, 1.0, 7);     // 위쪽 작은 잎 — 실루엣이 살아납니다
   const rockGeo = new THREE.IcosahedronGeometry(0.42, 0);
   const ironGeo = new THREE.DodecahedronGeometry(0.46, 0);
+  const veinGeo = new THREE.OctahedronGeometry(0.2, 0);      // 철광에 박힌 결정
+  const herbGeo = new THREE.SphereGeometry(0.3, 7, 5);       // 약초 덤불
+  const budGeo  = new THREE.SphereGeometry(0.1, 6, 4);       // 그 위의 꽃
 
   /* models/ 에 모델이 등록돼 있으면 그 지오메트리를 씁니다.
      없으면 지금처럼 도형으로 그립니다 — 그래서 언제 넣어도 됩니다. */
@@ -361,6 +374,9 @@ function buildNodeInstances(S) {
   const [ig, im2] = pick('iron', ironGeo, MAT.ironRock);
   R.nodeInst.rock  = mk(rg, rm, counts.stone);
   R.nodeInst.iron  = mk(ig, im2, counts.iron);
+  R.nodeInst.vein  = mk(veinGeo, MAT.ironVein, counts.iron);
+  R.nodeInst.herb  = mk(herbGeo, MAT.herbLeaf, counts.herb);
+  R.nodeInst.bud   = mk(budGeo, MAT.herbFlower, counts.herb);
 
   refreshNodes(S);
 }
@@ -379,7 +395,7 @@ function hash01(a, b) {
 }
 
 export function refreshNodes(S) {
-  let wi = 0, ri = 0, ii = 0;
+  let wi = 0, ri = 0, ii = 0, hi = 0;
   for (const n of S.nodes) {
     const x = gx(n.x), z = gz(n.y);
     const alive = n.amt > 0;
@@ -417,17 +433,36 @@ export function refreshNodes(S) {
       _col.setHSL(0.09, 0.05 + r1 * 0.05, 0.36 + r2 * 0.2);
       R.nodeInst.rock.setColorAt(ri, _col);
       R.nodeInst.rock.setMatrixAt(ri++, _m4.compose(_v, _q, _sc));
-    } else {
+    } else if (n.type === 'iron') {
       _q.setFromAxisAngle(new THREE.Vector3(0.2, 1, 0.4).normalize(), (n.tx * 7 + n.ty * 23) % 6.28);
       _sc.setScalar(alive ? 1 : 0.4);
       _v.set(x, alive ? 0.34 : 0.15, z);
-      R.nodeInst.iron.setMatrixAt(ii++, _m4.compose(_v, _q, _sc));
+      R.nodeInst.iron.setMatrixAt(ii, _m4.compose(_v, _q, _sc));
+      // 바위 위로 삐져나온 주황 결정 — 멀리서도 "저건 철광이다" 가 보입니다
+      _q.setFromEuler(new THREE.Euler(r1 * 2, r2 * 6.28, r1 * 1.5));
+      _sc.setScalar(alive ? 0.9 + r2 * 0.5 : 0.001);
+      _v.set(x + (r1 - 0.5) * 0.3, alive ? 0.62 : 0, z + (r2 - 0.5) * 0.3);
+      R.nodeInst.vein.setMatrixAt(ii++, _m4.compose(_v, _q, _sc));
+    } else {
+      // 약초 — 낮고 둥근 초록 덤불에 옅은 꽃. 나무·바위와 실루엣이 확실히 다릅니다.
+      _q.setFromEuler(new THREE.Euler(0, r1 * 6.28, 0));
+      const hs = alive ? 0.85 + r1 * 0.45 : 0.3;
+      _sc.set(hs * 1.15, hs * 0.75, hs * 1.15);
+      _v.set(x, 0.2 * hs, z);
+      _col.setHSL(0.29 + r2 * 0.05, 0.35 + r1 * 0.20, 0.32 + r2 * 0.12);
+      R.nodeInst.herb.setColorAt(hi, _col);
+      R.nodeInst.herb.setMatrixAt(hi, _m4.compose(_v, _q, _sc));
+      _sc.setScalar(alive ? 0.9 + r1 * 0.5 : 0.001);
+      _v.set(x + (r1 - 0.5) * 0.25, alive ? 0.42 * hs + 0.12 : 0, z + (r2 - 0.5) * 0.25);
+      R.nodeInst.bud.setMatrixAt(hi++, _m4.compose(_v, _q, _sc));
     }
   }
   R.nodeInst.trunk.count = wi;
   R.nodeInst.leaf.count = R.usingTreeModel ? 0 : wi;
   R.nodeInst.leaf2.count = R.usingTreeModel ? 0 : wi;
-  R.nodeInst.rock.count = ri;  R.nodeInst.iron.count = ii;
+  R.nodeInst.rock.count = ri;
+  R.nodeInst.iron.count = ii;  R.nodeInst.vein.count = ii;
+  R.nodeInst.herb.count = hi;  R.nodeInst.bud.count  = hi;
   for (const k in R.nodeInst) {
     R.nodeInst[k].instanceMatrix.needsUpdate = true;
     if (R.nodeInst[k].instanceColor) R.nodeInst[k].instanceColor.needsUpdate = true;
@@ -999,14 +1034,9 @@ export function sync(S, dt) {
     R.hero.userData.head.position.y = 1.48 + bob;
 
     // ── 회피 구르기 — 앞으로 구르는 회전 ──
-    if (S.hero.dodgeT > 0) {
-      const p = 1 - S.hero.dodgeT / C.DODGE_TIME;
-      R.hero.rotation.x = -p * Math.PI * 2;
-      R.hero.position.y = Math.sin(p * Math.PI) * 0.25;
-    } else {
-      R.hero.rotation.x = 0;
-      R.hero.position.y = 0;
-    }
+    // 무적(부활 직후·궁극기)일 때는 살짝 떠오르며 빛납니다
+    R.hero.rotation.x = 0;
+    R.hero.position.y = S.hero.invuln > 0 ? Math.sin(S.t * 14) * 0.05 + 0.06 : 0;
     // 표식은 몸이 구르거나 돌아도 늘 땅에 붙어 있어야 합니다
     const mk = R.hero.userData.marker;
     if (mk) {
@@ -1507,10 +1537,20 @@ function drawMinimap(S) {
   ctx.fillStyle = '#1a2418';
   ctx.fillRect(0, 0, w, h);
 
-  // 중앙 자원 지대
+  // 중앙 철광 지대
   const mid = Math.floor(C.MAPW / 2);
-  ctx.fillStyle = 'rgba(224,180,74,0.14)';
+  ctx.fillStyle = 'rgba(201,138,75,0.13)';
   ctx.fillRect((mid - 4) * C.TILE * sx, 0, 8 * C.TILE * sx, h);
+
+  /* 자원지 — 어디에 뭐가 있는지 미니맵만 봐도 알게 합니다.
+     철광은 중앙에만, 약초는 들판 곳곳이라 이 점들이 길잡이가 됩니다. */
+  const NODE_DOT = { wood: '#4e8f5e', stone: '#8d8a83', iron: '#C98A4B', herb: '#7fd98c' };
+  for (const n of S.nodes) {
+    if (n.amt <= 0) continue;
+    ctx.fillStyle = NODE_DOT[n.type] || '#666';
+    const r = n.type === 'iron' ? 3 : 2;
+    ctx.fillRect(n.x * sx - r / 2, n.y * sy - r / 2, r, r);
+  }
 
   // 목책
   ctx.fillStyle = '#96703f';
@@ -1519,10 +1559,10 @@ function drawMinimap(S) {
     ctx.fillRect((k % C.MAPW) * C.TILE * sx, ((k / C.MAPW) | 0) * C.TILE * sy,
                  Math.max(1.5, C.TILE * sx), Math.max(1.5, C.TILE * sy));
   }
-  // 함정
-  ctx.fillStyle = '#C6412F';
+  // 함정 — 침공로 위는 붉게, 벗어난 것은 회색. 한눈에 헛수고를 알아볼 수 있습니다.
   for (const t of S.traps) {
     if (t.dur <= 0) continue;
+    ctx.fillStyle = t.onPath === false ? '#5c5850' : '#C6412F';
     ctx.fillRect(t.tx * C.TILE * sx, t.ty * C.TILE * sy, Math.max(1.5, C.TILE * sx), Math.max(1.5, C.TILE * sy));
   }
   // ★ 예상 침공로 — 3D 바닥에 그린 것과 같은 길을 미니맵에도 그립니다

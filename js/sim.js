@@ -86,12 +86,13 @@ export const OBJECTIVES = [
 /* ==================================================================
    생성
    ================================================================== */
-export function createSim(heroId) {
+export function createSim(heroId, awaken = 0) {
   const heroDef = C.GENERALS.find(g => g.id === heroId) || C.GENERALS[1];
   const mul = heroDef.startRes;
 
   const S = {
     heroDef,
+    awaken: Math.max(0, Math.min(C.AWAKEN_MAX, awaken)),   // 각성 ★ 단계
     phase: 'day',            // day | warn | night | report | over
     day: 1, dayT: 0, warnT: 0, t: 0,
     over: false, win: false,
@@ -108,9 +109,9 @@ export function createSim(heroId) {
       cd: 0, dead: false, respawn: 0, gp: 0,
       facing: 0, moving: false, swing: 0, swingKind: 'attack',
       // 회피
-      dodgeT: 0, dodgeCd: 0, dodgeX: 0, dodgeY: 0, invuln: 0,
+      invuln: 0,
       // 스킬
-      skillCd: [0, 0],
+      skillCd: [0, 0, 0],
       guard: 0, guardReduce: 0,          // 철벽
       frenzy: 0, frenzyAtk: 1, frenzyMove: 1,   // 무쌍난무
       volley: 0, volleyT: 0,             // 연사
@@ -256,6 +257,29 @@ export function invasionPath(S, side) {
   return path;
 }
 
+/** 다음 웨이브가 지나갈 칸들의 집합. 함정을 어디에 깔지 판단하는 근거가 됩니다. */
+export function pathTileSet(S) {
+  const set = new Set();
+  for (const d of upcomingDirs(S))
+    for (const t of invasionPath(S, d)) set.add(tkey(t.tx, t.ty));
+  return set;
+}
+
+/** 깔아둔 함정 중 몇 개가 실제 침공로 위에 있는가.
+    "목책을 세웠더니 길이 바뀌었는데, 그래서 내 함정은 지금 쓸모가 있나?" 에 답하는 숫자입니다.
+    경로에서 한 칸 옆으로 비껴도 몬스터는 밟지 않습니다. */
+export function trapsOnPath(S) {
+  const set = pathTileSet(S);
+  let on = 0, total = 0;
+  for (const t of S.traps) {
+    if (t.dur <= 0) continue;
+    total++;
+    if (set.has(tkey(t.tx, t.ty))) { t.onPath = true; on++; }
+    else t.onPath = false;
+  }
+  return { on, total };
+}
+
 /** 다음 웨이브의 방향들. 아직 남은 웨이브가 없으면 빈 배열. */
 export function upcomingDirs(S) {
   const w = nextWave(S);
@@ -312,6 +336,7 @@ export function combatMul(S) {
   let m = S.heroDef.combat;
   if (S.day >= 22) m *= 1 + S.heroDef.lateGrow;
   m *= 1 + 0.25 * S.weaponLv;
+  m *= 1 + C.AWAKEN_BONUS * (S.awaken || 0);   // 각성 — 뽑기 중복이 실력으로 쌓입니다
   if (S.lastStand) m *= 1.5;
   return m;
 }
@@ -381,8 +406,16 @@ export function tryBuild(S, tx, ty, buildId) {
   } else {
     S.structs.push({ tx, ty, x: tx * C.TILE + C.TILE / 2, y: ty * C.TILE + C.TILE / 2, type: def.id });
     S.occ[k] = C.OCC_STRUCT;
-    if (def.id === 'camp') { S.camps++; S.cnt.camp++; }
-    if (def.id === 'forge') { S.forge = true; toast(S, '제작소가 열렸습니다 — <b>돌 곡괭이</b>를 만드세요'); }
+    if (def.id === 'camp') {
+      S.camps++; S.cnt.camp++;
+      // 병영을 지었다고 병사가 생기는 게 아니라는 점을 그 자리에서 알려줍니다
+      toast(S, `병영 완성 — 병사 정원 <b>${S.soldiers.length}/${S.camps}</b>. `
+             + '아래 <b>＋ 병사 고용</b>을 눌러야 들어옵니다');
+    }
+    if (def.id === 'forge') {
+      S.forge = true;
+      toast(S, '대장간 완성 — <b>🔨 제작·성</b> 버튼에서 <b>돌 곡괭이</b>부터 만드세요');
+    }
     emit(S, 'build', { kind: def.id, tx, ty });
   }
   sound(S, 'build');
@@ -632,7 +665,7 @@ function updateBaseTower(S, dt) {
     자동 공격도 그대로 돌아가므로, 클릭은 "직접 때리는 손맛"을 위한 것입니다. */
 export function clickAttack(S) {
   const h = S.hero;
-  if (S.over || h.dead || h.cd > 0 || h.dodgeT > 0) return false;
+  if (S.over || h.dead || h.cd > 0) return false;
 
   const R = heroRange(S);
   let best = null, bd = R * R;
@@ -663,27 +696,6 @@ export function clickAttack(S) {
   return true;
 }
 
-/* ==================================================================
-   회피 — 컨트롤로 극복하는 핵심 장치
-   ================================================================== */
-export function dodgeRoll(S) {
-  const h = S.hero;
-  if (S.over || h.dead || h.dodgeCd > 0 || h.dodgeT > 0) return false;
-
-  // 움직이는 방향으로, 가만히 있으면 바라보는 방향으로 구릅니다
-  let dx = S.input.x, dy = S.input.y;
-  if (Math.hypot(dx, dy) < 0.05) { dx = Math.sin(h.facing); dy = Math.cos(h.facing); }
-  const len = Math.hypot(dx, dy) || 1;
-
-  h.dodgeX = dx / len; h.dodgeY = dy / len;
-  h.dodgeT = C.DODGE_TIME;
-  h.dodgeCd = C.DODGE_CD;
-  h.invuln = Math.max(h.invuln, C.DODGE_INVULN);
-  h.facing = Math.atan2(h.dodgeX, h.dodgeY);
-  emit(S, 'dodge', { x: h.x, y: h.y });
-  sound(S, 'dodge');
-  return true;
-}
 
 /* ==================================================================
    스킬
@@ -694,8 +706,12 @@ export function useSkill(S, slot) {
   if (S.over || h.dead || !def || h.skillCd[slot] > 0) return false;
 
   h.skillCd[slot] = def.cd;
-  h.swing = 0.32; h.swingKind = def.type;
+  h.swing = def.ult ? 0.6 : 0.32; h.swingKind = def.type;
   const dmgBase = heroDamage(S);
+  /* 궁극기는 쓰는 동안 무적입니다.
+     구르기를 뺀 대신, "위험할 때 눌러서 흘리는" 역할을 궁극기가 받습니다. */
+  if (def.invuln) h.invuln = Math.max(h.invuln, def.invuln);
+  let ultHeal = 0;
 
   switch (def.type) {
     case 'arc': {          // 참격 — 전방 부채꼴
@@ -710,7 +726,7 @@ export function useSkill(S, slot) {
         damageMonster(S, m, dmgBase * def.dmg, 'hero', null, true);
         hit++;
       }
-      emit(S, 'skillFx', { kind: 'arc', x: h.x, y: h.y, facing: h.facing, range: R, hit });
+      emit(S, 'skillFx', { kind: 'arc', x: h.x, y: h.y, facing: h.facing, range: R, hit, ult: !!def.ult });
       break;
     }
     case 'spin': {         // 회선 — 360도
@@ -720,9 +736,10 @@ export function useSkill(S, slot) {
         if (dist2(h.x, h.y, m.x, m.y) > R * R) continue;
         knockback(m, h.x, h.y, C.KNOCKBACK_SKILL * def.knock);
         damageMonster(S, m, dmgBase * def.dmg, 'hero', null, true);
+        if (def.lifesteal) ultHeal += dmgBase * def.dmg * def.lifesteal;
         hit++;
       }
-      emit(S, 'skillFx', { kind: 'spin', x: h.x, y: h.y, range: R, hit });
+      emit(S, 'skillFx', { kind: 'spin', x: h.x, y: h.y, range: R, hit, ult: !!def.ult });
       break;
     }
     case 'pierce': {       // 관통사 — 직선
@@ -738,12 +755,12 @@ export function useSkill(S, slot) {
         damageMonster(S, m, dmgBase * def.dmg, 'hero', null, true);
         hit++;
       }
-      emit(S, 'skillFx', { kind: 'pierce', x: h.x, y: h.y, facing: h.facing, range: R, hit });
+      emit(S, 'skillFx', { kind: 'pierce', x: h.x, y: h.y, facing: h.facing, range: R, hit, ult: !!def.ult });
       break;
     }
     case 'multi':          // 연사 — 여러 발을 나눠 쏩니다
       h.volley = def.shots; h.volleyT = 0;
-      emit(S, 'skillFx', { kind: 'multi', x: h.x, y: h.y });
+      emit(S, 'skillFx', { kind: 'multi', x: h.x, y: h.y, ult: !!def.ult });
       break;
     case 'guard':          // 철벽
       h.guard = def.dur; h.guardReduce = def.reduce;
@@ -754,8 +771,14 @@ export function useSkill(S, slot) {
       emit(S, 'skillFx', { kind: 'frenzy', x: h.x, y: h.y, dur: def.dur });
       break;
   }
-  toast(S, `<b style="color:${S.heroDef.color}">${def.name}</b>`);
-  sound(S, 'skill');
+  if (ultHeal > 0) {
+    h.hp = Math.min(h.maxHp, h.hp + ultHeal);
+    fx(S, h.x, h.y - 30, `+${Math.round(ultHeal)}`, '#5FAE72');
+  }
+  toast(S, def.ult
+    ? `<b style="color:${S.heroDef.color};font-size:15px">${def.name}</b> <span style="color:#9fd8ff">— 무적</span>`
+    : `<b style="color:${S.heroDef.color}">${def.name}</b>`);
+  sound(S, def.ult ? 'ult' : 'skill');
   return true;
 }
 
@@ -770,7 +793,7 @@ function knockback(m, fromX, fromY, power) {
 /* 장수가 맞을 때 — 무적·철벽을 거칩니다 */
 function damageHero(S, amt, from) {
   const h = S.hero;
-  if (h.invuln > 0) { fx(S, h.x, h.y - 20, '회피!', '#5FAE72'); emit(S, 'dodgeSuccess'); return false; }
+  if (h.invuln > 0) { fx(S, h.x, h.y - 20, '무적!', '#9fd8ff'); emit(S, 'invulnBlock'); return false; }
   if (h.guard > 0) amt *= (1 - h.guardReduce);
   if (S.gear.ironmail) amt *= 0.8;
   h.hp -= amt;
@@ -779,7 +802,7 @@ function damageHero(S, amt, from) {
   if (h.hp <= 0 && !h.dead) {
     h.dead = true;
     h.respawn = C.RESPAWN_BASE + S.day * 0.2;
-    h.dodgeT = 0; h.volley = 0; h.guard = 0; h.frenzy = 0; h.frenzyAtk = 1; h.frenzyMove = 1;
+    h.volley = 0; h.guard = 0; h.frenzy = 0; h.frenzyAtk = 1; h.frenzyMove = 1;
     toast(S, `<b>${S.heroDef.name}</b> 쓰러짐 — ${Math.round(h.respawn)}초 후 부활 (탈락은 없습니다)`);
     sound(S, 'heroDown');
   }
@@ -869,10 +892,12 @@ function endWave(S) {
   const trapPct = st.killed ? Math.round(st.byTrap / st.killed * 100) : 0;
   const soldPct = st.killed ? Math.round(st.bySoldier / st.killed * 100) : 0;
 
+  const tp = trapsOnPath(S);
   S.phase = 'report';
   emit(S, 'report', {
     day: w.day, name: w.name, note: w.note, advice: w.advice,
     killed: st.killed, trapPct, soldPct, mvp,
+    trapsOn: tp.on, trapsTotal: tp.total,
     baseDmg: Math.round(st.baseDmg), reward
   });
   sound(S, 'report');
@@ -956,7 +981,7 @@ function updateHero(S, dt) {
       h.dead = false; h.hp = h.maxHp;
       h.x = S.base.x; h.y = S.base.y + C.TILE * 2;
       h.invuln = Math.max(h.invuln, C.RESPAWN_INVULN);   // 부활 직후 잠깐 무적
-      h.cd = 0; h.dodgeCd = 0;
+      h.cd = 0;
       toast(S, `<b>${S.heroDef.name}</b> 부활 — ${C.RESPAWN_INVULN}초간 무적`);
       emit(S, 'respawn');
     }
@@ -967,7 +992,6 @@ function updateHero(S, dt) {
   h.cd -= dt;
   if (h.swing > 0) h.swing -= dt;
   if (h.invuln > 0) h.invuln -= dt;
-  if (h.dodgeCd > 0) h.dodgeCd -= dt;
   for (let i = 0; i < h.skillCd.length; i++) if (h.skillCd[i] > 0) h.skillCd[i] -= dt;
   if (h.guard > 0 && (h.guard -= dt) <= 0) { h.guard = 0; h.guardReduce = 0; }
   if (h.frenzy > 0 && (h.frenzy -= dt) <= 0) { h.frenzy = 0; h.frenzyAtk = 1; h.frenzyMove = 1; }
@@ -975,15 +999,7 @@ function updateHero(S, dt) {
   const spd = C.HERO_SPD * (S.lastStand ? 1.2 : 1) * h.frenzyMove;
 
   // ── 회피 중에는 구르는 방향으로만 움직입니다 (입력 무시) ──
-  if (h.dodgeT > 0) {
-    h.dodgeT -= dt;
-    const v = C.DODGE_DIST / C.DODGE_TIME;
-    h.x = clamp(h.x + h.dodgeX * v * dt, 8, C.WORLD_W - 8);
-    h.y = clamp(h.y + h.dodgeY * v * dt, 8, C.WORLD_H - 8);
-    h.moving = true;
-    h.gatherTarget = null;
-    return;                      // 구르는 동안은 공격도 채집도 안 합니다
-  }
+
 
   const iv = S.input;
   h.moving = !!(iv.x || iv.y);

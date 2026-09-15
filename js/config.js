@@ -58,15 +58,11 @@ export const GATHER_RANGE = 58;        // 가까이만 가면 캐지도록 넉�
    장수의 위치가 전략적 의미를 갖습니다. 넉넉하게 7칸. */
 export const BUILD_RANGE = 7 * 28;
 
-/* ---------- 회피 (컨트롤로 극복하는 핵심 장치) ---------- */
-export const DODGE_DIST = 130;          // 구르는 거리
-export const DODGE_TIME = 0.28;         // 구르는 시간(초)
-export const DODGE_INVULN = 0.38;       // 무적 시간(초) — 구르는 시간보다 살짝 깁니다
-export const DODGE_CD = 1.1;            // 재사용 대기
-
 /* ---------- 적 공격 예비 동작 ----------
    몬스터가 곧바로 때리지 않고 0.45초 동안 팔을 치켜듭니다.
-   그 사이에 구르면 피해집니다. 이게 없으면 회피가 의미를 잃습니다. */
+   ★ 구르기(회피)는 뺐습니다. 대신 그 사이에 **걸어서 사거리 밖으로 나가면** 빗나갑니다.
+     붉은 원이 차오를 때 뒤로 물러서는 것이 이 게임의 기본 방어입니다.
+     급하면 궁극기(Space)의 무적 순간으로 흘려도 됩니다. */
 export const MONSTER_WINDUP = 0.45;
 export const MONSTER_WINDUP_BOSS = 0.7;
 
@@ -124,7 +120,10 @@ export const GENERALS = [
       { key:'Q', name:'참격', cd:6, desc:'전방을 크게 베어 여러 적을 한 번에 밀쳐냅니다',
         type:'arc', range:1.7, arc:2.1, dmg:2.2, knock:1.0 },
       { key:'E', name:'철벽', cd:16, desc:'4초간 받는 피해가 60% 줄고 주변 적을 끌어당깁니다',
-        type:'guard', dur:4, reduce:0.6 }
+        type:'guard', dur:4, reduce:0.6 },
+      { key:'Space', name:'천지개벽', cd:30, ult:true,
+        desc:'땅을 내리쳐 주변을 전부 쓸어버리고, 그동안 무적입니다',
+        type:'spin', range:3.2, dmg:5.5, knock:2.0, invuln:1.3 }
     ] },
   { id:'taesaja', name:'태사자', grade:'희귀', free:true, color:'#5B8FC7', accent:'#8fb8e0',
     combat:1.10, startRes:1.15, waveMul:0.95, lateGrow:0.20,
@@ -136,7 +135,10 @@ export const GENERALS = [
       { key:'Q', name:'연사', cd:6, desc:'화살 3발을 빠르게 쏩니다',
         type:'multi', shots:3, dmg:0.9, interval:0.12 },
       { key:'E', name:'관통사', cd:16, desc:'직선상의 모든 적을 꿰뚫는 강력한 일격',
-        type:'pierce', range:4.2, width:0.55, dmg:3.4 }
+        type:'pierce', range:4.2, width:0.55, dmg:3.4 },
+      { key:'Space', name:'만궁', cd:30, ult:true,
+        desc:'하늘을 덮는 화살비. 쏘는 동안 무적입니다',
+        type:'multi', shots:14, dmg:1.15, interval:0.06, invuln:1.3 }
     ] },
   { id:'yeopo', name:'여포', grade:'전설', free:true, color:'#E08B3C', accent:'#f0b878',
     combat:1.40, startRes:0.85, waveMul:1.15, lateGrow:0.00,
@@ -148,7 +150,10 @@ export const GENERALS = [
       { key:'Q', name:'회선', cd:6, desc:'제자리에서 360도 휘둘러 주변을 전부 쓸어버립니다',
         type:'spin', range:1.9, dmg:2.0, knock:1.2 },
       { key:'E', name:'무쌍난무', cd:16, desc:'4초간 공격 속도와 이동 속도가 크게 오릅니다',
-        type:'frenzy', dur:4, atkSpd:0.45, moveSpd:1.35 }
+        type:'frenzy', dur:4, atkSpd:0.45, moveSpd:1.35 },
+      { key:'Space', name:'무신강림', cd:30, ult:true,
+        desc:'방천화극을 크게 돌려 주변을 초토화합니다. 그동안 무적입니다',
+        type:'spin', range:3.6, dmg:6.5, knock:2.4, invuln:1.4 }
     ] },
 
   /* ── 아래 셋은 가챠로 뽑아야 열립니다 (출전 후보 확장) ── */
@@ -162,7 +167,10 @@ export const GENERALS = [
       { key:'Q', name:'혈전', cd:6, desc:'전방을 베며 회복량이 크게 늘어납니다',
         type:'arc', range:1.6, arc:2.0, dmg:2.0, knock:0.8 },
       { key:'E', name:'불굴', cd:16, desc:'5초간 받는 피해가 절반이 되고 회복이 두 배',
-        type:'guard', dur:5, reduce:0.5 }
+        type:'guard', dur:5, reduce:0.5 },
+      { key:'Space', name:'혈해', cd:30, ult:true,
+        desc:'주변을 베어 넘기고 입힌 피해의 절반을 회복합니다. 그동안 무적입니다',
+        type:'spin', range:3.0, dmg:5.0, knock:1.8, invuln:1.3, lifesteal:0.5 }
     ] },
   { id:'hwangchung', name:'황충', grade:'영웅', color:'#5FAE72', accent:'#9fdcae',
     combat:1.15, startRes:1.0, waveMul:1.0, lateGrow:0.18,
@@ -174,7 +182,10 @@ export const GENERALS = [
       { key:'Q', name:'속사', cd:6, desc:'화살 4발을 연달아 쏩니다',
         type:'multi', shots:4, dmg:0.85, interval:0.1 },
       { key:'E', name:'천지사', cd:16, desc:'직선상의 모든 적을 꿰뚫는 강력한 일격',
-        type:'pierce', range:4.6, width:0.6, dmg:3.8 }
+        type:'pierce', range:4.6, width:0.6, dmg:3.8 },
+      { key:'Space', name:'백보천양', cd:30, ult:true,
+        desc:'화살 한 발로 직선상의 모든 것을 꿰뚫습니다. 쏘는 동안 무적입니다',
+        type:'pierce', range:8.0, width:1.1, dmg:9.0, invuln:1.2 }
     ] },
   { id:'gwanwoo', name:'관우', grade:'전설', color:'#C6412F', accent:'#f09a86',
     combat:1.35, startRes:0.9, waveMul:1.1, lateGrow:0.05,
@@ -186,7 +197,10 @@ export const GENERALS = [
       { key:'Q', name:'월참', cd:6, desc:'반달 모양으로 크게 베어 넘깁니다',
         type:'arc', range:2.1, arc:2.6, dmg:2.4, knock:1.1 },
       { key:'E', name:'청룡강림', cd:16, desc:'제자리에서 두 바퀴 휘둘러 주변을 쓸어버립니다',
-        type:'spin', range:2.3, dmg:2.6, knock:1.4 }
+        type:'spin', range:2.3, dmg:2.6, knock:1.4 },
+      { key:'Space', name:'청룡참', cd:30, ult:true,
+        desc:'청룡언월도로 반원을 크게 가릅니다. 그동안 무적입니다',
+        type:'arc', range:3.4, arc:3.2, dmg:6.5, knock:2.2, invuln:1.3 }
     ] }
 ];
 
@@ -252,13 +266,17 @@ export const WAVES = [
 /* ---------- 건설 ---------- */
 export const BUILDS = [
   { id:'wall',  name:'목책',     icon:'🧱', cost:{ wood:8 }, hp:130,
-    desc:'몬스터 경로를 막습니다. 장수와 병사는 넘어다닐 수 있습니다.' },
+    desc:'적의 길을 막아 돌아가게 만듭니다. 장수와 병사는 넘어다닙니다. 막는 게 아니라 길을 몰아가는 도구입니다.',
+    effect:'침공로를 바꿉니다' },
   { id:'trap',  name:'가시함정', icon:'🔻', cost:{ wood:5, stone:10 }, dur:200,
-    desc:'밟고 지나가는 몬스터를 크게 늦추고 지속 피해를 줍니다.' },
+    desc:'밟고 지나가는 적을 크게 늦추고 계속 피해를 줍니다. 바닥의 붉은 화살표 위에 깔아야 일을 합니다.',
+    effect:'침공로 위에서만 효과' },
   { id:'camp',  name:'병영',     icon:'⛺', cost:{ wood:25, stone:15 },
-    desc:'병사 고용 한도 +1. 반복 노동을 병사에게 위임하세요.' },
+    desc:'병사를 둘 자리가 1칸 늘어납니다. 병영만 지어서는 병사가 안 나오고, 아래 「＋ 병사 고용」을 눌러야 들어옵니다.',
+    effect:'병사 정원 +1 (고용은 따로)' },
   { id:'forge', name:'대장간',   icon:'🔨', cost:{ wood:30, stone:25 }, once:true,
-    desc:'제작소가 열립니다. 돌 곡괭이·무기 강화 제작.' }
+    desc:'🔨 제작·성 화면의 장비 제작이 열립니다. 돌 곡괭이가 있어야 철을 캘 수 있으니 가장 먼저 지으세요. 한 채면 충분합니다.',
+    effect:'장비 제작 개방 (1채면 충분)' }
 ];
 
 export const TRAP_DPS = 42;
@@ -371,6 +389,15 @@ export const GEM_PACKS = [
   { id:'p4', gem:3000, price:'₩49,000', bonus:700, tag:'최대 혜택' }
 ];
 export const GEM_FREE_DAILY = 30;       // 하루 한 번 무료 보석
+
+/* ---------- 중복 카드 · 각성 ----------
+   뽑기에서 이미 가진 장수가 또 나오면 허탈합니다.
+   중복은 '혼백(魂)'으로 바뀌고, 혼백을 모아 장수를 각성시킵니다.
+   등급이 높을수록 더 많이 주고, 각성 한 단계마다 전투력이 오릅니다. */
+export const SOUL_BY_GRADE = { 일반: 2, 희귀: 5, 영웅: 15, 전설: 40, 신화: 100 };
+export const AWAKEN_MAX = 5;            // ★5 까지
+export const AWAKEN_COST = [20, 45, 90, 170, 300];   // 1→2, 2→3 …
+export const AWAKEN_BONUS = 0.06;       // 한 단계마다 전투력 +6% (★5 = +30%)
 
 /* ---------- 보상 ---------- */
 export const WAVE_SHARD = [15, 25, 40, 50, 60, 80, 95, 115, 150];

@@ -118,6 +118,12 @@ const RECIPE = {
   /* ── 조작 ── */
   dodge:     t => { noise(t, 0.16, 0.24, 'bandpass', 1500, 0.6); tone(t, 520, 900, 0.12, 0.10, 'sine'); },
   skill:     t => { tone(t, 420, 980, 0.22, 0.26, 'triangle'); noise(t, 0.16, 0.30, 'bandpass', 1700, 1.0); },
+  /* 궁극기 — 낮게 깔리는 울림 + 위로 솟는 음. 평타·스킬과 확실히 구별돼야 합니다. */
+  ult:       t => { tone(t, 90, 44, 1.0, 0.5, 'sawtooth');
+                    tone(t + 0.04, 300, 1400, 0.5, 0.3, 'triangle');
+                    tone(t + 0.04, 450, 2100, 0.45, 0.16, 'square');
+                    noise(t, 0.5, 0.45, 'bandpass', 900, 0.7);
+                    noise(t + 0.18, 0.35, 0.3, 'highpass', 2200, 0.9); },
   build:     t => { tone(t, 320, 440, 0.09, 0.22, 'triangle'); noise(t, 0.05, 0.16, 'bandpass', 800, 1.0); },
   deny:      t => { tone(t, 220, 150, 0.16, 0.24, 'square'); },
   hire:      t => { tone(t, 520, 660, 0.10, 0.22, 'triangle'); tone(t + 0.09, 660, 790, 0.12, 0.18, 'triangle'); },
