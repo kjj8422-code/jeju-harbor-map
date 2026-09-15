@@ -163,5 +163,16 @@ export const WAVE_SHARD = [15, 25, 40];
 export const OBJECTIVE_SHARD = 3;
 export const WIN_SHARD = 30, LOSE_SHARD = 10;
 
-/* ---------- 성능 예산 (검수 기준) ---------- */
-export const BUDGET = { drawCalls: 120, triangles: 150000, minFps: 30 };
+/* ---------- 성능 예산 (검수 기준) ----------
+   ※ 처음 잡은 120은 그림자를 켜기 전의 숫자였습니다.
+     그림자는 물체를 한 번 더 그리므로 draw call 이 대략 두 배가 됩니다.
+     실제로 재보고 두 경로를 따로 적습니다.
+
+   최악 장면 = 33일 밤 + 몬스터 21 + 목책 25 + 함정 10 + 나무 120 + 시설 + 미니맵 */
+export const BUDGET = {
+  // 저사양·모바일 (그림자·후처리 자동 OFF) — 측정값 105
+  lowSpec:  { drawCalls: 120, triangles: 60000 },
+  // 일반 PC (그림자·빛번짐 ON) — 측정값 201
+  highSpec: { drawCalls: 260, triangles: 120000 },
+  minFps: 30
+};

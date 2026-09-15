@@ -37,18 +37,18 @@ function makeCanvas(size) {
 /** 흙·풀 지면 — 유닛 색(파랑·주황·적색)과 대비되도록 어두운 한랭 녹회색 */
 export function groundTexture(size = 512) {
   const cv = makeCanvas(size), ctx = cv.getContext('2d');
-  ctx.fillStyle = '#2c3a29';
+  ctx.fillStyle = '#3a4c33';
   ctx.fillRect(0, 0, size, size);
 
   // 흙 얼룩
   for (let i = 0; i < 900; i++) {
     const shade = 34 + Math.random() * 26;
     wrapDot(ctx, size, Math.random() * size, Math.random() * size,
-            2 + Math.random() * 9, `rgba(${shade + 10},${shade + 18},${shade},0.5)`);
+            2 + Math.random() * 9, `rgba(${shade + 24},${shade + 30},${shade + 8},0.5)`);
   }
   // 풀 포기
   for (let i = 0; i < 2200; i++) {
-    const g = 60 + Math.random() * 50;
+    const g = 78 + Math.random() * 58;
     wrapDot(ctx, size, Math.random() * size, Math.random() * size,
             0.7 + Math.random() * 1.6, `rgba(${g * 0.55},${g},${g * 0.42},0.55)`);
   }

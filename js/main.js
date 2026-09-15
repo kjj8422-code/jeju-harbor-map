@@ -6,6 +6,7 @@
 import * as C from './config.js';
 import * as Sim from './sim.js';
 import * as R3 from './render3d.js';
+import * as Models from './models.js';
 
 const $ = id => document.getElementById(id);
 let S = null, selHero = 1, paused = false, uiOpen = true;
@@ -706,6 +707,14 @@ let hudTimer = 0;
 /* ---------------- 부팅 ---------------- */
 R3.initRenderer($('stage'));
 R3.attachMinimap($('minimap'));
+
+/* models/manifest.json 에 등록된 3D 모델이 있으면 먼저 읽어옵니다.
+   없으면 아무 일도 없이 지나가고 도형으로 그립니다. */
+$('btnStart').disabled = true;
+Models.load().then(m => {
+  $('btnStart').disabled = false;
+  if (m.size) toast(`3D 모델 ${m.size}종을 불러왔습니다`);
+}).catch(() => { $('btnStart').disabled = false; });
 renderHeroCards();
 refreshBuildCards();
 refreshSoldiers();

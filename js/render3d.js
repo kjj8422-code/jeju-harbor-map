@@ -6,8 +6,14 @@
    ================================================================== */
 
 import * as THREE from '../vendor/three.module.min.js';
+import { EffectComposer } from '../vendor/addons/EffectComposer.js';
+import { RenderPass } from '../vendor/addons/RenderPass.js';
+import { UnrealBloomPass } from '../vendor/addons/UnrealBloomPass.js';
+import { OutputPass } from '../vendor/addons/OutputPass.js';
+import * as BufferGeometryUtils from '../vendor/addons/BufferGeometryUtils.js';
 import * as C from './config.js';
 import * as Tex from './textures.js';
+import * as Models from './models.js';
 
 const S3 = C.RENDER_SCALE;              // 게임 단위 → 3D 단위
 const gx = x => x * S3;                 // 가로
@@ -24,6 +30,7 @@ export const R = {
   quality: { shadows: true, lowSpec: false },
   minimap: null, minimapCtx: null,
   rings: {}, ghostGroup: null, arrows: [], vfx: [],
+  composer: null, bloom: null, sky: null, grass: null,
   shake: { t: 0, power: 0 },
   stats: { calls: 0, tris: 0, fps: 0 },
   _fpsT: 0, _fpsN: 0, _minimapT: 0
@@ -43,7 +50,7 @@ function canvasTexture(cv, repeat, srgb = true) {
 
 function buildMaterials() {
   // 땅 텍스처 반복 밀도: 맵 가로(128.8유닛) ÷ 타일당 12유닛 ≈ 11
-  const groundRepeat = Math.round((C.WORLD_W * S3) / 12);
+  const groundRepeat = Math.round((C.WORLD_W * S3) / 7);
 
   MAT.ground = new THREE.MeshStandardMaterial({
     map: canvasTexture(Tex.groundTexture(512), groundRepeat),
@@ -83,24 +90,27 @@ export function initRenderer(container) {
   const dbg = probe && probe.getExtension('WEBGL_debug_renderer_info');
   const gpuName = dbg ? String(probe.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : '';
   R.quality.lowSpec = /swiftshader|llvmpipe|software/i.test(gpuName);
+  if (window.__forceHQ) R.quality.lowSpec = false;   // 검수용 — 실제 GPU 환경을 흉내냅니다
   const mobile = window.innerWidth < 820 || /Mobi|Android/i.test(navigator.userAgent);
-  R.quality.shadows = !R.quality.lowSpec && !mobile;
+  R.quality.shadows = (!R.quality.lowSpec && !mobile) || !!window.__forceHQ;
 
   R.renderer = new THREE.WebGLRenderer({ antialias: !R.quality.lowSpec && !mobile, powerPreference: 'high-performance' });
   R.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2));
   R.renderer.shadowMap.enabled = R.quality.shadows;
   R.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   R.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  // 후처리는 내부적으로 여러 번 그리므로 자동 초기화를 끄고 프레임 단위로 직접 셉니다
+  R.renderer.info.autoReset = false;
   R.renderer.toneMappingExposure = 1.05;
   container.appendChild(R.renderer.domElement);
 
   buildMaterials();
 
   // 조명 — 태양 1개 + 하늘빛. 밤에는 이 둘을 낮추고 횃불을 켭니다.
-  R.hemi = new THREE.HemisphereLight(0xbdd7f0, 0x4a5240, 0.75);
+  R.hemi = new THREE.HemisphereLight(0xcfe4f7, 0x6a7258, 1.05);
   R.scene.add(R.hemi);
 
-  R.sun = new THREE.DirectionalLight(0xfff2d8, 2.1);
+  R.sun = new THREE.DirectionalLight(0xfff4e0, 2.6);
   R.sun.position.set(30, 45, 18);
   if (R.quality.shadows) {
     R.sun.castShadow = true;
@@ -123,6 +133,16 @@ export function initRenderer(container) {
   R.heroLight = new THREE.PointLight(0xffd0a0, 0, 22, 1.6);
   R.scene.add(R.heroLight);
 
+  // 후처리 — 빛이 번지면 밤의 횃불과 대장간 화로가 살아납니다.
+  // 저사양·모바일에서는 비용이 크므로 끕니다.
+  if ((!R.quality.lowSpec && !mobile) || window.__forceHQ) {
+    R.composer = new EffectComposer(R.renderer);
+    R.composer.addPass(new RenderPass(R.scene, R.camera));
+    R.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.42, 0.75, 0.82);
+    R.composer.addPass(R.bloom);
+    R.composer.addPass(new OutputPass());
+  }
+
   resize();
   window.addEventListener('resize', resize);
   return R;
@@ -135,7 +155,78 @@ export function resize() {
   R.camera.aspect = w / h;
   R.camera.updateProjectionMatrix();
   R.renderer.setSize(w, h, false);
+  if (R.composer) R.composer.setSize(w, h);
   if (R.minimap) { R.minimap.width = R.minimap.clientWidth; R.minimap.height = R.minimap.clientHeight; }
+}
+
+/* ---------------- 하늘 ----------------
+   단색 배경은 값싸 보입니다. 위아래 색이 다른 돔 하나만 씌워도
+   "하늘 아래 있다"는 느낌이 생깁니다. 낮과 밤에 색이 바뀝니다. */
+const SKY_VERT = `
+  varying vec3 vWorld;
+  void main() {
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorld = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }`;
+const SKY_FRAG = `
+  uniform vec3 top;
+  uniform vec3 bottom;
+  uniform float horizon;
+  varying vec3 vWorld;
+  void main() {
+    float h = normalize(vWorld - cameraPosition).y;
+    float t = smoothstep(-0.12, horizon, h);
+    gl_FragColor = vec4(mix(bottom, top, t), 1.0);
+  }`;
+
+function buildSky() {
+  if (R.sky) return;
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      top:     { value: new THREE.Color(0x4e7fb5) },
+      bottom:  { value: new THREE.Color(0xc9d8e4) },
+      horizon: { value: 0.45 }
+    },
+    vertexShader: SKY_VERT, fragmentShader: SKY_FRAG,
+    side: THREE.BackSide, depthWrite: false, fog: false
+  });
+  R.sky = new THREE.Mesh(new THREE.SphereGeometry(320, 24, 16), mat);
+  R.sky.frustumCulled = false;
+  R.scene.add(R.sky);
+}
+
+/* ---------------- 잔디 ----------------
+   땅이 밋밋해 보이는 가장 큰 이유는 "아무것도 안 자라서"입니다.
+   풀잎 수천 개도 InstancedMesh 하나면 draw call 1번입니다. */
+function buildGrass(S) {
+  if (R.grass) { R.scene.remove(R.grass); R.grass = null; }
+  const count = R.quality.lowSpec ? 900 : 4200;
+  const blade = new THREE.ConeGeometry(0.1, 0.62, 3);
+  blade.translate(0, 0.31, 0);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x4d7f45, roughness: 1 });
+  const im = new THREE.InstancedMesh(blade, mat, count);
+  im.castShadow = false;                 // 풀 그림자는 눈에 안 띄는데 비용만 큽니다
+  im.receiveShadow = R.quality.shadows;
+  im.frustumCulled = false;
+
+  const W = C.WORLD_W * S3, H = C.WORLD_H * S3;
+  const col = new THREE.Color();
+  for (let i = 0; i < count; i++) {
+    const x = Math.random() * W, z = Math.random() * H;
+    const sc = 0.65 + Math.random() * 0.9;
+    _q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * 6.28);
+    _sc.set(sc, sc * (0.7 + Math.random() * 0.8), sc);
+    _v.set(x, 0, z);
+    im.setMatrixAt(i, _m4.compose(_v, _q, _sc));
+    // 풀색도 조금씩 다르게 — 전부 같은 초록이면 인공적으로 보입니다
+    col.setHSL(0.25 + Math.random() * 0.06, 0.34 + Math.random() * 0.2, 0.30 + Math.random() * 0.18);
+    im.setColorAt(i, col);
+  }
+  im.instanceMatrix.needsUpdate = true;
+  if (im.instanceColor) im.instanceColor.needsUpdate = true;
+  R.grass = im;
+  R.scene.add(im);
 }
 
 /* ---------------- 지면 표시 링 ----------------
@@ -205,6 +296,8 @@ export function buildWorld(S) {
   R.gravel.receiveShadow = R.quality.shadows;
   R.scene.add(R.gravel);
 
+  buildSky();
+  buildGrass(S);
   buildRings();
   buildNodeInstances(S);
   buildBase(S);
@@ -226,10 +319,18 @@ function buildNodeInstances(S) {
   const counts = { wood: 0, stone: 0, iron: 0 };
   for (const n of S.nodes) counts[n.type]++;
 
-  const trunkGeo = new THREE.CylinderGeometry(0.09, 0.13, 0.75, 6);
-  const leafGeo = new THREE.ConeGeometry(0.52, 1.25, 7);
+  const trunkGeo = new THREE.CylinderGeometry(0.09, 0.14, 0.9, 6);
+  const leafGeo = new THREE.ConeGeometry(0.62, 1.35, 7);
+  const leaf2Geo = new THREE.ConeGeometry(0.44, 1.0, 7);     // 위쪽 작은 잎 — 실루엣이 살아납니다
   const rockGeo = new THREE.IcosahedronGeometry(0.42, 0);
   const ironGeo = new THREE.DodecahedronGeometry(0.46, 0);
+
+  /* models/ 에 모델이 등록돼 있으면 그 지오메트리를 씁니다.
+     없으면 지금처럼 도형으로 그립니다 — 그래서 언제 넣어도 됩니다. */
+  const pick = (slot, geo, mat) => {
+    const m = Models.get(slot);
+    return (m && m.geo) ? [m.geo, m.mat || mat] : [geo, mat];
+  };
 
   const mk = (geo, mat, count) => {
     const im = new THREE.InstancedMesh(geo, mat, Math.max(1, count));
@@ -241,10 +342,22 @@ function buildNodeInstances(S) {
     return im;
   };
 
-  R.nodeInst.trunk = mk(trunkGeo, MAT.trunk, counts.wood);
-  R.nodeInst.leaf  = mk(leafGeo, MAT.foliage, counts.wood);
-  R.nodeInst.rock  = mk(rockGeo, MAT.rock, counts.stone);
-  R.nodeInst.iron  = mk(ironGeo, MAT.ironRock, counts.iron);
+  // 나무 모델이 등록돼 있으면 줄기·잎을 나누지 않고 모델 하나로 대체합니다
+  R.usingTreeModel = Models.has('tree');
+  if (R.usingTreeModel) {
+    const t = Models.get('tree');
+    R.nodeInst.trunk = mk(t.geo, t.mat || MAT.trunk, counts.wood);
+    R.nodeInst.leaf  = mk(leafGeo, MAT.foliage, 1);
+    R.nodeInst.leaf2 = mk(leaf2Geo, MAT.foliage, 1);
+  } else {
+    R.nodeInst.trunk = mk(trunkGeo, MAT.trunk, counts.wood);
+    R.nodeInst.leaf  = mk(leafGeo, MAT.foliage, counts.wood);
+    R.nodeInst.leaf2 = mk(leaf2Geo, MAT.foliage, counts.wood);
+  }
+  const [rg, rm] = pick('rock', rockGeo, MAT.rock);
+  const [ig, im2] = pick('iron', ironGeo, MAT.ironRock);
+  R.nodeInst.rock  = mk(rg, rm, counts.stone);
+  R.nodeInst.iron  = mk(ig, im2, counts.iron);
 
   refreshNodes(S);
 }
@@ -255,26 +368,51 @@ const _v = new THREE.Vector3();
 const _sc = new THREE.Vector3();
 
 /** 자원지가 고갈되거나 되살아나면 다시 배치합니다 */
+const _col = new THREE.Color();
+/** 같은 값에서 늘 같은 결과가 나오는 작은 난수 — 나무마다 개성을 주되 매 프레임 흔들리지 않게 */
+function hash01(a, b) {
+  const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+  return v - Math.floor(v);
+}
+
 export function refreshNodes(S) {
   let wi = 0, ri = 0, ii = 0;
   for (const n of S.nodes) {
     const x = gx(n.x), z = gz(n.y);
     const alive = n.amt > 0;
+    const r1 = hash01(n.tx, n.ty), r2 = hash01(n.ty, n.tx * 3);
     if (n.type === 'wood') {
-      // 고갈되면 그루터기만 남깁니다(잎을 숨김)
-      const h = alive ? 1 : 0.35;
-      _q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), (n.tx * 37 + n.ty * 11) % 6.28);
-      _sc.set(1, h, 1);
-      _v.set(x, 0.37 * h, z);
+      // 나무마다 키·굵기·기울기·색을 다르게 — 똑같은 나무 120그루는 바로 티가 납니다
+      const big = 0.78 + r1 * 0.65;
+      const h = alive ? big : 0.3;
+      const tilt = (r2 - 0.5) * 0.14;
+      _q.setFromEuler(new THREE.Euler(tilt, (r1 * 6.28), tilt * 0.6));
+      _sc.set(0.85 + r2 * 0.4, h, 0.85 + r2 * 0.4);
+      _v.set(x, 0.45 * h, z);
       R.nodeInst.trunk.setMatrixAt(wi, _m4.compose(_v, _q, _sc));
-      _sc.set(alive ? 1 : 0.001, alive ? 1 : 0.001, alive ? 1 : 0.001);
-      _v.set(x, 1.15, z);
+
+      const ls = alive ? big : 0.001;
+      _sc.set(ls, ls, ls);
+      _v.set(x, 1.28 * big, z);
       R.nodeInst.leaf.setMatrixAt(wi, _m4.compose(_v, _q, _sc));
+      _v.set(x, 2.05 * big, z);
+      R.nodeInst.leaf2.setMatrixAt(wi, _m4.compose(_v, _q, _sc));
+
+      // 잎 색도 개체마다 — 노란 기 도는 것부터 짙은 것까지
+      _col.setHSL(0.24 + r1 * 0.06, 0.34 + r2 * 0.2, 0.20 + r1 * 0.14);
+      R.nodeInst.leaf.setColorAt(wi, _col);
+      _col.offsetHSL(0, 0, 0.05);
+      R.nodeInst.leaf2.setColorAt(wi, _col);
+      _col.setHSL(0.08, 0.3, 0.16 + r2 * 0.08);
+      R.nodeInst.trunk.setColorAt(wi, _col);
       wi++;
     } else if (n.type === 'stone') {
-      _q.setFromAxisAngle(new THREE.Vector3(0.3, 1, 0.2).normalize(), (n.tx * 13 + n.ty * 29) % 6.28);
-      _sc.setScalar(alive ? 1 : 0.45);
-      _v.set(x, alive ? 0.3 : 0.14, z);
+      _q.setFromEuler(new THREE.Euler(r1 * 1.2, r2 * 6.28, r1 * 0.8));
+      const rs = (alive ? 0.75 + r1 * 0.7 : 0.4);
+      _sc.set(rs, rs * (0.7 + r2 * 0.5), rs);
+      _v.set(x, 0.26 * rs, z);
+      _col.setHSL(0.09, 0.05 + r1 * 0.05, 0.36 + r2 * 0.2);
+      R.nodeInst.rock.setColorAt(ri, _col);
       R.nodeInst.rock.setMatrixAt(ri++, _m4.compose(_v, _q, _sc));
     } else {
       _q.setFromAxisAngle(new THREE.Vector3(0.2, 1, 0.4).normalize(), (n.tx * 7 + n.ty * 23) % 6.28);
@@ -283,57 +421,90 @@ export function refreshNodes(S) {
       R.nodeInst.iron.setMatrixAt(ii++, _m4.compose(_v, _q, _sc));
     }
   }
-  R.nodeInst.trunk.count = wi; R.nodeInst.leaf.count = wi;
+  R.nodeInst.trunk.count = wi;
+  R.nodeInst.leaf.count = R.usingTreeModel ? 0 : wi;
+  R.nodeInst.leaf2.count = R.usingTreeModel ? 0 : wi;
   R.nodeInst.rock.count = ri;  R.nodeInst.iron.count = ii;
-  for (const k in R.nodeInst) R.nodeInst[k].instanceMatrix.needsUpdate = true;
+  for (const k in R.nodeInst) {
+    R.nodeInst[k].instanceMatrix.needsUpdate = true;
+    if (R.nodeInst[k].instanceColor) R.nodeInst[k].instanceColor.needsUpdate = true;
+  }
 }
 
 /* ---------------- 거점 ---------------- */
+/** 같은 재질의 조각들을 하나로 합쳐 draw call 을 줄입니다.
+    거점처럼 움직이지 않는 구조물에 특히 효과가 큽니다(성가퀴 32개 → 1개). */
+function mergeParts(parts, material, cast, receive) {
+  const geos = parts.map(p => {
+    const g = p.geo.clone();
+    g.applyMatrix4(new THREE.Matrix4().compose(
+      p.pos, p.quat || new THREE.Quaternion(), p.scale || new THREE.Vector3(1, 1, 1)));
+    return g;
+  });
+  const merged = BufferGeometryUtils.mergeGeometries(geos, false);
+  geos.forEach(g => g.dispose());
+  const m = new THREE.Mesh(merged, material);
+  m.castShadow = !!cast; m.receiveShadow = !!receive;
+  return m;
+}
+
+/** 모델을 게임이 기대하는 형태(userData.body/head 를 가진 그룹)로 감쌉니다 */
+function wrapModel(slot) {
+  const g = new THREE.Group();
+  const model = Models.clone(slot);
+  g.add(model);
+  // 애니메이션·색 변화 코드가 찾는 자리를 만들어 둡니다
+  let firstMesh = null;
+  model.traverse(o => { if (!firstMesh && o.isMesh) firstMesh = o; });
+  g.userData.body = firstMesh || model;
+  g.userData.head = firstMesh || model;
+  g.userData.isModel = true;
+  return g;
+}
+
 function buildBase(S) {
+  if (Models.has('base')) {
+    const g = wrapModel('base');
+    g.position.set(gx(S.base.x), 0, gz(S.base.y));
+    R.baseGroup = g;
+    R.scene.add(g);
+    return;
+  }
   const g = new THREE.Group();
   const r = C.TILE * 1.5 * S3;
   const WALL_H = 3.0, WALL_T = 0.8;   // 사람(1.8)보다 확실히 높아야 성벽처럼 보입니다
 
-  // 네 면의 성벽 — 통짜 상자가 아니라 벽 네 개라야 "요새"로 읽힙니다
+  // 돌로 된 부분을 전부 모아 한 번에 그립니다.
+  // 성가퀴만 32개라 따로 그리면 거점 하나에 draw call 40번(그림자까지 80번)이 듭니다.
+  const stoneParts = [];
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
   const sides = [
     [0, -r, r * 2, WALL_T], [0, r, r * 2, WALL_T],
     [-r, 0, WALL_T, r * 2], [r, 0, WALL_T, r * 2]
   ];
   for (const [ox, oz, sx, sz] of sides) {
-    const w = new THREE.Mesh(new THREE.BoxGeometry(sx, WALL_H, sz), MAT.stone);
-    w.position.set(ox, WALL_H / 2, oz);
-    w.castShadow = w.receiveShadow = R.quality.shadows;
-    g.add(w);
+    stoneParts.push({ geo: new THREE.BoxGeometry(sx, WALL_H, sz), pos: V(ox, WALL_H / 2, oz) });
   }
+  stoneParts.push({ geo: new THREE.BoxGeometry(r * 2, 0.25, r * 2), pos: V(0, 0.12, 0) });   // 안마당
+  stoneParts.push({ geo: new THREE.BoxGeometry(r * 0.9, 4.4, r * 0.9), pos: V(0, 2.2, 0) }); // 망루
 
-  // 안마당 바닥
-  const yard = new THREE.Mesh(new THREE.BoxGeometry(r * 2, 0.25, r * 2), MAT.stone);
-  yard.position.y = 0.12;
-  yard.receiveShadow = R.quality.shadows;
-  g.add(yard);
+  const step = r * 2 / 7;
+  const qRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  for (let i = 0; i <= 7; i++) {
+    for (const [ox, oz] of [[0, -r], [0, r], [-r, 0], [r, 0]]) {
+      const geo = new THREE.BoxGeometry(step * 0.55, 0.5, WALL_T);
+      if (ox === 0) stoneParts.push({ geo, pos: V(-r + i * step, WALL_H + 0.25, oz) });
+      else stoneParts.push({ geo, pos: V(ox, WALL_H + 0.25, -r + i * step), quat: qRot });
+    }
+  }
+  g.add(mergeParts(stoneParts, MAT.stone, R.quality.shadows, R.quality.shadows));
 
-  // 안쪽 망루
-  const keep = new THREE.Mesh(new THREE.BoxGeometry(r * 0.9, 4.4, r * 0.9), MAT.stone);
-  keep.position.y = 2.2;
-  keep.castShadow = R.quality.shadows;
-  g.add(keep);
   const roof = new THREE.Mesh(new THREE.ConeGeometry(r * 0.78, 1.5, 4), MAT.wood);
   roof.position.y = 5.1;
   roof.rotation.y = Math.PI / 4;
   roof.castShadow = R.quality.shadows;
   g.add(roof);
-
-  // 성가퀴 — 성벽 위 톱니
-  const step = r * 2 / 7;
-  for (let i = 0; i <= 7; i++) {
-    for (const [ox, oz] of [[0, -r], [0, r], [-r, 0], [r, 0]]) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(step * 0.55, 0.5, WALL_T), MAT.stone);
-      if (ox === 0) b.position.set(-r + i * step, WALL_H + 0.25, oz);
-      else { b.position.set(ox, WALL_H + 0.25, -r + i * step); b.rotation.y = Math.PI / 2; }
-      b.castShadow = R.quality.shadows;
-      g.add(b);
-    }
-  }
   // 깃대
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4, 5), MAT.trunk);
   pole.position.set(0, 7.0, 0);
@@ -429,7 +600,8 @@ function makeWeapon(type) {
 
 function buildHero(S) {
   const d = S.heroDef;
-  const g = makeHumanoid(d.color, d.accent, 1);
+  const modelSlot = 'hero_' + d.weapon;
+  const g = Models.has(modelSlot) ? wrapModel(modelSlot) : makeHumanoid(d.color, d.accent, 1);
 
   // 망토
   const cape = new THREE.Mesh(
@@ -447,6 +619,17 @@ function buildHero(S) {
   g.userData.weapon = wgrp;
   g.userData.weaponType = d.weapon;
 
+  // 발밑 표식 — 저폴리 화면에서 내 캐릭터를 놓치지 않게 (ARPG 관례)
+  const marker = new THREE.Mesh(
+    new THREE.RingGeometry(0.42, 0.56, 24),
+    new THREE.MeshBasicMaterial({ color: d.accent, transparent: true, opacity: 0.85,
+                                  side: THREE.DoubleSide, depthWrite: false }));
+  marker.rotation.x = -Math.PI / 2;
+  marker.position.y = 0.05;
+  marker.renderOrder = 3;
+  g.add(marker);
+  g.userData.marker = marker;
+
   g.position.set(gx(S.hero.x), 0, gz(S.hero.y));
   R.hero = g;
   R.scene.add(g);
@@ -457,6 +640,12 @@ function buildStructs(S) {
   for (const st of S.structs) addStruct(st);
 }
 export function addStruct(st) {
+  if (Models.has(st.type)) {
+    const g = wrapModel(st.type);
+    g.position.set(gx(st.x), 0, gz(st.y));
+    R.scene.add(g);
+    return g;
+  }
   const g = new THREE.Group();
   if (st.type === 'camp') {
     const tent = new THREE.Mesh(new THREE.ConeGeometry(1.0, 1.4, 7), MAT.wood);
@@ -574,6 +763,8 @@ const ROLE_COLOR = { wood: 0x5FAE72, stone: 0x9E9384, def: 0xC6412F };
 
 function makeMonsterMesh(m) {
   const scale = m.boss ? 1.7 : 0.95;
+  const slot = m.boss ? 'boss' : 'monster';
+  if (Models.has(slot)) return wrapModel(slot);
   const g = makeHumanoid(m.boss ? BOSS_COLOR : MONSTER_COLOR, 0xD9B84A, scale, false);
   // 황건 — 노란 두건
   const band = new THREE.Mesh(
@@ -618,6 +809,14 @@ export function sync(S, dt) {
     } else {
       R.hero.rotation.x = 0;
       R.hero.position.y = 0;
+    }
+    // 표식은 몸이 구르거나 돌아도 늘 땅에 붙어 있어야 합니다
+    const mk = R.hero.userData.marker;
+    if (mk) {
+      mk.rotation.set(-Math.PI / 2 - R.hero.rotation.x, 0, -R.hero.rotation.y);
+      mk.position.y = 0.05 - R.hero.position.y;
+      mk.material.opacity = S.hero.invuln > 0 ? 1 : 0.7;
+      mk.material.color.setHex(S.hero.invuln > 0 ? 0x9fd8ff : 0xffffff);
     }
 
     // ── 무기별 공격 모션 ──
@@ -670,13 +869,16 @@ export function sync(S, dt) {
     mesh.position.set(gx(m.x), 0, gz(m.y));
     mesh.rotation.y = m.facing || 0;
     const scale = m.boss ? 1.7 : 0.95;
-    mesh.userData.body.position.y = (0.82 + Math.sin(S.t * 10 + m.x) * 0.05) * scale;
+    if (!mesh.userData.isModel)
+      mesh.userData.body.position.y = (0.82 + Math.sin(S.t * 10 + m.x) * 0.05) * scale;
     // 체력이 닳을수록 어두워지고, 맞는 순간 하얗게 번쩍입니다
-    const ratio = Math.max(0, m.hp / m.maxHp);
-    const base = new THREE.Color(m.boss ? BOSS_COLOR : MONSTER_COLOR);
-    base.multiplyScalar(0.45 + ratio * 0.55);
-    if (m.hitFlash > 0) base.lerp(new THREE.Color(0xffffff), 0.75);
-    mesh.userData.body.material.color.copy(base);
+    if (!mesh.userData.isModel) {
+      const ratio = Math.max(0, m.hp / m.maxHp);
+      const base = new THREE.Color(m.boss ? BOSS_COLOR : MONSTER_COLOR);
+      base.multiplyScalar(0.45 + ratio * 0.55);
+      if (m.hitFlash > 0) base.lerp(new THREE.Color(0xffffff), 0.75);
+      mesh.userData.body.material.color.copy(base);
+    }
 
     // ★ 공격 예고 — 바닥에 붉은 원이 차오릅니다. 다 차기 전에 구르면 피합니다.
     if (m.windup > 0) {
@@ -744,10 +946,13 @@ export function sync(S, dt) {
   updateCamera(S, dt);
   drawMinimap(S);
 
-  R.renderer.render(R.scene, R.camera);
+  R.renderer.info.reset();
 
-  // 성능 집계
-  R.stats.calls = R.renderer.info.render.calls;
+  if (R.composer) R.composer.render();
+  else R.renderer.render(R.scene, R.camera);
+
+  // 성능 집계 (후처리의 전체화면 패스는 빼고 장면 자체만 셉니다)
+  R.stats.calls = Math.max(0, R.renderer.info.render.calls - (R.composer ? 3 : 0));
   R.stats.tris = R.renderer.info.render.triangles;
   R._fpsN++; R._fpsT += dt;
   if (R._fpsT >= 0.5) { R.stats.fps = Math.round(R._fpsN / R._fpsT); R._fpsN = 0; R._fpsT = 0; }
@@ -837,12 +1042,19 @@ function updateDayNight(S, dt) {
   const sky = daySky.clone().lerp(nightSky, nightMix);
   R.scene.background = sky;
   R.scene.fog.color = sky;
+
+  if (R.sky) {
+    const u = R.sky.material.uniforms;
+    u.top.value.setHex(0x4e7fb5).lerp(new THREE.Color(0x070c1a), nightMix);
+    u.bottom.value.setHex(0xd8c9a8).lerp(new THREE.Color(0x16203a), nightMix);
+  }
+  if (R.bloom) R.bloom.strength = 0.32 + nightMix * 0.6;   // 밤에 불빛이 더 번집니다
   R.scene.fog.near = 22 - nightMix * 14;
   R.scene.fog.far = 68 - nightMix * 32;
 
-  R.sun.intensity = 2.1 * (1 - nightMix) + 0.06;
+  R.sun.intensity = 2.6 * (1 - nightMix) + 0.06;
   R.sun.color.setHex(nightMix > 0.5 ? 0x9fb6e0 : 0xfff2d8);
-  R.hemi.intensity = 0.75 * (1 - nightMix) + 0.12;
+  R.hemi.intensity = 1.05 * (1 - nightMix) + 0.14;
 
   R.baseLight.intensity = nightMix * 34;
   R.heroLight.intensity = nightMix * 22;
