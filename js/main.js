@@ -14,7 +14,42 @@ let wallet = Number(localStorage.getItem('sg3d_shard') || 0);
 
 /* ---------------- 소리 ---------------- */
 let AC = null;
+function refreshSkillBar() {
+  if (!S) return;
+  const bar = $('skillBar');
+  if (!bar) return;
+  const defs = S.heroDef.skills || [];
+  if (bar.dataset.hero !== S.heroDef.id) {
+    bar.dataset.hero = S.heroDef.id;
+    bar.innerHTML = defs.map((sk, i) =>
+      `<button class="skillBtn" data-slot="${i}" title="${sk.desc}">
+         <span class="k">${sk.key}</span><span class="n">${sk.name}</span>
+         <span class="cd" id="skcd${i}"></span></button>`).join('')
+      + `<button class="skillBtn dodge" data-dodge="1" title="적의 공격 예비 동작 중에 구르면 빗나갑니다">
+           <span class="k">Space</span><span class="n">회피</span>
+           <span class="cd" id="skcdD"></span></button>`;
+    bar.querySelectorAll('[data-slot]').forEach(b =>
+      b.onclick = () => doSkill(Number(b.dataset.slot)));
+    bar.querySelector('[data-dodge]').onclick = doDodge;
+  }
+  for (let i = 0; i < defs.length; i++) {
+    const el = $('skcd' + i);
+    if (!el) continue;
+    const cd = Math.max(0, S.hero.skillCd[i]);
+    el.textContent = cd > 0 ? cd.toFixed(1) : '';
+    el.parentElement.classList.toggle('ready', cd <= 0);
+  }
+  const dEl = $('skcdD');
+  if (dEl) {
+    const cd = Math.max(0, S.hero.dodgeCd);
+    dEl.textContent = cd > 0 ? cd.toFixed(1) : '';
+    dEl.parentElement.classList.toggle('ready', cd <= 0);
+  }
+}
+
 const SOUND = {
+  dodge:[520,.12,'sine',.03], skill:[700,.18,'triangle',.045],
+  windup:[210,.1,'sine',.014], heroHit:[180,.12,'square',.035],
   build:[420,.06,'triangle',.03], deny:[160,.1,'sine',.03], hire:[520,.07,'triangle',.03],
   craft:[660,.09,'triangle',.03], warn:[180,.5,'sawtooth',.05], nightStart:[120,.6,'sawtooth',.06],
   swing:[300,.04,'square',.02], die:[240,.05,'square',.022], bossDie:[520,.25,'square',.03],
@@ -70,13 +105,74 @@ function updateFloaters(dt) {
   }
 }
 
+/* ---------------- 체력 바 (화면에 겹쳐 그립니다) ----------------
+   3D 물체로 만들면 적 25마리에 draw call 50번이 추가됩니다.
+   화면 위에 얇은 막대를 겹쳐 그리면 draw call 0으로 같은 정보를 줍니다. */
+const hpBars = new Map();
+function getHpBar(key) {
+  let b = hpBars.get(key);
+  if (!b) {
+    const el = document.createElement('div');
+    el.className = 'hpBar';
+    el.innerHTML = '<i></i>';
+    $('fxLayer').appendChild(el);
+    b = { el, fill: el.firstChild };
+    hpBars.set(key, b);
+  }
+  return b;
+}
+function updateHpBars() {
+  if (!S) return;
+  const live = new Set();
+
+  // 적 — 체력이 가득하면 숨깁니다 (화면이 지저분해지지 않게)
+  for (const m of S.monsters) {
+    const ratio = Math.max(0, m.hp / m.maxHp);
+    if (ratio >= 0.999 && !m.boss) continue;
+    live.add(m);
+    const b = getHpBar(m);
+    const p = R3.worldToScreen(m.x, m.y, m.boss ? 3.4 : 2.1);
+    if (!p.visible) { b.el.style.display = 'none'; continue; }
+    b.el.style.display = '';
+    b.el.style.left = p.x + 'px';
+    b.el.style.top = p.y + 'px';
+    b.el.className = 'hpBar' + (m.boss ? ' boss' : '');
+    b.fill.style.width = (ratio * 100) + '%';
+    b.fill.style.background = m.boss ? '#E0B44A' : ratio > 0.4 ? '#C6412F' : '#8C2B1F';
+  }
+
+  // 장수 — 항상 표시 (내 상태를 눈을 안 옮기고 보게)
+  if (!S.hero.dead) {
+    live.add(S.hero);
+    const b = getHpBar(S.hero);
+    const p = R3.worldToScreen(S.hero.x, S.hero.y, 2.35);
+    if (p.visible) {
+      b.el.style.display = '';
+      b.el.style.left = p.x + 'px';
+      b.el.style.top = p.y + 'px';
+      const ratio = Math.max(0, S.hero.hp / S.hero.maxHp);
+      b.el.className = 'hpBar hero' + (S.hero.invuln > 0 ? ' invuln' : '');
+      b.fill.style.width = (ratio * 100) + '%';
+      b.fill.style.background = S.hero.guard > 0 ? '#5B8FC7' : ratio > 0.35 ? '#5FAE72' : '#C6412F';
+    } else b.el.style.display = 'none';
+  }
+
+  for (const [k, b] of hpBars) {
+    if (!live.has(k)) { b.el.remove(); hpBars.delete(k); }
+  }
+}
+
 /* ---------------- 시작 ---------------- */
 function startGame() {
+  for (const [, b] of hpBars) b.el.remove();
+  hpBars.clear();
   S = Sim.createSim(C.GENERALS[selHero].id);
   R3.buildWorld(S);
   buildSel = null; paused = false;
   closeAll();
   refreshBuildCards(); refreshSoldiers(); refreshHUD(); refreshObjective();
+  const bar0 = $('skillBar'); if (bar0) bar0.dataset.hero = '';
+  refreshSkillBar();
   toast('<b>1일차</b> — 33일을 버티면 승리합니다');
 }
 
@@ -106,6 +202,26 @@ function handleEvents() {
       case 'nightStart':
         $('waveAlert').style.display = 'none';
         toast(`<b style="color:#C6412F">${e.name}</b> — 몬스터 ${e.count}마리`);
+        break;
+      case 'shot': R3.spawnArrow(e.from, e.to); break;
+      case 'dodge': R3.spawnShockwave(e.x, e.y, 90, 0x9fd8ff, 0.3); break;
+      case 'dodgeSuccess': R3.shakeCamera(0.05); break;
+      case 'heroHit': R3.shakeCamera(0.28); break;
+      case 'heroSwing': if (e.weapon !== 'bow') R3.shakeCamera(0.05); break;
+      case 'monsterSwing': R3.shakeCamera(0.06); break;
+      case 'skillFx':
+        if (e.kind === 'arc' || e.kind === 'spin') {
+          R3.spawnShockwave(e.x, e.y, e.range, S.heroDef.color === '#E08B3C' ? 0xE08B3C : 0xffe0a0, 0.45);
+          R3.shakeCamera(0.34);
+        } else if (e.kind === 'pierce') {
+          R3.spawnBeam(e.x, e.y, e.facing, e.range, 0x9fd8ff);
+          R3.shakeCamera(0.2);
+        } else if (e.kind === 'guard') {
+          R3.spawnAura(0x5B8FC7, e.dur);
+        } else if (e.kind === 'frenzy') {
+          R3.spawnAura(0xE08B3C, e.dur);
+          R3.shakeCamera(0.2);
+        }
         break;
       case 'report': showReport(e); break;
       case 'end': showEnd(e); break;
@@ -164,11 +280,12 @@ function refreshBuildCards() {
     el.onclick = () => {
       buildSel = buildSel === b.id ? null : b.id;
       refreshBuildCards();
+      R3.setBuildMode(!!buildSel);
       $('modeTag').innerHTML = buildSel
-        ? '🧱 <b style="color:var(--gold)">건설 모드</b> — 땅을 클릭해 설치'
+        ? '🧱 <b style="color:var(--gold)">건설 모드</b> — 땅을 눌러 위치를 잡고 확인'
         : '🖱 드래그 = 카메라 회전 · 휠 = 확대';
-      if (!buildSel) R3.hideGhost();
-      else toast(`땅을 클릭해 <b>${b.name}</b>을 설치하세요`);
+      if (!buildSel) cancelBuild();
+      else toast(`땅을 눌러 <b>${b.name}</b> 위치를 잡으세요`);
     };
     row.appendChild(el);
   }
@@ -348,10 +465,31 @@ const keys = {};
 const stickVec = { x: 0, y: 0 };
 
 window.addEventListener('keydown', e => {
-  keys[e.key.toLowerCase()] = true;
-  if (e.key === 'Escape') { buildSel = null; refreshBuildCards(); R3.hideGhost(); }
+  const k = e.key.toLowerCase();
+  if (!keys[k]) {                       // 꾹 눌러도 한 번만 발동합니다
+    if (k === ' ' || k === 'shift') doDodge();
+    if (k === 'q') doSkill(0);
+    if (k === 'e') doSkill(1);
+  }
+  keys[k] = true;
+  if (e.key === 'Escape') { buildSel = null; refreshBuildCards(); R3.setBuildMode(false); cancelBuild(); }
+  if (e.key === 'Enter' && pending) confirmBuild();
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
 });
+
+function doDodge() {
+  if (!S || uiOpen || paused || S.over) return;
+  applyInput();                          // 지금 누르고 있는 방향으로 구릅니다
+  Sim.dodgeRoll(S);
+  handleEvents();
+  refreshSkillBar();
+}
+function doSkill(slot) {
+  if (!S || uiOpen || paused || S.over) return;
+  Sim.useSkill(S, slot);
+  handleEvents();
+  refreshSkillBar();
+}
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
@@ -368,10 +506,13 @@ function applyInput() {
   if (len < 0.01) { S.input.x = 0; S.input.y = 0; return; }
   if (len > 1) { ix /= len; iz /= len; }
 
+  /* 카메라는 target 기준 (sin(yaw), cos(yaw)) 방향에 서서 안쪽을 봅니다.
+     따라서 화면의 "앞"은 그 반대인 (-sin, -cos) 입니다.
+     예전 식은 부호가 뒤집혀 W를 누르면 카메라 쪽(뒤)으로 갔습니다. */
   const yaw = R3.getCameraYaw();
   const sin = Math.sin(yaw), cos = Math.cos(yaw);
-  S.input.x = ix * cos - iz * sin;
-  S.input.y = -ix * sin - iz * cos;
+  S.input.x = ix * cos + iz * sin;
+  S.input.y = -ix * sin + iz * cos;
 }
 
 /* 조이스틱 */
@@ -395,36 +536,41 @@ function applyInput() {
   ['pointerup','pointercancel','pointerleave'].forEach(t => el.addEventListener(t, stop));
 })();
 
-/* 화면 드래그 — 건설 모드면 설치, 아니면 카메라 회전 */
+/* 화면 드래그 — 건설 모드면 위치 잡기, 아니면 카메라 회전 */
 (function () {
   const stage = $('stage');
-  let dragging = false, lastX = 0, lastY = 0, moved = 0;
+  let dragging = false, lastX = 0, lastY = 0;
+
+  /* 확인 버튼·HUD 같은 겹쳐진 UI에서 시작한 입력은 땅 조준으로 넘기지 않습니다.
+     이게 없으면 "설치" 버튼을 누르는 순간 그 버튼 밑의 땅을 다시 조준해버립니다. */
+  const fromUI = e => !!(e.target && e.target.closest &&
+    e.target.closest('#buildConfirm, #hud, #minimapWrap, #objective, #buildHint'));
 
   stage.addEventListener('pointerdown', e => {
-    if (!S || S.over) return;
-    dragging = true; moved = 0;
+    if (!S || S.over || fromUI(e)) return;
+    dragging = true;
     lastX = e.clientX; lastY = e.clientY;
     stage.setPointerCapture(e.pointerId);
-    if (buildSel) placeAt(e.clientX, e.clientY);
+    if (buildSel) aimAt(e.clientX, e.clientY);
   });
 
   stage.addEventListener('pointermove', e => {
-    if (!S) return;
-    if (buildSel) {
-      const t = R3.screenToTile(e.clientX, e.clientY);
-      if (t && Sim.inMap(t.tx, t.ty)) {
-        R3.showGhost(t.tx, t.ty, S.occ[Sim.tkey(t.tx, t.ty)] === C.OCC_EMPTY);
-      } else R3.hideGhost();
-    }
+    if (!S || fromUI(e)) return;
+    if (buildSel && !dragging && !pending) { aimAt(e.clientX, e.clientY); return; }
     if (!dragging) return;
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
-    moved += Math.abs(dx) + Math.abs(dy);
-    if (buildSel) placeAt(e.clientX, e.clientY);   // 끌어서 연속 설치
+    if (buildSel) aimAt(e.clientX, e.clientY);     // 끌어서 위치를 옮깁니다
     else R3.orbitCamera(dx, dy);
   });
 
-  ['pointerup','pointercancel'].forEach(t => stage.addEventListener(t, () => { dragging = false; }));
+  ['pointerup','pointercancel'].forEach(t => stage.addEventListener(t, e => {
+    if (fromUI(e)) return;
+    if (!dragging) return;
+    dragging = false;
+    // 손을 떼면 그 자리에 고정하고 "설치할까요?"를 묻습니다
+    if (buildSel && aim) { pending = true; showConfirm(); }
+  }));
 
   stage.addEventListener('wheel', e => {
     e.preventDefault();
@@ -442,18 +588,70 @@ function applyInput() {
   }, { passive: true });
   stage.addEventListener('touchend', () => { pinchDist = 0; });
 
-  function placeAt(cx, cy) {
+  function aimAt(cx, cy) {
     const t = R3.screenToTile(cx, cy);
-    if (!t) return;
-    Sim.tryBuild(S, t.tx, t.ty, buildSel);
+    if (!t || !Sim.inMap(t.tx, t.ty)) { aim = null; R3.hideGhost(); hideConfirm(); return; }
+    aim = t;
+    pending = false;
+    hideConfirm();
+    refreshGhost();
   }
 })();
+
+/* ── 설치 확정 흐름 ──
+   바로 지어버리면 잘못 놓고 후회합니다.
+   위치를 잡아 보여주고, 확인을 눌러야 실제로 지어집니다.
+   (급할 땐 "바로 설치"를 켜면 확인 없이 지어집니다) */
+let aim = null, pending = false, instantBuild = false;
+
+function refreshGhost() {
+  if (!S || !buildSel || !aim) { R3.hideGhost(); return; }
+  const chk = Sim.canBuildAt(S, aim.tx, aim.ty, buildSel);
+  R3.showGhost(aim.tx, aim.ty, chk.ok, buildSel, pending);
+  const hint = $('buildHint');
+  if (hint) {
+    const why = { occupied: '이미 무언가 있습니다', far: '너무 멉니다 — 가까이 가세요',
+                  cost: '자원이 부족합니다', owned: '이미 지었습니다', out: '지도 밖입니다' };
+    hint.textContent = chk.ok ? '' : (why[chk.why] || '');
+    hint.style.display = chk.ok ? 'none' : '';
+  }
+}
+
+function showConfirm() {
+  if (instantBuild) { confirmBuild(); return; }
+  const chk = Sim.canBuildAt(S, aim.tx, aim.ty, buildSel);
+  const box = $('buildConfirm');
+  if (!box) return;
+  box.style.display = 'flex';
+  $('btnConfirmBuild').disabled = !chk.ok;
+  refreshGhost();
+}
+function hideConfirm() {
+  const box = $('buildConfirm');
+  if (box) box.style.display = 'none';
+}
+function confirmBuild() {
+  if (!aim || !buildSel) return;
+  const built = Sim.tryBuild(S, aim.tx, aim.ty, buildSel);
+  handleEvents();
+  pending = false;
+  hideConfirm();
+  if (built) { aim = null; R3.hideGhost(); }
+  else refreshGhost();
+}
+function cancelBuild() {
+  pending = false; aim = null;
+  hideConfirm(); R3.hideGhost();
+}
 
 /* ---------------- 버튼 ---------------- */
 $('btnStart').onclick = () => startGame();
 $('btnAgain').onclick = () => { renderHeroCards(); openScreen('scTitle'); };
 $('btnRepClose').onclick = () => { Sim.closeReport(S); handleEvents(); if (!S.over) closeAll(); };
-$('btnCancel').onclick = () => { buildSel = null; refreshBuildCards(); R3.hideGhost(); };
+$('btnCancel').onclick = () => { buildSel = null; refreshBuildCards(); R3.setBuildMode(false); cancelBuild(); };
+if ($('btnConfirmBuild')) $('btnConfirmBuild').onclick = confirmBuild;
+if ($('btnCancelBuild')) $('btnCancelBuild').onclick = cancelBuild;
+if ($('chkInstant')) $('chkInstant').onchange = e => { instantBuild = e.target.checked; };
 $('btnHire').onclick = () => Sim.hireSoldier(S);
 $('btnCraft').onclick = () => {
   if (!S) return;
@@ -497,8 +695,9 @@ function frame(ts) {
     }
     R3.sync(S, raw);
     updateFloaters(raw);
+    updateHpBars();
     hudTimer += raw;
-    if (hudTimer > 0.12) { hudTimer = 0; refreshHUD(); }
+    if (hudTimer > 0.12) { hudTimer = 0; refreshHUD(); refreshSkillBar(); }
   }
   requestAnimationFrame(frame);
 }

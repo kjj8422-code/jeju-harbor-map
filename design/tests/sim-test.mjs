@@ -53,19 +53,24 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   const S = Sim.createSim('taesaja');
   S.res.wood = 999; S.res.stone = 999;
   const tx = C.BASE_TX + 5, ty = C.BASE_TY;
+  S.hero.x = tx * C.TILE; S.hero.y = ty * C.TILE;   // 건설 범위 안으로
   const before = S.dist[Sim.tkey(tx + 1, ty)];
   for (let y = ty - 4; y <= ty + 4; y++) Sim.tryBuild(S, C.BASE_TX + 5, y, 'wall');
   const after = S.dist[Sim.tkey(tx + 1, ty)];
   ok('목책을 세우면 그 너머의 경로 거리가 실제로 늘어난다 (우회 성립)',
      after > before, `${before}칸 → ${after}칸`);
   ok('목책 칸 자체는 지나갈 수 없다', S.dist[Sim.tkey(tx, ty)] === -1);
-  ok('목책 목록이 갱신된다', S.wallList.length === 9, `${S.wallList.length}개`);
+  // 지도는 매번 랜덤이라 9칸 중 일부가 나무·바위에 막힐 수 있습니다.
+  // 고정 숫자 대신 "세운 만큼 목록에 들어갔는가"로 판정합니다.
+  ok('목책 목록이 세운 수와 일치한다', S.wallList.length === S.cnt.wall,
+     `목록 ${S.wallList.length} vs 세운 수 ${S.cnt.wall}`);
 }
 
 /* ── 4. 완전 포위 → 목책 파괴 ────────────────────────── */
 {
   const S = Sim.createSim('taesaja');
   S.res.wood = 9999;
+  S.hero.x = S.base.x; S.hero.y = S.base.y;         // 건설 범위 안으로
   // 거점을 목책으로 완전히 둘러쌉니다
   for (let d = 2, y = C.BASE_TY - d; y <= C.BASE_TY + d; y++) {
     Sim.tryBuild(S, C.BASE_TX - d, y, 'wall');
@@ -90,6 +95,7 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   const S = Sim.createSim('taesaja');
   S.res.wood = 999; S.res.stone = 999;
   const tx = C.BASE_TX + 5, ty = C.BASE_TY;
+  S.hero.x = tx * C.TILE; S.hero.y = ty * C.TILE;
   Sim.tryBuild(S, tx, ty, 'trap');
   S.waveStats = { killed: 0, byTrap: 0, bySoldier: 0, byHero: 0, baseDmg: 0, trapKills: {} };
   S.monsters.push({ x: tx * C.TILE + C.TILE / 2, y: ty * C.TILE + C.TILE / 2,
@@ -107,6 +113,7 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
 {
   const S = Sim.createSim('taesaja');
   S.res.wood = 999; S.res.stone = 999;
+  S.hero.x = S.base.x; S.hero.y = S.base.y;
   Sim.tryBuild(S, C.BASE_TX - 3, C.BASE_TY - 3, 'camp');
   Sim.hireSoldier(S);
   ok('병영을 지으면 병사를 고용할 수 있다', S.soldiers.length === 1);
@@ -155,8 +162,10 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
 {
   const S = Sim.createSim('taesaja');
   S.base.hp = 1;
+  S.hero.x = 40; S.hero.y = 40;          // 장수가 대신 잡아버리지 않게 멀리 떨어뜨립니다
   S.monsters.push({ x: S.base.x + 10, y: S.base.y + 10, hp: 99, maxHp: 99, spd: 0,
-                    dmg: 99, cd: 0, boss: false, hitFlash: 0, dead: false });
+                    dmg: 99, cd: 0, boss: false, hitFlash: 0, dead: false,
+                    windup: 0, windupTgt: null, vx: 0, vy: 0, hitStop: 0 });
   run(S, 3);
   ok('거점 체력이 0이 되면 패배한다', S.over === true && S.win === false);
 
@@ -195,6 +204,81 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   ok('거점 체력 20% 이하에서 최후의 저항이 발동한다', S.lastStand === true);
   ok('최후의 저항은 공격력을 올린다', Sim.combatMul(S) > before,
      `${before.toFixed(2)} → ${Sim.combatMul(S).toFixed(2)}`);
+}
+
+/* ── 12. 회피 (컨트롤로 극복하는 핵심) ───────────────── */
+{
+  const S = Sim.createSim('yohwa');
+  S.hero.x = 600; S.hero.y = 600;
+  const before = { x: S.hero.x, y: S.hero.y };
+  S.input.x = 1; S.input.y = 0;
+  ok('회피를 쓸 수 있다', Sim.dodgeRoll(S) === true);
+  ok('회피 중에는 무적이다', S.hero.invuln > 0);
+  run(S, C.DODGE_TIME + 0.05);
+  const moved = Math.hypot(S.hero.x - before.x, S.hero.y - before.y);
+  ok('회피하면 실제로 굴러서 이동한다', moved > C.DODGE_DIST * 0.7, `${Math.round(moved)} 유닛`);
+  ok('회피는 재사용 대기가 있다', Sim.dodgeRoll(S) === false);
+}
+
+/* ── 13. 적 예비 동작 → 회피로 빗나가게 만들기 ──────── */
+{
+  const S = Sim.createSim('yohwa');
+  S.hero.x = 600; S.hero.y = 600;
+  S.hero.hp = 100;
+  S.monsters.push({ x: 620, y: 600, hp: 9999, maxHp: 9999, spd: 0, dmg: 40, cd: 0,
+                    boss: false, hitFlash: 0, dead: false, windup: 0, windupTgt: null,
+                    vx: 0, vy: 0, hitStop: 0 });
+  run(S, 0.1);
+  ok('몬스터는 곧바로 때리지 않고 예비 동작을 한다', S.monsters[0].windup > 0,
+     `windup=${S.monsters[0].windup.toFixed(2)}`);
+  const hpBefore = S.hero.hp;
+  run(S, C.MONSTER_WINDUP + 0.1);
+  ok('가만히 있으면 맞는다', S.hero.hp < hpBefore, `${Math.round(hpBefore)} → ${Math.round(S.hero.hp)}`);
+
+  // 이번에는 예비 동작 중에 굴러서 피합니다
+  const T = Sim.createSim('yohwa');
+  T.hero.x = 600; T.hero.y = 600; T.hero.hp = 100;
+  T.monsters.push({ x: 620, y: 600, hp: 9999, maxHp: 9999, spd: 0, dmg: 40, cd: 0,
+                    boss: false, hitFlash: 0, dead: false, windup: 0, windupTgt: null,
+                    vx: 0, vy: 0, hitStop: 0 });
+  run(T, 0.1);
+  T.input.x = -1; T.input.y = 0;
+  Sim.dodgeRoll(T);
+  const hp0 = T.hero.hp;
+  run(T, C.MONSTER_WINDUP + 0.3);
+  ok('예비 동작 중에 구르면 빗나간다 ← 컨트롤로 극복', T.hero.hp === hp0,
+     `${Math.round(hp0)} → ${Math.round(T.hero.hp)}`);
+}
+
+/* ── 14. 스킬 ────────────────────────────────────────── */
+{
+  for (const id of ['yohwa','taesaja','yeopo']) {
+    const S = Sim.createSim(id);
+    S.hero.x = 600; S.hero.y = 600; S.hero.facing = Math.PI / 2;
+    for (let i = 0; i < 5; i++)
+      S.monsters.push({ x: 640 + i * 12, y: 600, hp: 200, maxHp: 200, spd: 0, dmg: 1, cd: 99,
+                        boss: false, hitFlash: 0, dead: false, windup: 0, windupTgt: null,
+                        vx: 0, vy: 0, hitStop: 0 });
+    S.waveStats = { killed:0, byTrap:0, bySoldier:0, byHero:0, baseDmg:0, trapKills:{} };
+    const hpBefore = S.monsters.reduce((a, m) => a + m.hp, 0);
+    ok(`${S.heroDef.name}: 기본 스킬(${S.heroDef.skills[0].name})을 쓸 수 있다`, Sim.useSkill(S, 0) === true);
+    run(S, 0.6);
+    const hpAfter = S.monsters.reduce((a, m) => a + m.hp, 0);
+    ok(`${S.heroDef.name}: 기본 스킬이 실제로 피해를 준다`, hpAfter < hpBefore,
+       `${Math.round(hpBefore)} → ${Math.round(hpAfter)}`);
+    ok(`${S.heroDef.name}: 스킬은 재사용 대기가 있다`, Sim.useSkill(S, 0) === false);
+    ok(`${S.heroDef.name}: 고유 스킬(${S.heroDef.skills[1].name})을 쓸 수 있다`, Sim.useSkill(S, 1) === true);
+  }
+}
+
+/* ── 15. 무기별 차이 ─────────────────────────────────── */
+{
+  const a = Sim.createSim('yohwa'), b = Sim.createSim('taesaja'), c = Sim.createSim('yeopo');
+  ok('활이 검보다 사거리가 길다', Sim.heroRange(b) > Sim.heroRange(a),
+     `활 ${Math.round(Sim.heroRange(b))} vs 검 ${Math.round(Sim.heroRange(a))}`);
+  ok('창(방천화극)이 검보다 사거리가 길다', Sim.heroRange(c) > Sim.heroRange(a),
+     `창 ${Math.round(Sim.heroRange(c))}`);
+  ok('활은 한 방이 검보다 약하다', Sim.heroDamage(b) / b.heroDef.combat < Sim.heroDamage(a) / a.heroDef.combat);
 }
 
 console.log(results.join('\n'));

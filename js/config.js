@@ -27,11 +27,38 @@ export const BASE_FOOTPRINT = TILE * 1.5;   // 거점 반지름(도착 판정에
 export const HERO_ATK = 16;
 export const HERO_CD = 0.5;
 export const HERO_RANGE = 46;
+export const WEAPON = {
+  sword:   { range:1.0,  dmg:1.15, cd:1.0,  name:'검' },
+  bow:     { range:2.4,  dmg:0.85, cd:1.05, name:'활' },
+  halberd: { range:1.55, dmg:1.0,  cd:1.12, name:'방천화극' }
+};
 export const HERO_SPD = 152;
 export const HERO_HP = 100;
 export const HERO_REGEN = 6;            // 초당 회복(주변에 적이 없을 때)
 export const RESPAWN_BASE = 8;          // 부활 시간(초) — 일차가 지날수록 증가
-export const GATHER_RANGE = 34;
+export const GATHER_RANGE = 58;        // 가까이만 가면 캐지도록 넉넉하게
+
+/* 건설 가능 범위 — 장수 주변에만 지을 수 있습니다.
+   이게 있어야 "어디에 지을 수 있는지"를 화면에 그려 보여줄 수 있고,
+   장수의 위치가 전략적 의미를 갖습니다. 넉넉하게 7칸. */
+export const BUILD_RANGE = 7 * 28;
+
+/* ---------- 회피 (컨트롤로 극복하는 핵심 장치) ---------- */
+export const DODGE_DIST = 130;          // 구르는 거리
+export const DODGE_TIME = 0.28;         // 구르는 시간(초)
+export const DODGE_INVULN = 0.38;       // 무적 시간(초) — 구르는 시간보다 살짝 깁니다
+export const DODGE_CD = 1.1;            // 재사용 대기
+
+/* ---------- 적 공격 예비 동작 ----------
+   몬스터가 곧바로 때리지 않고 0.45초 동안 팔을 치켜듭니다.
+   그 사이에 구르면 피해집니다. 이게 없으면 회피가 의미를 잃습니다. */
+export const MONSTER_WINDUP = 0.45;
+export const MONSTER_WINDUP_BOSS = 0.7;
+
+/* ---------- 타격감 ---------- */
+export const KNOCKBACK = 90;            // 맞았을 때 밀려나는 세기
+export const KNOCKBACK_SKILL = 210;
+export const HITSTOP = 0.055;           // 맞는 순간 잠깐 멈추는 시간
 
 /* ---------- 병사 ---------- */
 export const SOLDIER_HP = 110;
@@ -50,19 +77,40 @@ export const OCC_WALL = 3, OCC_TRAP = 4, OCC_STRUCT = 5;
 export const GENERALS = [
   { id:'yohwa', name:'요화', grade:'일반', color:'#9aa7b0', accent:'#c9d3da',
     combat:1.00, startRes:1.30, waveMul:0.90, lateGrow:0.30,
-    tag:'대기만성형',
-    desc:'초반이 가장 고된 대신 시작 자원이 가장 많고, 22일차 이후 공격력이 30% 오릅니다.',
-    skill:'대기만성 — 22일차부터 공격력 +30%' },
+    tag:'대기만성형 · 검',
+    weapon:'sword',
+    desc:'검을 쓰는 방패잡이. 초반이 고된 대신 시작 자원이 가장 많고, 22일차부터 공격력이 30% 오릅니다.',
+    skill:'대기만성 — 22일차부터 공격력 +30%',
+    skills:[
+      { key:'Q', name:'참격', cd:6, desc:'전방을 크게 베어 여러 적을 한 번에 밀쳐냅니다',
+        type:'arc', range:1.7, arc:2.1, dmg:2.2, knock:1.0 },
+      { key:'E', name:'철벽', cd:16, desc:'4초간 받는 피해가 60% 줄고 주변 적을 끌어당깁니다',
+        type:'guard', dur:4, reduce:0.6 }
+    ] },
   { id:'taesaja', name:'태사자', grade:'희귀', color:'#5B8FC7', accent:'#8fb8e0',
     combat:1.10, startRes:1.15, waveMul:0.95, lateGrow:0.20,
-    tag:'균형형',
-    desc:'모든 수치가 무난합니다. 처음 잡아보기에 가장 편한 장수.',
-    skill:'강궁 — 공격 사거리 +30%' },
+    tag:'균형형 · 활',
+    weapon:'bow',
+    desc:'활을 쓰는 명궁. 멀리서 안전하게 싸울 수 있습니다. 처음 잡아보기에 가장 편한 장수.',
+    skill:'강궁 — 공격 사거리 +30%',
+    skills:[
+      { key:'Q', name:'연사', cd:6, desc:'화살 3발을 빠르게 쏩니다',
+        type:'multi', shots:3, dmg:0.9, interval:0.12 },
+      { key:'E', name:'관통사', cd:16, desc:'직선상의 모든 적을 꿰뚫는 강력한 일격',
+        type:'pierce', range:4.2, width:0.55, dmg:3.4 }
+    ] },
   { id:'yeopo', name:'여포', grade:'전설', color:'#E08B3C', accent:'#f0b878',
     combat:1.40, startRes:0.85, waveMul:1.15, lateGrow:0.00,
-    tag:'초반 압도형',
-    desc:'초반 전투력이 압도적입니다. 대신 시작 자원이 적고 몬스터가 15% 더 강하게 몰려옵니다.',
-    skill:'무쌍 — 공격 속도 +25%' }
+    tag:'초반 압도형 · 방천화극',
+    weapon:'halberd',
+    desc:'방천화극을 든 최강의 무장. 초반 전투력이 압도적이지만 시작 자원이 적고 몬스터가 15% 더 강하게 몰려옵니다.',
+    skill:'무쌍 — 공격 속도 +25%',
+    skills:[
+      { key:'Q', name:'회선', cd:6, desc:'제자리에서 360도 휘둘러 주변을 전부 쓸어버립니다',
+        type:'spin', range:1.9, dmg:2.0, knock:1.2 },
+      { key:'E', name:'무쌍난무', cd:16, desc:'4초간 공격 속도와 이동 속도가 크게 오릅니다',
+        type:'frenzy', dur:4, atkSpd:0.45, moveSpd:1.35 }
+    ] }
 ];
 
 /* ---------- 웨이브 (1막 3회) ---------- */

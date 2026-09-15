@@ -20,9 +20,11 @@ export const R = {
   monsterMeshes: new Map(), soldierMeshes: new Map(),
   wallMeshes: new Map(), trapMeshes: new Map(),
   nodeInst: {}, nodeIndex: new Map(),
-  cam: { yaw: 0.6, pitch: 0.58, dist: 13, target: new THREE.Vector3() },
+  cam: { yaw: 0.6, pitch: 0.72, dist: 14, target: new THREE.Vector3() },
   quality: { shadows: true, lowSpec: false },
   minimap: null, minimapCtx: null,
+  rings: {}, ghostGroup: null, arrows: [], vfx: [],
+  shake: { t: 0, power: 0 },
   stats: { calls: 0, tris: 0, fps: 0 },
   _fpsT: 0, _fpsN: 0, _minimapT: 0
 };
@@ -72,7 +74,7 @@ export function initRenderer(container) {
 
   R.scene = new THREE.Scene();
   R.scene.background = new THREE.Color(0x8fa7bd);
-  R.scene.fog = new THREE.Fog(0x8fa7bd, 30, 95);
+  R.scene.fog = new THREE.Fog(0x8fa7bd, 22, 68);
 
   R.camera = new THREE.PerspectiveCamera(55, 1, 0.5, 400);
 
@@ -136,6 +138,32 @@ export function resize() {
   if (R.minimap) { R.minimap.width = R.minimap.clientWidth; R.minimap.height = R.minimap.clientHeight; }
 }
 
+/* ---------------- 지면 표시 링 ----------------
+   "여기까지 닿는다"를 눈으로 알려주는 장치들입니다. */
+function makeRing(inner, outer, color, opacity) {
+  const m = new THREE.Mesh(
+    new THREE.RingGeometry(inner, outer, 48),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity,
+                                  side: THREE.DoubleSide, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2;
+  m.renderOrder = 2;
+  m.visible = false;
+  return m;
+}
+
+function buildRings() {
+  if (R.rings.attack) return;
+  // 공격 사거리 — 평소엔 아주 흐리게, 적이 들어오면 하얗게 밝아집니다
+  R.rings.attack = makeRing(0.96, 1.0, 0xffffff, 0.16);
+  // 건설 가능 범위
+  R.rings.build = makeRing(0.985, 1.0, 0xE0B44A, 0.4);
+  // 채집 대상 표시
+  R.rings.gather = makeRing(0.55, 0.72, 0xffffff, 0.85);
+  // 지금 노리는 적 표시
+  R.rings.target = makeRing(0.62, 0.78, 0xffffff, 0.9);
+  for (const k in R.rings) R.scene.add(R.rings[k]);
+}
+
 /* ---------------- 세계 만들기 ---------------- */
 export function buildWorld(S) {
   // 이전 판의 물체 정리
@@ -154,7 +182,15 @@ export function buildWorld(S) {
 
   const W = C.WORLD_W * S3, H = C.WORLD_H * S3;
 
-  // 땅
+  // 바깥 땅 — 지도 경계 너머가 허공으로 보이지 않게 넓게 깔아둡니다.
+  // 안개가 먼저 덮으므로 실제로는 "끝없는 들판"처럼 보입니다.
+  if (R.outer) R.scene.remove(R.outer);
+  R.outer = new THREE.Mesh(new THREE.PlaneGeometry(W * 3, H * 3), MAT.ground);
+  R.outer.rotation.x = -Math.PI / 2;
+  R.outer.position.set(W / 2, -0.02, H / 2);
+  R.scene.add(R.outer);
+
+  // 땅 (플레이 구역) — 레이캐스트로 건설 위치를 잡는 기준면입니다
   R.ground = new THREE.Mesh(new THREE.PlaneGeometry(W, H), MAT.ground);
   R.ground.rotation.x = -Math.PI / 2;
   R.ground.position.set(W / 2, 0, H / 2);
@@ -169,10 +205,17 @@ export function buildWorld(S) {
   R.gravel.receiveShadow = R.quality.shadows;
   R.scene.add(R.gravel);
 
+  buildRings();
   buildNodeInstances(S);
   buildBase(S);
   buildHero(S);
   buildStructs(S);
+  for (const a of R.arrows) R.scene.remove(a.mesh);
+  R.arrows.length = 0;
+  for (const v of R.vfx) R.scene.remove(v.mesh);
+  R.vfx.length = 0;
+  for (const [, t] of R.telegraphs || []) R.scene.remove(t);
+  R.telegraphs = new Map();
 
   R.cam.target.set(gx(S.hero.x), 1, gz(S.hero.y));
 }
@@ -249,33 +292,54 @@ export function refreshNodes(S) {
 function buildBase(S) {
   const g = new THREE.Group();
   const r = C.TILE * 1.5 * S3;
+  const WALL_H = 3.0, WALL_T = 0.8;   // 사람(1.8)보다 확실히 높아야 성벽처럼 보입니다
 
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(r * 2, 1.5, r * 2), MAT.stone);
-  wall.position.y = 0.75;
-  wall.castShadow = wall.receiveShadow = R.quality.shadows;
-  g.add(wall);
+  // 네 면의 성벽 — 통짜 상자가 아니라 벽 네 개라야 "요새"로 읽힙니다
+  const sides = [
+    [0, -r, r * 2, WALL_T], [0, r, r * 2, WALL_T],
+    [-r, 0, WALL_T, r * 2], [r, 0, WALL_T, r * 2]
+  ];
+  for (const [ox, oz, sx, sz] of sides) {
+    const w = new THREE.Mesh(new THREE.BoxGeometry(sx, WALL_H, sz), MAT.stone);
+    w.position.set(ox, WALL_H / 2, oz);
+    w.castShadow = w.receiveShadow = R.quality.shadows;
+    g.add(w);
+  }
 
-  const inner = new THREE.Mesh(new THREE.BoxGeometry(r * 1.5, 1.9, r * 1.5), MAT.stone);
-  inner.position.y = 0.95;
-  inner.castShadow = R.quality.shadows;
-  g.add(inner);
+  // 안마당 바닥
+  const yard = new THREE.Mesh(new THREE.BoxGeometry(r * 2, 0.25, r * 2), MAT.stone);
+  yard.position.y = 0.12;
+  yard.receiveShadow = R.quality.shadows;
+  g.add(yard);
 
-  // 성가퀴
-  for (let i = 0; i < 4; i++) {
-    for (let j = 0; j < 4; j++) {
-      if (i !== 0 && i !== 3 && j !== 0 && j !== 3) continue;
-      const b = new THREE.Mesh(new THREE.BoxGeometry(r * 0.36, 0.34, r * 0.36), MAT.stone);
-      b.position.set(-r + r * 0.66 * i + r * 0.33, 1.66, -r + r * 0.66 * j + r * 0.33);
+  // 안쪽 망루
+  const keep = new THREE.Mesh(new THREE.BoxGeometry(r * 0.9, 4.4, r * 0.9), MAT.stone);
+  keep.position.y = 2.2;
+  keep.castShadow = R.quality.shadows;
+  g.add(keep);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(r * 0.78, 1.5, 4), MAT.wood);
+  roof.position.y = 5.1;
+  roof.rotation.y = Math.PI / 4;
+  roof.castShadow = R.quality.shadows;
+  g.add(roof);
+
+  // 성가퀴 — 성벽 위 톱니
+  const step = r * 2 / 7;
+  for (let i = 0; i <= 7; i++) {
+    for (const [ox, oz] of [[0, -r], [0, r], [-r, 0], [r, 0]]) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(step * 0.55, 0.5, WALL_T), MAT.stone);
+      if (ox === 0) b.position.set(-r + i * step, WALL_H + 0.25, oz);
+      else { b.position.set(ox, WALL_H + 0.25, -r + i * step); b.rotation.y = Math.PI / 2; }
       b.castShadow = R.quality.shadows;
       g.add(b);
     }
   }
   // 깃대
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.2, 5), MAT.trunk);
-  pole.position.set(0, 3.0, 0);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4, 5), MAT.trunk);
+  pole.position.set(0, 7.0, 0);
   g.add(pole);
-  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.55), MAT.flag);
-  flag.position.set(0.46, 3.75, 0);
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.72), MAT.flag);
+  flag.position.set(0.62, 7.8, 0);
   g.add(flag);
   R.baseFlag = flag;
 
@@ -285,7 +349,7 @@ function buildBase(S) {
 }
 
 /* ---------------- 장수 ---------------- */
-function makeHumanoid(bodyColor, accentColor, scale0 = 1) {
+function makeHumanoid(bodyColor, accentColor, scale0 = 1, withHelm = true) {
   const scale = scale0 * 1.32;   // 한 칸(2.8유닛) 대비 사람이 제대로 보이는 비율
   const g = new THREE.Group();
   const body = new THREE.Mesh(
@@ -302,14 +366,64 @@ function makeHumanoid(bodyColor, accentColor, scale0 = 1) {
   head.castShadow = true;
   g.add(head);
 
-  const helm = new THREE.Mesh(
-    new THREE.ConeGeometry(0.23 * scale, 0.26 * scale, 8),
-    new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.5, metalness: 0.4 }));
-  helm.position.y = 1.3 * scale;
-  g.add(helm);
+  // 투구는 장수·병사만 씁니다. 몬스터는 두건으로 대신해 메시를 하나 아낍니다
+  // (20마리가 동시에 나오면 그것만으로 draw call 20번 차이가 납니다).
+  if (withHelm) {
+    const helm = new THREE.Mesh(
+      new THREE.ConeGeometry(0.23 * scale, 0.26 * scale, 8),
+      new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.5, metalness: 0.4 }));
+    helm.position.y = 1.3 * scale;
+    g.add(helm);
+  }
 
   g.userData.body = body;
   g.userData.head = head;
+  return g;
+}
+
+/* 장수마다 다른 무기를 쥐어줍니다 */
+function makeWeapon(type) {
+  const g = new THREE.Group();
+  const steel = new THREE.MeshStandardMaterial({ color: 0xd8dde2, roughness: 0.25, metalness: 0.85 });
+
+  if (type === 'bow') {
+    // 활 — 반원 몸체 + 시위
+    const limb = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.035, 6, 14, Math.PI * 1.15), MAT.trunk);
+    limb.rotation.set(0, Math.PI / 2, Math.PI / 2 + 0.3);
+    limb.position.y = 0.1;
+    g.add(limb);
+    const string = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.78, 3),
+      new THREE.MeshStandardMaterial({ color: 0xe8e2d2 }));
+    string.position.set(-0.13, 0.1, 0);
+    g.add(string);
+    g.userData.string = string;
+  } else if (type === 'halberd') {
+    // 방천화극 — 긴 자루 + 초승달 날
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 2.0, 6), MAT.trunk);
+    shaft.position.y = 0.55;
+    g.add(shaft);
+    const blade = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.5, 4), steel);
+    blade.position.y = 1.75;
+    g.add(blade);
+    const moon = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 5, 10, Math.PI), steel);
+    moon.position.set(0.17, 1.5, 0);
+    moon.rotation.set(Math.PI / 2, 0, -0.4);
+    g.add(moon);
+  } else {
+    // 검 — 자루 + 날 + 코등이
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.045, 0.3, 6), MAT.trunk);
+    grip.position.y = 0.15;
+    g.add(grip);
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.08), steel);
+    guard.position.y = 0.32;
+    g.add(guard);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.0, 0.03), steel);
+    blade.position.y = 0.85;
+    g.add(blade);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.18, 4), steel);
+    tip.position.y = 1.42;
+    g.add(tip);
+  }
   return g;
 }
 
@@ -325,20 +439,13 @@ function buildHero(S) {
   g.add(cape);
   g.userData.cape = cape;
 
-  // 무기
-  const wgrp = new THREE.Group();
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.5, 5), MAT.trunk);
-  shaft.position.y = 0.4;
-  wgrp.add(shaft);
-  const blade = new THREE.Mesh(
-    new THREE.ConeGeometry(0.11, 0.42, 4),
-    new THREE.MeshStandardMaterial({ color: 0xd8dde2, roughness: 0.25, metalness: 0.85 }));
-  blade.position.y = 1.34;
-  wgrp.add(blade);
-  wgrp.position.set(0.42, 0.62, 0.05);
-  wgrp.rotation.z = -0.2;
+  // 무기 — 장수마다 다릅니다
+  const wgrp = makeWeapon(d.weapon);
+  wgrp.position.set(d.weapon === 'bow' ? 0.34 : 0.42, 0.72, d.weapon === 'bow' ? 0.18 : 0.05);
+  wgrp.rotation.z = d.weapon === 'bow' ? 0 : -0.2;
   g.add(wgrp);
   g.userData.weapon = wgrp;
+  g.userData.weaponType = d.weapon;
 
   g.position.set(gx(S.hero.x), 0, gz(S.hero.y));
   R.hero = g;
@@ -467,7 +574,7 @@ const ROLE_COLOR = { wood: 0x5FAE72, stone: 0x9E9384, def: 0xC6412F };
 
 function makeMonsterMesh(m) {
   const scale = m.boss ? 1.7 : 0.95;
-  const g = makeHumanoid(m.boss ? BOSS_COLOR : MONSTER_COLOR, 0xD9B84A, scale);
+  const g = makeHumanoid(m.boss ? BOSS_COLOR : MONSTER_COLOR, 0xD9B84A, scale, false);
   // 황건 — 노란 두건
   const band = new THREE.Mesh(
     new THREE.TorusGeometry(0.2 * scale, 0.05 * scale, 6, 12),
@@ -502,9 +609,56 @@ export function sync(S, dt) {
     const bob = S.hero.moving ? Math.sin(S.t * 12) * 0.06 : 0;
     R.hero.userData.body.position.y = 0.82 + bob;
     R.hero.userData.head.position.y = 1.48 + bob;
-    // 공격 모션 — 무기를 휘두릅니다
+
+    // ── 회피 구르기 — 앞으로 구르는 회전 ──
+    if (S.hero.dodgeT > 0) {
+      const p = 1 - S.hero.dodgeT / C.DODGE_TIME;
+      R.hero.rotation.x = -p * Math.PI * 2;
+      R.hero.position.y = Math.sin(p * Math.PI) * 0.25;
+    } else {
+      R.hero.rotation.x = 0;
+      R.hero.position.y = 0;
+    }
+
+    // ── 무기별 공격 모션 ──
     const w = R.hero.userData.weapon;
-    if (w) w.rotation.x = S.hero.swing > 0 ? -1.5 + (0.22 - S.hero.swing) * 7 : 0;
+    const wt = R.hero.userData.weaponType;
+    if (w) {
+      const sw = S.hero.swing;
+      const kind = S.hero.swingKind;
+      if (sw > 0) {
+        const p = 1 - sw / (kind === 'attack' ? 0.24 : 0.32);   // 0→1 진행도
+        if (kind === 'spin') {              // 회선 — 제자리 360도
+          R.hero.rotation.y = S.hero.facing + p * Math.PI * 2;
+          w.rotation.z = -1.4;
+        } else if (kind === 'arc') {        // 참격 — 크게 베어내림
+          w.rotation.x = -2.0 + p * 3.4;
+          w.rotation.z = -0.9 + p * 1.4;
+        } else if (wt === 'bow') {          // 활 — 당겼다 놓기
+          const draw = p < 0.5 ? p * 2 : (1 - p) * 2;
+          w.rotation.y = -0.5;
+          if (w.userData.string) w.userData.string.position.x = -0.13 - draw * 0.22;
+        } else if (wt === 'halberd') {      // 창 — 찌르기
+          const thrust = Math.sin(p * Math.PI);
+          w.rotation.x = -0.35 - thrust * 0.5;
+          w.position.z = 0.05 + thrust * 0.55;
+        } else {                            // 검 — 대각선 베기
+          w.rotation.x = -1.5 + p * 2.6;
+          w.rotation.z = -0.2 - Math.sin(p * Math.PI) * 1.1;
+        }
+      } else {
+        w.rotation.set(0, wt === 'bow' ? -0.5 : 0, wt === 'bow' ? 0 : -0.2);
+        w.position.z = wt === 'bow' ? 0.18 : 0.05;
+        if (w.userData.string) w.userData.string.position.x = -0.13;
+      }
+    }
+
+    // 무쌍난무·철벽 중에는 몸이 빛납니다
+    const glow = S.hero.frenzy > 0 ? 0.5 : S.hero.guard > 0 ? 0.35 : 0;
+    const bodyMat = R.hero.userData.body.material;
+    bodyMat.emissive = bodyMat.emissive || new THREE.Color();
+    bodyMat.emissive.setHex(S.hero.frenzy > 0 ? 0xE08B3C : 0x5B8FC7);
+    bodyMat.emissiveIntensity = glow;
   }
 
   // --- 몬스터 ---
@@ -523,9 +677,39 @@ export function sync(S, dt) {
     base.multiplyScalar(0.45 + ratio * 0.55);
     if (m.hitFlash > 0) base.lerp(new THREE.Color(0xffffff), 0.75);
     mesh.userData.body.material.color.copy(base);
+
+    // ★ 공격 예고 — 바닥에 붉은 원이 차오릅니다. 다 차기 전에 구르면 피합니다.
+    if (m.windup > 0) {
+      let tg = R.telegraphs.get(m);
+      if (!tg) {
+        tg = new THREE.Mesh(
+          new THREE.RingGeometry(0.1, 1.0, 28),
+          new THREE.MeshBasicMaterial({ color: 0xC6412F, transparent: true, opacity: 0.75,
+                                        side: THREE.DoubleSide, depthWrite: false }));
+        tg.rotation.x = -Math.PI / 2;
+        R.scene.add(tg);
+        R.telegraphs.set(m, tg);
+      }
+      const full = m.boss ? C.MONSTER_WINDUP_BOSS : C.MONSTER_WINDUP;
+      const p = 1 - m.windup / full;                 // 0 → 1 로 차오릅니다
+      tg.visible = true;
+      tg.position.set(gx(m.x), 0.05, gz(m.y));
+      tg.scale.setScalar((m.boss ? 1.9 : 1.15) * (0.35 + p * 0.65));
+      tg.material.opacity = 0.35 + p * 0.5;
+      // 몸을 뒤로 젖혀 "때리려 한다"를 보여줍니다
+      mesh.userData.body.rotation.x = -p * 0.5;
+    } else {
+      const tg = R.telegraphs.get(m);
+      if (tg) tg.visible = false;
+      mesh.userData.body.rotation.x = 0;
+    }
   }
   for (const [m, mesh] of R.monsterMeshes) {
-    if (!seen.has(m)) { R.scene.remove(mesh); R.monsterMeshes.delete(m); }
+    if (!seen.has(m)) {
+      R.scene.remove(mesh); R.monsterMeshes.delete(m);
+      const tg = R.telegraphs.get(m);
+      if (tg) { R.scene.remove(tg); R.telegraphs.delete(m); }
+    }
   }
 
   // --- 병사 ---
@@ -547,6 +731,10 @@ export function sync(S, dt) {
     if (!sseen.has(s)) { R.scene.remove(mesh); R.soldierMeshes.delete(s); }
   }
 
+  updateRings(S);
+  updateArrows(dt);
+  updateVfx(S, dt);
+
   // --- 낮과 밤 ---
   updateDayNight(S, dt);
 
@@ -565,6 +753,81 @@ export function sync(S, dt) {
   if (R._fpsT >= 0.5) { R.stats.fps = Math.round(R._fpsN / R._fpsT); R._fpsN = 0; R._fpsT = 0; }
 }
 
+/* 어디까지 닿는지, 무엇을 노리는지 바닥에 그려줍니다 */
+function updateRings(S) {
+  const r = R.rings;
+  if (!r.attack) return;
+  const h = S.hero;
+
+  // 공격 사거리 — 적이 들어오면 하얗게 밝아집니다
+  const range = (C.HERO_RANGE * (C.WEAPON[S.heroDef.weapon] || C.WEAPON.sword).range
+                 * (S.heroDef.id === 'taesaja' ? 1.3 : 1)) * S3;
+  let inRange = null, bd = Infinity;
+  for (const m of S.monsters) {
+    const d = Math.hypot(m.x - h.x, m.y - h.y);
+    if (d < bd) { bd = d; if (d <= range / S3) inRange = m; }
+  }
+  r.attack.visible = !h.dead;
+  r.attack.position.set(gx(h.x), 0.04, gz(h.y));
+  r.attack.scale.setScalar(range);
+  r.attack.material.opacity = inRange ? 0.55 : 0.14;
+  r.attack.material.color.setHex(inRange ? 0xffffff : 0x9E9384);
+
+  // 지금 노리는 적 — 흰 링
+  r.target.visible = !!inRange;
+  if (inRange) {
+    r.target.position.set(gx(inRange.x), 0.06, gz(inRange.y));
+    r.target.scale.setScalar(inRange.boss ? 1.9 : 1.1);
+  }
+
+  // 채집 대상 — 흰 링 (캐는 중이면 밝게 깜빡)
+  const node = h.gatherTarget;
+  r.gather.visible = !!node;
+  if (node) {
+    r.gather.position.set(gx(node.x), 0.06, gz(node.y));
+    r.gather.scale.setScalar(1.05);
+    r.gather.material.opacity = 0.55 + Math.sin(S.t * 9) * 0.3;
+  }
+
+  // 건설 가능 범위 — 건설 모드일 때만
+  r.build.visible = R.buildMode;
+  if (R.buildMode) {
+    r.build.position.set(gx(h.x), 0.03, gz(h.y));
+    r.build.scale.setScalar(C.BUILD_RANGE * S3);
+  }
+}
+export function setBuildMode(on) { R.buildMode = on; }
+
+function updateArrows(dt) {
+  for (let i = R.arrows.length - 1; i >= 0; i--) {
+    const a = R.arrows[i];
+    a.t += dt;
+    const p = a.t / a.dur;
+    if (p >= 1) { R.scene.remove(a.mesh); R.arrows.splice(i, 1); continue; }
+    a.mesh.position.lerpVectors(a.a, a.b, p);
+    a.mesh.position.y += Math.sin(p * Math.PI) * 0.35;   // 살짝 포물선
+  }
+}
+
+function updateVfx(S, dt) {
+  for (let i = R.vfx.length - 1; i >= 0; i--) {
+    const v = R.vfx[i];
+    v.t += dt;
+    const p = v.t / v.life;
+    if (p >= 1) { R.scene.remove(v.mesh); R.vfx.splice(i, 1); continue; }
+    if (v.kind === 'wave') {
+      v.mesh.scale.setScalar(0.2 + p * v.radius);
+      v.mesh.material.opacity = 0.85 * (1 - p);
+    } else if (v.kind === 'beam') {
+      v.mesh.material.opacity = 0.6 * (1 - p);
+    } else if (v.kind === 'aura') {
+      v.mesh.position.set(gx(S.hero.x), 0.07, gz(S.hero.y));
+      v.mesh.scale.setScalar(1 + Math.sin(v.t * 8) * 0.08);
+      v.mesh.material.opacity = 0.55 * (1 - p * 0.5);
+    }
+  }
+}
+
 let nightMix = 0;
 function updateDayNight(S, dt) {
   const wantNight = (S.phase === 'night' || S.phase === 'warn') ? 1 : 0;
@@ -574,8 +837,8 @@ function updateDayNight(S, dt) {
   const sky = daySky.clone().lerp(nightSky, nightMix);
   R.scene.background = sky;
   R.scene.fog.color = sky;
-  R.scene.fog.near = 30 - nightMix * 18;
-  R.scene.fog.far = 95 - nightMix * 45;
+  R.scene.fog.near = 22 - nightMix * 14;
+  R.scene.fog.far = 68 - nightMix * 32;
 
   R.sun.intensity = 2.1 * (1 - nightMix) + 0.06;
   R.sun.color.setHex(nightMix > 0.5 ? 0x9fb6e0 : 0xfff2d8);
@@ -611,7 +874,17 @@ function updateCamera(S, dt) {
   const pz = c.target.z + Math.cos(c.yaw) * c.dist * Math.cos(c.pitch);
   const py = c.target.y + c.dist * Math.sin(c.pitch);
 
-  R.camera.position.set(px, Math.max(1.5, py), pz);
+  // 타격·피격 시 화면이 짧게 흔들립니다
+  let sx = 0, sy = 0;
+  if (R.shake.t > 0) {
+    R.shake.t -= dt;
+    const k = Math.max(0, R.shake.t / 0.22) * R.shake.power;
+    sx = (Math.random() - 0.5) * k;
+    sy = (Math.random() - 0.5) * k;
+    if (R.shake.t <= 0) R.shake.power = 0;
+  }
+
+  R.camera.position.set(px + sx, Math.max(1.5, py + sy), pz + sx);
   R.camera.lookAt(c.target);
 }
 
@@ -650,20 +923,122 @@ export function worldToScreen(x, y, height = 1.2) {
   };
 }
 
-/* ---------------- 설치 미리보기 ---------------- */
-let ghost = null;
-export function showGhost(tx, ty, okToBuild) {
-  if (!ghost) {
-    ghost = new THREE.Mesh(
-      new THREE.BoxGeometry(C.TILE * S3 * 0.96, 0.1, C.TILE * S3 * 0.96),
-      new THREE.MeshBasicMaterial({ color: 0x5FAE72, transparent: true, opacity: 0.45 }));
+/* ---------------- 설치 미리보기 ----------------
+   바닥 색만 보여주지 않고 "실제로 뭐가 들어설지" 형태까지 보여줍니다.
+   지어놓고 나서 "이게 아닌데" 하는 일을 줄이는 장치입니다. */
+let ghost = null, ghostKind = null, ghostShape = null;
+
+function ghostMaterial(color) {
+  return new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, depthWrite: false });
+}
+
+function buildGhostShape(kind) {
+  const g = new THREE.Group();
+  const mat = ghostMaterial(0x5FAE72);
+  if (kind === 'wall') {
+    const half = C.TILE * S3 * 0.5;
+    for (let j = 0; j < 4; j++) {
+      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 1.05, 6), mat);
+      log.position.set(-half + ((j + 0.5) / 4) * half * 2, 0.53, 0);
+      g.add(log);
+    }
+  } else if (kind === 'trap') {
+    for (let i = 0; i < 4; i++) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.44, 5), mat);
+      sp.position.set((i % 2 ? 0.5 : -0.5) * 0.55, 0.22, (i < 2 ? 0.5 : -0.5) * 0.55);
+      g.add(sp);
+    }
+  } else if (kind === 'camp') {
+    const tent = new THREE.Mesh(new THREE.ConeGeometry(1.0, 1.4, 7), mat);
+    tent.position.y = 0.7;
+    g.add(tent);
+  } else {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.1, 1.3), mat);
+    body.position.y = 0.55;
+    g.add(body);
+  }
+  // 바닥 판 — 어느 칸에 들어가는지 명확히
+  const pad = new THREE.Mesh(
+    new THREE.PlaneGeometry(C.TILE * S3 * 0.96, C.TILE * S3 * 0.96), ghostMaterial(0x5FAE72));
+  pad.rotation.x = -Math.PI / 2;
+  pad.position.y = 0.03;
+  g.add(pad);
+  g.userData.parts = g.children;
+  return g;
+}
+
+export function showGhost(tx, ty, okToBuild, kind, locked) {
+  if (ghostKind !== kind) {
+    if (ghost) R.scene.remove(ghost);
+    ghost = buildGhostShape(kind);
+    ghostKind = kind;
     R.scene.add(ghost);
   }
   ghost.visible = true;
-  ghost.material.color.setHex(okToBuild ? 0x5FAE72 : 0xC6412F);
-  ghost.position.set(gx(tx * C.TILE + C.TILE / 2), 0.06, gz(ty * C.TILE + C.TILE / 2));
+  const color = okToBuild ? (locked ? 0xE0B44A : 0x5FAE72) : 0xC6412F;
+  for (const part of ghost.children) part.material.color.setHex(color);
+  // 확정 대기 중이면 살짝 위아래로 움직여 "확인을 기다린다"를 알립니다
+  const bob = locked ? Math.sin(performance.now() * 0.006) * 0.06 : 0;
+  ghost.position.set(gx(tx * C.TILE + C.TILE / 2), bob, gz(ty * C.TILE + C.TILE / 2));
 }
 export function hideGhost() { if (ghost) ghost.visible = false; }
+
+/* ---------------- 화살 · 스킬 이펙트 ---------------- */
+const arrowGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.7, 4);
+const arrowMat = new THREE.MeshStandardMaterial({ color: 0xd9c9a0, roughness: 0.6 });
+
+export function spawnArrow(from, to) {
+  const m = new THREE.Mesh(arrowGeo, arrowMat);
+  const a = new THREE.Vector3(gx(from.x), 1.15, gz(from.y));
+  const b = new THREE.Vector3(gx(to.x), 0.9, gz(to.y));
+  m.position.copy(a);
+  m.lookAt(b);
+  m.rotateX(Math.PI / 2);
+  R.scene.add(m);
+  R.arrows.push({ mesh: m, a, b, t: 0, dur: Math.max(0.08, a.distanceTo(b) / 42) });
+}
+
+/** 바닥에서 퍼져나가는 원 — 광역 스킬의 범위를 눈으로 알려줍니다 */
+export function spawnShockwave(x, y, radius, color, life = 0.45) {
+  const m = new THREE.Mesh(
+    new THREE.RingGeometry(0.55, 0.72, 40),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85,
+                                  side: THREE.DoubleSide, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(gx(x), 0.08, gz(y));
+  R.scene.add(m);
+  R.vfx.push({ mesh: m, t: 0, life, kind: 'wave', radius: radius * S3 });
+}
+
+/** 직선 스킬(관통사)의 궤적 */
+export function spawnBeam(x, y, facing, range, color) {
+  const len = range * S3;
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.45, len),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6,
+                                  side: THREE.DoubleSide, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2;
+  m.rotation.z = -facing;
+  m.position.set(gx(x) + Math.sin(facing) * len / 2, 0.09, gz(y) + Math.cos(facing) * len / 2);
+  R.scene.add(m);
+  R.vfx.push({ mesh: m, t: 0, life: 0.3, kind: 'beam' });
+}
+
+/** 장수 주변 오라 (철벽 · 무쌍난무) */
+export function spawnAura(color, dur) {
+  const m = new THREE.Mesh(
+    new THREE.RingGeometry(0.75, 0.95, 32),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7,
+                                  side: THREE.DoubleSide, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2;
+  R.scene.add(m);
+  R.vfx.push({ mesh: m, t: 0, life: dur, kind: 'aura' });
+}
+
+export function shakeCamera(power) {
+  R.shake.power = Math.max(R.shake.power, power);
+  R.shake.t = 0.22;
+}
 
 /* ---------------- 미니맵 ---------------- */
 export function attachMinimap(canvas) {

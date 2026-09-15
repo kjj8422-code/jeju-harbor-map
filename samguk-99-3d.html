@@ -77,6 +77,37 @@ body{padding-bottom:20px;}
   padding:5px 13px;font-size:12px;font-weight:700;animation:tfade 2.6s ease forwards;}
 @keyframes tfade{0%{opacity:0;transform:translateY(8px);}12%{opacity:1;transform:none;}
   75%{opacity:1;}100%{opacity:0;transform:translateY(-8px);}}
+/* 체력 바 — 3D 위에 겹쳐 그립니다 (draw call 0) */
+.hpBar{position:absolute;width:44px;height:5px;background:rgba(0,0,0,.65);
+  border:1px solid rgba(0,0,0,.8);border-radius:2px;transform:translate(-50%,-50%);
+  pointer-events:none;overflow:hidden;}
+.hpBar>i{display:block;height:100%;background:#C6412F;transition:width .12s linear;}
+.hpBar.boss{width:88px;height:8px;border-color:#E0B44A;}
+.hpBar.hero{width:52px;height:6px;border-color:rgba(255,255,255,.35);}
+.hpBar.hero.invuln{box-shadow:0 0 0 2px rgba(159,216,255,.9);}
+
+/* 스킬바 */
+#skillBar{display:flex;gap:6px;flex-wrap:wrap;}
+.skillBtn{position:relative;background:var(--panel);border:1px solid var(--line);
+  border-radius:7px;padding:7px 12px;min-width:74px;color:var(--dim);
+  font-family:inherit;cursor:pointer;text-align:center;line-height:1.25;opacity:.55;}
+.skillBtn.ready{opacity:1;color:var(--ink);border-color:var(--gold);}
+.skillBtn .k{display:block;font-size:9.5px;color:var(--dim);letter-spacing:.5px;}
+.skillBtn .n{display:block;font-size:12.5px;font-weight:800;}
+.skillBtn .cd{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:15px;font-weight:900;color:var(--gold);background:rgba(18,17,15,.72);border-radius:6px;}
+.skillBtn .cd:empty{display:none;}
+.skillBtn.dodge.ready{border-color:#9fd8ff;}
+
+/* 설치 확인 */
+#buildConfirm{display:none;position:absolute;left:50%;bottom:52px;transform:translateX(-50%);
+  gap:6px;align-items:center;background:rgba(18,17,15,.92);border:1px solid var(--gold);
+  border-radius:8px;padding:7px 10px;z-index:5;}
+#buildConfirm .t{font-size:11.5px;color:var(--dim);margin-right:2px;}
+#buildHint{display:none;position:absolute;left:50%;bottom:92px;transform:translateX(-50%);
+  background:rgba(140,30,20,.9);color:#fff;font-size:11.5px;font-weight:700;
+  padding:4px 10px;border-radius:14px;pointer-events:none;z-index:5;}
+
 #perf{position:absolute;left:8px;bottom:8px;font-size:10px;color:var(--dim);
   background:rgba(18,17,15,.7);padding:3px 7px;border-radius:4px;pointer-events:none;}
 
@@ -183,6 +214,12 @@ details.panel[open] summary::before{content:'▾ ';}
     <div id="waveAlert"><div class="t" id="waTitle"></div><div class="s" id="waSub"></div></div>
     <div id="objective">목표를 불러오는 중…</div>
     <div id="minimapWrap"><canvas id="minimap"></canvas><div id="mmLabel">미니맵</div></div>
+    <div id="buildHint"></div>
+    <div id="buildConfirm">
+      <span class="t">여기에 지을까요?</span>
+      <button class="btn gold" id="btnConfirmBuild">✔ 설치 (Enter)</button>
+      <button class="btn" id="btnCancelBuild">✕ 취소</button>
+    </div>
     <div id="perf"></div>
   </div>
 
@@ -196,7 +233,13 @@ details.panel[open] summary::before{content:'▾ ';}
     </div>
   </div>
 
-  <p class="secTitle">건설 — 카드를 누른 뒤 땅을 클릭하면 설치됩니다</p>
+  <p class="secTitle">스킬 — 적의 붉은 예고가 차오를 때 <b style="color:#9fd8ff">회피</b>하면 빗나갑니다</p>
+  <div id="skillBar"></div>
+
+  <p class="secTitle">건설 — 카드를 고르고 땅을 눌러 위치를 잡은 뒤 확인하세요
+    <label style="font-size:11px;color:var(--dim);font-weight:600;margin-left:8px;">
+      <input type="checkbox" id="chkInstant"> 바로 설치</label>
+  </p>
   <div class="cardRow" id="buildRow"></div>
 
   <div id="soldierPanel">
@@ -214,7 +257,10 @@ details.panel[open] summary::before{content:'▾ ';}
       <li><b>이동</b> — WASD 또는 조이스틱. <b>카메라가 보는 방향 기준</b>으로 움직입니다</li>
       <li><b>카메라</b> — 화면을 드래그하면 장수 주위를 돕니다. 마우스 휠로 확대·축소</li>
       <li><b>채집·공격은 자동</b> — 자원 옆에 서 있으면 캐고, 적이 오면 싸웁니다</li>
-      <li><b>건설</b> — 카드를 고르면 드래그가 "설치"로 바뀝니다. 땅을 클릭(또는 끌기)해 배치</li>
+      <li><b>공격·채집 사거리</b> — 장수 발밑의 원이 닿는 범위입니다. 적이 들어오면 <b>하얗게</b> 밝아지고, 노리는 적과 캐는 자원에 <b>흰 테두리</b>가 생깁니다</li>
+      <li><b>회피</b> — <b>Space</b>(또는 Shift). 적 발밑의 <b style="color:#C6412F">붉은 원이 차오르는 동안</b> 구르면 공격이 빗나갑니다</li>
+      <li><b>스킬</b> — <b>Q</b> 기본 / <b>E</b> 고유. 스킬로 때리면 적의 공격을 끊을 수 있습니다(평타로는 안 끊깁니다)</li>
+      <li><b>건설</b> — 카드를 고르고 땅을 눌러 위치를 잡으면 <b>들어설 모습이 미리</b> 보입니다. 확인을 눌러야 실제로 지어집니다</li>
       <li><b>목책은 방어벽이 아니라 길을 조종하는 도구</b>입니다. 일부러 길을 터고 거기에 함정을 까세요</li>
       <li><b>밤</b> — 11·22·33일에 대란이 옵니다. 5초 전에 공격 방향을 알려줍니다</li>
     </ul>

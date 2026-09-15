@@ -17,7 +17,12 @@ const dist2 = (ax, ay, bx, by) => { const dx = ax - bx, dy = ay - by; return dx 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const ri = (a, b) => Math.floor(rnd(a, b + 1));
 
-function emit(S, type, data) { S.events.push({ type, ...data }); }
+function emit(S, type, data) {
+  // ★ data 를 먼저 펼치고 type 을 나중에 씁니다.
+  //   순서가 반대면 data 안의 type 필드가 이벤트 종류를 덮어써서
+  //   화면이 그 이벤트를 영영 못 알아봅니다 (실제로 스킬 이펙트가 이래서 안 나왔습니다).
+  S.events.push({ ...data, type });
+}
 export function drainEvents(S) { const e = S.events; S.events = []; return e; }
 
 function fx(S, x, y, text, color) { emit(S, 'fx', { x, y, text, color: color || '#fff' }); }
@@ -75,7 +80,15 @@ export function createSim(heroId) {
       y: (C.BASE_TY + 3) * C.TILE,
       hp: C.HERO_HP, maxHp: C.HERO_HP,
       cd: 0, dead: false, respawn: 0, gp: 0,
-      facing: 0, moving: false, swing: 0
+      facing: 0, moving: false, swing: 0, swingKind: 'attack',
+      // 회피
+      dodgeT: 0, dodgeCd: 0, dodgeX: 0, dodgeY: 0, invuln: 0,
+      // 스킬
+      skillCd: [0, 0],
+      guard: 0, guardReduce: 0,          // 철벽
+      frenzy: 0, frenzyAtk: 1, frenzyMove: 1,   // 무쌍난무
+      volley: 0, volleyT: 0,             // 연사
+      gatherTarget: null
     },
     base: {
       x: C.BASE_TX * C.TILE + C.TILE / 2,
@@ -211,8 +224,12 @@ export function combatMul(S) {
   if (S.lastStand) m *= 1.5;
   return m;
 }
-export const heroRange = S => C.HERO_RANGE * (S.heroDef.id === 'taesaja' ? 1.3 : 1);
-export const heroCd = S => C.HERO_CD * (S.heroDef.id === 'yeopo' ? 0.8 : 1);
+export const weaponOf = S => C.WEAPON[S.heroDef.weapon] || C.WEAPON.sword;
+export const heroRange = S =>
+  C.HERO_RANGE * weaponOf(S).range * (S.heroDef.id === 'taesaja' ? 1.3 : 1);
+export const heroCd = S =>
+  C.HERO_CD * weaponOf(S).cd * (S.heroDef.id === 'yeopo' ? 0.8 : 1) * S.hero.frenzyAtk;
+export const heroDamage = S => C.HERO_ATK * combatMul(S) * weaponOf(S).dmg;
 
 /* ==================================================================
    건설 · 제작 · 병사
@@ -228,16 +245,36 @@ export function costText(cost) {
   return Object.keys(cost).map(k => `${names[k]} ${cost[k]}`).join(' · ');
 }
 
+/** 이 칸에 지을 수 있는지 — 화면의 미리보기도 같은 함수를 씁니다 */
+export function canBuildAt(S, tx, ty, buildId) {
+  if (!S || S.over || !buildId || !inMap(tx, ty)) return { ok: false, why: 'out' };
+  if (S.occ[tkey(tx, ty)] !== C.OCC_EMPTY) return { ok: false, why: 'occupied' };
+  const cx = tx * C.TILE + C.TILE / 2, cy = ty * C.TILE + C.TILE / 2;
+  if (Math.hypot(cx - S.hero.x, cy - S.hero.y) > C.BUILD_RANGE) return { ok: false, why: 'far' };
+  const def = C.BUILDS.find(b => b.id === buildId);
+  if (!def) return { ok: false, why: 'out' };
+  if (def.id === 'forge' && S.forge) return { ok: false, why: 'owned' };
+  if (!canAfford(S, def.cost)) return { ok: false, why: 'cost' };
+  return { ok: true, why: '' };
+}
+
+const BUILD_DENY = {
+  out: '지도 밖입니다', occupied: '이미 무언가 있습니다',
+  far: '너무 멉니다 — 가까이 가세요', owned: '이미 보유한 시설입니다', cost: '자원이 부족합니다'
+};
+
 export function tryBuild(S, tx, ty, buildId) {
-  if (S.over || !buildId || !inMap(tx, ty)) return false;
+  const chk = canBuildAt(S, tx, ty, buildId);
+  if (!chk.ok) {
+    if (chk.why === 'far' || chk.why === 'cost') {
+      toast(S, BUILD_DENY[chk.why]);
+      sound(S, 'deny');
+    }
+    return false;
+  }
   const k = tkey(tx, ty);
-  if (S.occ[k] !== C.OCC_EMPTY) return false;
 
   const def = C.BUILDS.find(b => b.id === buildId);
-  if (!def) return false;
-  if (def.id === 'forge' && S.forge) { toast(S, '대장간은 1채만 지을 수 있습니다'); return false; }
-  if (!canAfford(S, def.cost)) { toast(S, `자원이 부족합니다 — ${costText(def.cost)}`); sound(S, 'deny'); return false; }
-
   pay(S, def.cost);
   if (def.id === 'wall') {
     S.occ[k] = C.OCC_WALL; S.wallHp[k] = def.hp; S.cnt.wall++;
@@ -304,6 +341,128 @@ export function doCraft(S, id) {
 }
 
 /* ==================================================================
+   회피 — 컨트롤로 극복하는 핵심 장치
+   ================================================================== */
+export function dodgeRoll(S) {
+  const h = S.hero;
+  if (S.over || h.dead || h.dodgeCd > 0 || h.dodgeT > 0) return false;
+
+  // 움직이는 방향으로, 가만히 있으면 바라보는 방향으로 구릅니다
+  let dx = S.input.x, dy = S.input.y;
+  if (Math.hypot(dx, dy) < 0.05) { dx = Math.sin(h.facing); dy = Math.cos(h.facing); }
+  const len = Math.hypot(dx, dy) || 1;
+
+  h.dodgeX = dx / len; h.dodgeY = dy / len;
+  h.dodgeT = C.DODGE_TIME;
+  h.dodgeCd = C.DODGE_CD;
+  h.invuln = Math.max(h.invuln, C.DODGE_INVULN);
+  h.facing = Math.atan2(h.dodgeX, h.dodgeY);
+  emit(S, 'dodge', { x: h.x, y: h.y });
+  sound(S, 'dodge');
+  return true;
+}
+
+/* ==================================================================
+   스킬
+   ================================================================== */
+export function useSkill(S, slot) {
+  const h = S.hero;
+  const def = S.heroDef.skills[slot];
+  if (S.over || h.dead || !def || h.skillCd[slot] > 0) return false;
+
+  h.skillCd[slot] = def.cd;
+  h.swing = 0.32; h.swingKind = def.type;
+  const dmgBase = heroDamage(S);
+
+  switch (def.type) {
+    case 'arc': {          // 참격 — 전방 부채꼴
+      const R = def.range * C.TILE * 2;
+      let hit = 0;
+      for (const m of [...S.monsters]) {
+        if (dist2(h.x, h.y, m.x, m.y) > R * R) continue;
+        const ang = Math.atan2(m.x - h.x, m.y - h.y);
+        let diff = Math.abs(((ang - h.facing + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+        if (diff > def.arc / 2) continue;
+        knockback(m, h.x, h.y, C.KNOCKBACK_SKILL * def.knock);
+        damageMonster(S, m, dmgBase * def.dmg, 'hero', null, true);
+        hit++;
+      }
+      emit(S, 'skillFx', { kind: 'arc', x: h.x, y: h.y, facing: h.facing, range: R, hit });
+      break;
+    }
+    case 'spin': {         // 회선 — 360도
+      const R = def.range * C.TILE * 2;
+      let hit = 0;
+      for (const m of [...S.monsters]) {
+        if (dist2(h.x, h.y, m.x, m.y) > R * R) continue;
+        knockback(m, h.x, h.y, C.KNOCKBACK_SKILL * def.knock);
+        damageMonster(S, m, dmgBase * def.dmg, 'hero', null, true);
+        hit++;
+      }
+      emit(S, 'skillFx', { kind: 'spin', x: h.x, y: h.y, range: R, hit });
+      break;
+    }
+    case 'pierce': {       // 관통사 — 직선
+      const R = def.range * C.TILE * 2, W = def.width * C.TILE;
+      const fx0 = Math.sin(h.facing), fy0 = Math.cos(h.facing);
+      let hit = 0;
+      for (const m of [...S.monsters]) {
+        const rx = m.x - h.x, ry = m.y - h.y;
+        const along = rx * fx0 + ry * fy0;
+        if (along < 0 || along > R) continue;
+        const perp = Math.abs(rx * fy0 - ry * fx0);
+        if (perp > W) continue;
+        damageMonster(S, m, dmgBase * def.dmg, 'hero', null, true);
+        hit++;
+      }
+      emit(S, 'skillFx', { kind: 'pierce', x: h.x, y: h.y, facing: h.facing, range: R, hit });
+      break;
+    }
+    case 'multi':          // 연사 — 여러 발을 나눠 쏩니다
+      h.volley = def.shots; h.volleyT = 0;
+      emit(S, 'skillFx', { kind: 'multi', x: h.x, y: h.y });
+      break;
+    case 'guard':          // 철벽
+      h.guard = def.dur; h.guardReduce = def.reduce;
+      emit(S, 'skillFx', { kind: 'guard', x: h.x, y: h.y, dur: def.dur });
+      break;
+    case 'frenzy':         // 무쌍난무
+      h.frenzy = def.dur; h.frenzyAtk = def.atkSpd; h.frenzyMove = def.moveSpd;
+      emit(S, 'skillFx', { kind: 'frenzy', x: h.x, y: h.y, dur: def.dur });
+      break;
+  }
+  toast(S, `<b style="color:${S.heroDef.color}">${def.name}</b>`);
+  sound(S, 'skill');
+  return true;
+}
+
+function knockback(m, fromX, fromY, power) {
+  if (m.boss) power *= 0.25;    // 보스는 잘 안 밀립니다
+  const dx = m.x - fromX, dy = m.y - fromY;
+  const d = Math.hypot(dx, dy) || 1;
+  m.vx = (dx / d) * power;
+  m.vy = (dy / d) * power;
+}
+
+/* 장수가 맞을 때 — 무적·철벽을 거칩니다 */
+function damageHero(S, amt, from) {
+  const h = S.hero;
+  if (h.invuln > 0) { fx(S, h.x, h.y - 20, '회피!', '#5FAE72'); emit(S, 'dodgeSuccess'); return false; }
+  if (h.guard > 0) amt *= (1 - h.guardReduce);
+  h.hp -= amt;
+  fx(S, h.x, h.y - 16, `-${Math.round(amt)}`, '#E0554A');
+  emit(S, 'heroHit', { x: h.x, y: h.y, dmg: amt });
+  if (h.hp <= 0 && !h.dead) {
+    h.dead = true;
+    h.respawn = C.RESPAWN_BASE + S.day * 0.2;
+    h.dodgeT = 0; h.volley = 0; h.guard = 0; h.frenzy = 0; h.frenzyAtk = 1; h.frenzyMove = 1;
+    toast(S, `<b>${S.heroDef.name}</b> 쓰러짐 — ${Math.round(h.respawn)}초 후 부활 (탈락은 없습니다)`);
+    sound(S, 'heroDown');
+  }
+  return true;
+}
+
+/* ==================================================================
    웨이브
    ================================================================== */
 export const waveForDay = day => C.WAVES.find(w => w.day === day) || null;
@@ -325,7 +484,8 @@ function edgePoint(side) {
 
 function makeMonster(x, y, hp, spd, dmg, boss) {
   return { x, y, hp, maxHp: hp, spd, dmg, cd: 0, boss: !!boss,
-           breach: null, hitFlash: 0, facing: 0, dead: false };
+           breach: null, hitFlash: 0, facing: 0, dead: false,
+           windup: 0, windupTgt: null, vx: 0, vy: 0, hitStop: 0 };
 }
 
 function spawnWave(S, w) {
@@ -449,7 +609,28 @@ function updateHero(S, dt) {
     return;
   }
 
-  const spd = C.HERO_SPD * (S.lastStand ? 1.2 : 1);
+  // 타이머들
+  h.cd -= dt;
+  if (h.swing > 0) h.swing -= dt;
+  if (h.invuln > 0) h.invuln -= dt;
+  if (h.dodgeCd > 0) h.dodgeCd -= dt;
+  for (let i = 0; i < h.skillCd.length; i++) if (h.skillCd[i] > 0) h.skillCd[i] -= dt;
+  if (h.guard > 0 && (h.guard -= dt) <= 0) { h.guard = 0; h.guardReduce = 0; }
+  if (h.frenzy > 0 && (h.frenzy -= dt) <= 0) { h.frenzy = 0; h.frenzyAtk = 1; h.frenzyMove = 1; }
+
+  const spd = C.HERO_SPD * (S.lastStand ? 1.2 : 1) * h.frenzyMove;
+
+  // ── 회피 중에는 구르는 방향으로만 움직입니다 (입력 무시) ──
+  if (h.dodgeT > 0) {
+    h.dodgeT -= dt;
+    const v = C.DODGE_DIST / C.DODGE_TIME;
+    h.x = clamp(h.x + h.dodgeX * v * dt, 8, C.WORLD_W - 8);
+    h.y = clamp(h.y + h.dodgeY * v * dt, 8, C.WORLD_H - 8);
+    h.moving = true;
+    h.gatherTarget = null;
+    return;                      // 구르는 동안은 공격도 채집도 안 합니다
+  }
+
   const iv = S.input;
   h.moving = !!(iv.x || iv.y);
   if (h.moving) {
@@ -458,8 +639,27 @@ function updateHero(S, dt) {
     h.facing = Math.atan2(iv.x, iv.y);
   }
 
-  h.cd -= dt;
-  if (h.swing > 0) h.swing -= dt;
+  // ── 연사(스킬) — 남은 화살을 간격을 두고 쏩니다 ──
+  if (h.volley > 0) {
+    h.volleyT -= dt;
+    if (h.volleyT <= 0) {
+      h.volleyT = 0.12;
+      const sk = S.heroDef.skills[0];
+      let t = null, td = heroRange(S) * 1.3;
+      td *= td;
+      for (const m of S.monsters) {
+        const d = dist2(h.x, h.y, m.x, m.y);
+        if (d < td) { td = d; t = m; }
+      }
+      if (t) {
+        h.facing = Math.atan2(t.x - h.x, t.y - h.y);
+        emit(S, 'shot', { from: { x: h.x, y: h.y }, to: { x: t.x, y: t.y } });
+        damageMonster(S, t, heroDamage(S) * (sk.dmg || 1), 'hero', null);
+        sound(S, 'swing');
+      }
+      h.volley--;
+    }
+  }
 
   const R = heroRange(S);
   let best = null, bd = R * R;
@@ -471,11 +671,14 @@ function updateHero(S, dt) {
     h.facing = Math.atan2(best.x - h.x, best.y - h.y);
     if (h.cd <= 0) {
       h.cd = heroCd(S);
-      h.swing = 0.22;
-      damageMonster(S, best, C.HERO_ATK * combatMul(S), 'hero', null);
+      h.swing = 0.24; h.swingKind = 'attack';
+      knockback(best, h.x, h.y, C.KNOCKBACK);
+      damageMonster(S, best, heroDamage(S), 'hero', null);
       sound(S, 'swing');
-      emit(S, 'heroSwing', { x: h.x, y: h.y, target: { x: best.x, y: best.y } });
+      if (S.heroDef.weapon === 'bow') emit(S, 'shot', { from: { x: h.x, y: h.y }, to: { x: best.x, y: best.y } });
+      emit(S, 'heroSwing', { x: h.x, y: h.y, target: { x: best.x, y: best.y }, weapon: S.heroDef.weapon });
     }
+    h.gatherTarget = null;
     return;   // 전투 중에는 채집하지 않습니다
   }
 
@@ -495,8 +698,8 @@ function updateHero(S, dt) {
       if (node.amt <= 0) { node.regrow = S.t + C.NODE_REGROW_SEC; emit(S, 'nodeDepleted', { node }); }
     }
     if (Math.random() < dt * 3) fx(S, node.x, node.y - 10, '+', '#C7D9A8');
-    emit(S, 'gathering', { x: node.x, y: node.y, type: node.type });
-  } else h.gp = 0;
+    h.gatherTarget = node;
+  } else { h.gp = 0; h.gatherTarget = null; }
 }
 
 /* ---------------- 병사 ---------------- */
@@ -593,6 +796,26 @@ function updateMonsters(S, dt) {
     m.cd -= dt;
     if (m.hitFlash > 0) m.hitFlash -= dt;
 
+    // 히트스톱 — 맞는 순간 아주 짧게 얼어붙습니다 ("때린 맛")
+    if (m.hitStop > 0) { m.hitStop -= dt; continue; }
+
+    // 넉백 — 밀려나는 힘이 남아 있으면 먼저 반영합니다
+    if (m.vx || m.vy) {
+      m.x = clamp(m.x + m.vx * dt, 6, C.WORLD_W - 6);
+      m.y = clamp(m.y + m.vy * dt, 6, C.WORLD_H - 6);
+      const decay = Math.exp(-dt * 7);
+      m.vx *= decay; m.vy *= decay;
+      if (Math.abs(m.vx) < 3) m.vx = 0;
+      if (Math.abs(m.vy) < 3) m.vy = 0;
+    }
+
+    // ── 예비 동작 중 — 팔을 치켜든 상태. 이 사이에 구르면 빗나갑니다 ──
+    if (m.windup > 0) {
+      m.windup -= dt;
+      if (m.windup <= 0) resolveMonsterAttack(S, m);
+      continue;
+    }
+
     const tx = clamp(Math.floor(m.x / C.TILE), 0, C.MAPW - 1);
     const ty = clamp(Math.floor(m.y / C.TILE), 0, C.MAPH - 1);
     const k = tkey(tx, ty);
@@ -628,18 +851,11 @@ function updateMonsters(S, dt) {
     if (tgt) {
       m.facing = Math.atan2(tgt.x - m.x, tgt.y - m.y);
       if (m.cd <= 0) {
-        m.cd = 1.1;
-        tgt.hp -= m.dmg;
-        emit(S, 'monsterSwing', { x: m.x, y: m.y });
-        if (tgt === S.hero) {
-          fx(S, S.hero.x, S.hero.y - 16, `-${m.dmg}`, '#E0554A');
-          if (S.hero.hp <= 0 && !S.hero.dead) {
-            S.hero.dead = true;
-            S.hero.respawn = C.RESPAWN_BASE + S.day * 0.2;
-            toast(S, `<b>${S.heroDef.name}</b> 쓰러짐 — ${Math.round(S.hero.respawn)}초 후 부활 (탈락은 없습니다)`);
-            sound(S, 'heroDown');
-          }
-        }
+        // 곧바로 때리지 않고 예비 동작을 시작합니다
+        m.windup = m.boss ? C.MONSTER_WINDUP_BOSS : C.MONSTER_WINDUP;
+        m.windupTgt = tgt;
+        emit(S, 'windup', { x: m.x, y: m.y, boss: m.boss, dur: m.windup });
+        sound(S, 'windup');
       }
       continue;
     }
@@ -649,11 +865,9 @@ function updateMonsters(S, dt) {
     if (baseEdge <= 24) {
       m.facing = Math.atan2(S.base.x - m.x, S.base.y - m.y);
       if (m.cd <= 0) {
-        m.cd = 1.1;
-        S.base.hp -= m.dmg;
-        if (S.waveStats) S.waveStats.baseDmg += m.dmg;
-        fx(S, S.base.x + rnd(-18, 18), S.base.y - 18, `-${m.dmg}`, '#E0554A');
-        emit(S, 'baseHit', { dmg: m.dmg });
+        m.windup = m.boss ? C.MONSTER_WINDUP_BOSS : C.MONSTER_WINDUP;
+        m.windupTgt = 'base';
+        emit(S, 'windup', { x: m.x, y: m.y, boss: m.boss, dur: m.windup });
       }
       continue;
     }
@@ -707,6 +921,39 @@ function updateMonsters(S, dt) {
   }
 }
 
+/** 예비 동작이 끝났습니다. 아직 닿는 곳에 있어야 맞습니다. */
+function resolveMonsterAttack(S, m) {
+  m.cd = 1.1;
+  const tgt = m.windupTgt;
+  m.windupTgt = null;
+  if (!tgt) return;
+
+  emit(S, 'monsterSwing', { x: m.x, y: m.y });
+
+  if (tgt === 'base') {
+    const edge = Math.hypot(m.x - S.base.x, m.y - S.base.y) - C.BASE_FOOTPRINT;
+    if (edge > 40) return;                     // 밀려나서 못 닿았습니다
+    S.base.hp -= m.dmg;
+    if (S.waveStats) S.waveStats.baseDmg += m.dmg;
+    fx(S, S.base.x + rnd(-18, 18), S.base.y - 18, `-${m.dmg}`, '#E0554A');
+    emit(S, 'baseHit', { dmg: m.dmg });
+    return;
+  }
+
+  // 사거리를 벗어났으면 헛스윙 — 회피로 피한 경우입니다
+  if (dist2(m.x, m.y, tgt.x, tgt.y) > 52 * 52) {
+    fx(S, m.x, m.y - 14, '빗나감', '#9E9384');
+    emit(S, 'monsterMiss', { x: m.x, y: m.y });
+    return;
+  }
+
+  if (tgt === S.hero) { damageHero(S, m.dmg, m); return; }
+
+  // 병사
+  if (tgt.down) return;
+  tgt.hp -= m.dmg;
+}
+
 function nearestWall(S, x, y) {
   let best = null, bd = Infinity;
   for (const k of S.wallList) {
@@ -719,10 +966,18 @@ function nearestWall(S, x, y) {
   return best;
 }
 
-export function damageMonster(S, m, amt, src, trap) {
+export function damageMonster(S, m, amt, src, trap, heavy) {
   if (m.dead) return;
   m.hp -= amt;
   m.hitFlash = 0.12;
+
+  // 장수가 때렸을 때만 잠깐 얼립니다 (함정 지속 피해까지 얼면 어색합니다)
+  if (src === 'hero') m.hitStop = C.HITSTOP;
+
+  /* ★ 평타로는 적의 공격이 끊기지 않습니다.
+     끊기게 하면 가만히 서서 때리기만 해도 안 맞아서 회피가 필요 없어집니다.
+     스킬(무거운 일격)로만 끊을 수 있고, 보스는 아예 안 끊깁니다(슈퍼아머). */
+  if (heavy && !m.boss) { m.windup = 0; m.windupTgt = null; }
   if (m.hp > 0) return;
 
   m.dead = true;
