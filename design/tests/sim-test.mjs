@@ -786,6 +786,75 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
      rep ? `${rep.sides} → ${rep.nextSides}방향 (${rep.nextDirs.join(',')})` : '');
 }
 
+/* ── 29. 목표는 순서를 다르게 진행해도 막히지 않는다 ────── */
+{
+  const S = Sim.createSim('taesaja');
+  // 함정을 하나도 안 깐 채로 11일 웨이브를 막아낸 상황
+  S.got.wood = 99; S.cnt.wall = 9; S.cnt.camp = 2;
+  S.soldiers.push({ merc:null }); S.forge = true;
+  S.pickaxe = true; S.got.iron = 30; S.waveIdx = 1; S.weaponLv = 1;
+  Sim.update(S, 1/30); Sim.drainEvents(S);
+  ok('중간 목표를 건너뛰어도 안내가 멈추지 않는다', S.objIdx >= 9, `목표 ${S.objIdx}/${Sim.OBJECTIVES.length}`);
+  ok('건너뛴 목표의 보상도 함께 들어온다', S.shard >= C.OBJECTIVE_SHARD * 9, `옥새 ${S.shard}`);
+
+  // 아무것도 안 한 판은 그대로 0
+  const Z = Sim.createSim('taesaja');
+  Sim.update(Z, 1/30);
+  ok('아무것도 안 했으면 목표는 그대로다', Z.objIdx === 0);
+}
+
+/* ── 30. 함정이 후반 적에게도 통하는가 ──────────────────── */
+{
+  /* 예전에는 함정 피해가 초당 42 고정이라, 체력 448 인 3막 정예를 잡으려면
+     함정 17칸이 필요했습니다. 최대 체력 비례 피해를 얹어 이 문제를 고쳤습니다. */
+  const tileTime = (spd) => C.TILE / (spd * C.TRAP_SLOW);
+  const tilesNeeded = (hp, spd, armor, steel) => {
+    const dps = (C.TRAP_DPS + hp * C.TRAP_PCT_DPS) * (steel ? C.TRAP_DPS_STEEL : 1);
+    return hp / (dps * tileTime(spd) * (1 - armor));
+  };
+  const w99 = C.WAVES[C.WAVES.length - 1];
+  const elite = C.MONSTER_KINDS.elite;
+  const n = tilesNeeded(w99.hp * elite.hpMul, w99.spd * elite.spdMul, elite.armor, true);
+  ok('강철 가시 함정 6칸이면 3막 정예를 잡을 수 있다', n <= 6.5, `${n.toFixed(1)}칸 필요`);
+
+  const w11 = C.WAVES[0], norm = C.MONSTER_KINDS.normal;
+  const n1 = tilesNeeded(w11.hp * norm.hpMul, w11.spd * norm.spdMul, norm.armor, false);
+  ok('1막 졸개는 함정 한 칸으로도 잡힌다', n1 <= 1.2, `${n1.toFixed(1)}칸`);
+
+  ok('최대 체력 비례 피해는 초반에 거의 티가 안 난다',
+     w11.hp * C.TRAP_PCT_DPS < 3, `초당 +${(w11.hp * C.TRAP_PCT_DPS).toFixed(1)}`);
+
+  // 실제 시뮬레이션으로도 확인
+  const S = Sim.createSim('taesaja');
+  S.res.wood = 999; S.res.stone = 999;
+  const tx = C.BASE_TX + 5, ty = C.BASE_TY;
+  clearColumn(S, tx, ty, ty);
+  S.hero.x = tx * C.TILE; S.hero.y = ty * C.TILE;
+  Sim.tryBuild(S, tx, ty, 'trap');
+  S.hero.x = 20; S.hero.y = 20;
+  S.gear.steelspike = true;
+  const mk = hp => ({ x:(tx)*C.TILE+C.TILE/2, y:ty*C.TILE+C.TILE/2, hp, maxHp:hp, spd:0, dmg:1,
+                      cd:99, boss:false, hitFlash:0, dead:false, windup:0, windupTgt:null,
+                      vx:0, vy:0, hitStop:0, armor:0 });
+  S.monsters.push(mk(5000));
+  const m = S.monsters[0], h0 = m.hp;
+  run(S, 1);
+  const big = h0 - m.hp;
+  S.monsters.length = 0; S.monsters.push(mk(50));
+  const m2 = S.monsters[0], h1 = m2.hp;
+  run(S, 0.5);
+  const small = (h1 - m2.hp) * 2;
+  ok('체력이 높은 적일수록 함정 피해가 크다', big > small * 1.5,
+     `체력5000 → 초당 ${big.toFixed(0)} / 체력50 → 초당 ${small.toFixed(0)}`);
+}
+
+/* ── 31. 목표 문구가 실제로 달성 가능한 것만 말하는가 ───── */
+{
+  const texts = Sim.OBJECTIVES.map(o => o.t);
+  ok('달성할 수 없는 "함정 처치 40%" 목표가 남아 있지 않다',
+     !texts.some(t => /함정 처치 비율 4\d%|함정 처치 비율 [5-9]\d%/.test(t)));
+}
+
 console.log(results.join('\n'));
 console.log(`\n결과: ${pass}개 통과, ${fail}개 실패\n`);
 process.exit(fail ? 1 : 0);

@@ -735,12 +735,27 @@ function showReport(e) {
   $('repDmg').textContent = e.baseDmg;
   $('repShard').textContent = `+${e.reward}`;
   let adv = `<h3>다음 판을 위한 조언</h3>${e.advice}`;
-  if (e.trapPct < 25) {
-    adv += `<div style="margin-top:8px;color:#E0B44A;font-weight:700;">지금 함정 처치 비율 ${e.trapPct}%. `
-      + `목책으로 <b>길을 좁히고</b> 그 좁은 길목에만 함정을 까면 이 숫자가 뜁니다. `
-      + `이 수치가 오르는 걸 직접 확인하는 게 이 프로토타입의 목적입니다.</div>`;
-  } else if (e.trapPct >= 55) {
-    adv += `<div style="margin-top:8px;color:#5FAE72;font-weight:700;">함정 처치 비율 ${e.trapPct}% — 경로 유도가 제대로 먹혔습니다.</div>`;
+  /* 함정 처치 비율의 "정상 범위" 는 일차마다 다릅니다.
+     초반에는 적이 약해 장수가 거의 다 잡으므로 0~5% 가 정상입니다.
+     그걸 모르고 낮다고 다그치면 플레이어가 없는 잘못을 고치려 듭니다. */
+  const early = e.day <= 44;
+  if (e.trapsTotal === 0) {
+    adv += `<div style="margin-top:8px;color:#E0B44A;font-weight:700;">함정을 하나도 깔지 않았습니다. `
+      + `바닥의 <b style="color:#E0554A">붉은 화살표</b> 위에 깔아야 적이 밟습니다.</div>`;
+  } else if (e.trapsOn < e.trapsTotal) {
+    adv += `<div style="margin-top:8px;color:#E0B44A;font-weight:700;">`
+      + `함정 ${e.trapsTotal}개 중 <b>${e.trapsTotal - e.trapsOn}개가 침공로에서 벗어나</b> 있었습니다. `
+      + `벗어난 함정은 한 마리도 못 잡습니다 — <b>⛏️ 철거</b>로 회수해 화살표 위로 옮기세요.</div>`;
+  } else if (early) {
+    adv += `<div style="margin-top:8px;color:#9fdcae;font-weight:700;">함정 처치 ${e.trapPct}% — `
+      + `<b>이 구간에서는 이게 정상입니다.</b> 아직 적이 약해 장수가 거의 다 잡습니다. `
+      + `함정이 판을 가르기 시작하는 건 3막(77일~)입니다.</div>`;
+  } else if (e.trapPct >= 30) {
+    adv += `<div style="margin-top:8px;color:#5FAE72;font-weight:700;">함정 처치 ${e.trapPct}% — 경로 유도가 제대로 먹혔습니다.</div>`;
+  } else {
+    adv += `<div style="margin-top:8px;color:#E0B44A;font-weight:700;">함정 처치 ${e.trapPct}%. `
+      + `이 구간이라면 <b>30%</b> 까지 올릴 수 있습니다. 목책으로 길을 더 좁히고 `
+      + `<b>같은 줄에 두세 칸을 잇대어</b> 깔아보세요 — 한 칸으로는 단단한 적을 못 잡습니다.</div>`;
   }
   /* ★ 다음 대란이 몇 방향인지 미리 알려줍니다.
      자동 플레이에서 방향이 늘어나는 순간 깔아둔 함정 12개가 통째로 길 밖이 됐습니다.

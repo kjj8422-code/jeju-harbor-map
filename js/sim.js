@@ -51,7 +51,12 @@ export const OBJECTIVES = [
     ok: S => S.waveIdx >= 1 },
   { t: '제작소에서 <b>무기 강화</b>를 1회 하세요. (철 5)',
     ok: S => S.weaponLv >= 1 },
-  { t: '22일 <b>산적 무리</b>를 막아내세요. 함정 처치 비율 40% 이상이 목표입니다.',
+  /* ※ 예전 문구는 "함정 처치 비율 40% 이상" 이었습니다.
+     자동 플레이로 재보니 22일에는 최선을 다해도 1% 였습니다 —
+     적이 약해서 장수 혼자 93% 를 잡아버리기 때문입니다.
+     달성할 수 없는 숫자를 목표로 걸면 플레이어가 자기 탓을 합니다. 지웠습니다.
+     함정이 실제로 일하기 시작하는 구간은 3막(77일~)이고, 그때 30% 안팎이 나옵니다. */
+  { t: '22일 <b>산적 무리</b>를 막아내세요. 리포트에서 <b>함정이 몇 마리를 잡았는지</b> 확인해 보세요.',
     ok: S => S.waveIdx >= 2 },
   { t: '33일 <b>산적 두목</b>을 쓰러뜨리고 <b>1막(개척기)</b>을 완주하세요.',
     ok: S => S.waveIdx >= 3 },
@@ -1061,14 +1066,27 @@ export function update(S, dt) {
 }
 
 function updateObjective(S) {
-  const o = OBJECTIVES[S.objIdx];
-  if (o && o.ok(S)) {
-    S.objIdx++;
-    S.shard += C.OBJECTIVE_SHARD;
-    toast(S, `목표 달성 — 옥새 조각 <b>+${C.OBJECTIVE_SHARD}</b>`);
-    sound(S, 'objective');
-    emit(S, 'objective', { index: S.objIdx });
-  }
+  /* ★ 예전에는 "지금 목표" 하나만 봤습니다.
+     그래서 플레이어가 순서를 다르게 진행하면 안내가 통째로 멈췄습니다 —
+     예를 들어 함정 없이 11일을 막아내면 "가시함정 2개" 목표에서 영원히 멈추고,
+     그 뒤 22개 목표를 하나도 못 봅니다.
+     자동 플레이 7회차에서 성 3단계·무기 6단계까지 간 판이 목표는 2/23 이었습니다.
+     → 뒤쪽에 이미 달성된 목표가 있으면 거기까지 건너뜁니다. */
+  const before = S.objIdx;
+  let last = S.objIdx - 1;
+  for (let i = S.objIdx; i < OBJECTIVES.length; i++)
+    if (OBJECTIVES[i].ok(S)) last = i;
+  if (last < S.objIdx) return;
+
+  const skipped = last - S.objIdx;          // 건너뛴 목표 수
+  S.objIdx = last + 1;
+  const gained = S.objIdx - before;
+  S.shard += C.OBJECTIVE_SHARD * gained;
+  toast(S, skipped > 0
+    ? `목표 <b>${gained}개</b> 달성 — 옥새 조각 <b>+${C.OBJECTIVE_SHARD * gained}</b>`
+    : `목표 달성 — 옥새 조각 <b>+${C.OBJECTIVE_SHARD}</b>`);
+  sound(S, 'objective');
+  emit(S, 'objective', { index: S.objIdx, gained });
 }
 export const currentObjective = S => OBJECTIVES[S.objIdx] || null;
 
@@ -1308,7 +1326,9 @@ function updateMonsters(S, dt) {
       if (tr && tr.dur > 0) {
         slowMul = C.TRAP_SLOW;
         const steel = S.gear.steelspike ? C.TRAP_DPS_STEEL : 1;
-        damageMonster(S, m, C.TRAP_DPS * steel * dt, 'trap', tr);
+        // 고정 피해 + 최대 체력 비례 — 후반의 단단한 적에게도 통하게
+        const dps = C.TRAP_DPS + m.maxHp * C.TRAP_PCT_DPS;
+        damageMonster(S, m, dps * steel * dt, 'trap', tr);
         tr.dur -= C.TRAP_WEAR / (S.gear.steelspike ? C.TRAP_DUR_STEEL : 1) * dt;
         if (tr.dur <= 0) {
           S.trapAt[k] = 0; S.occ[k] = C.OCC_EMPTY;
