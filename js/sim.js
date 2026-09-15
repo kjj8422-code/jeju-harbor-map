@@ -53,8 +53,34 @@ export const OBJECTIVES = [
     ok: S => S.weaponLv >= 1 },
   { t: '22일 <b>산적 무리</b>를 막아내세요. 함정 처치 비율 40% 이상이 목표입니다.',
     ok: S => S.waveIdx >= 2 },
-  { t: '33일 <b>산적 두목</b>을 쓰러뜨리고 1막을 완주하세요.',
-    ok: S => S.waveIdx >= 3 }
+  { t: '33일 <b>산적 두목</b>을 쓰러뜨리고 <b>1막(개척기)</b>을 완주하세요.',
+    ok: S => S.waveIdx >= 3 },
+
+  /* ── 2막 확장기 ── */
+  { t: '성을 <b>석성</b>으로 올리세요. (석재 60 · 목재 40) 2막부터는 성벽이 버텨줘야 합니다.',
+    ok: S => S.baseLv >= 2 },
+  { t: '<b>용병</b>을 1명 고용하세요. 옥새 조각으로 즉시 머릿수를 늘릴 수 있습니다.',
+    ok: S => S.mercHired >= 1 },
+  { t: '44일 <b>오환 기병대</b>를 막아내세요. 기병은 함정을 빨리 빠져나갑니다.',
+    ok: S => S.waveIdx >= 4 },
+  { t: '<b>가죽 갑옷</b>을 만드세요. (가죽 8 · 목재 5) 최대 체력이 늘어납니다.',
+    ok: S => S.gear.leather },
+  { t: '55일 <b>남만 상군</b>을 막아내세요. 방패병은 목책을 오래 두드립니다.',
+    ok: S => S.waveIdx >= 5 },
+  { t: '66일 <b>맹획</b>을 쓰러뜨리고 <b>2막(확장기)</b>을 완주하세요.',
+    ok: S => S.waveIdx >= 6 },
+
+  /* ── 3막 결전기 ── */
+  { t: '성을 <b>철옹성</b>으로 올리세요. (석재 120 · 철 30) 망루가 적을 자동으로 쏩니다.',
+    ok: S => S.baseLv >= 3 },
+  { t: '<b>가시함정</b>을 8개까지 늘리세요. 3막은 사방에서 옵니다.',
+    ok: S => S.cnt.trap >= 8 },
+  { t: '77일 <b>위군 선봉</b>을 막아내세요.',
+    ok: S => S.waveIdx >= 7 },
+  { t: '88일 <b>조조의 정예</b>를 막아내세요. 네 방향입니다.',
+    ok: S => S.waveIdx >= 8 },
+  { t: '99일 <b>최후의 대란</b>을 이겨내고 완주하세요.',
+    ok: S => S.waveIdx >= 9 }
 ];
 
 /* ==================================================================
@@ -106,11 +132,17 @@ export function createSim(heroId) {
 
     nodes: [], traps: [], structs: [], monsters: [], soldiers: [],
     spawnDirs: [],
+    /* ★ 공격 방향을 게임이 시작될 때 전부 정해 둡니다.
+       5초 전에야 알려주면 목책을 세울 시간이 없습니다.
+       첫날부터 "어디로 온다"를 알아야 어디를 막을지 판단할 수 있습니다. */
+    plannedDirs: [],
+    mercHired: 0,
     waveIdx: 0, waveStats: null,
     objIdx: 0,
     pickaxe: false, weaponLv: 0, forge: false, camps: 0,
     // 장비 — 만든 것만 true 가 됩니다
-    gear: { ironpick:false, huntknife:false, torch:false, leather:false, ironmail:false },
+    gear: { ironpick:false, huntknife:false, torch:false, leather:false, ironmail:false,
+            steelspike:false, towerup:false, banner:false },
     potions: 0,
     baseLv: 1, baseTowerCd: 0,
     lastStand: false,
@@ -119,6 +151,7 @@ export function createSim(heroId) {
     events: []
   };
 
+  S.plannedDirs = C.WAVES.map((w, i) => planDirs(w, i));
   buildMap(S);
   computeFlow(S);
   return S;
@@ -179,6 +212,57 @@ export function countBuildableNearBase(S, radius = 6) {
    목책을 세우면 다시 계산되어 몬스터가 실제로 돌아갑니다. */
 const DIR4 = [[1,0],[-1,0],[0,1],[0,-1]];
 const DIR8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+
+/* ==================================================================
+   침공 방향과 예상 경로
+   ================================================================== */
+/** 웨이브별 공격 방향을 미리 정합니다.
+    동쪽은 거점에서 가장 먼 정면이라 항상 포함하고, 나머지는 웨이브마다 돌립니다. */
+export function planDirs(w, idx) {
+  const extra = ['N', 'S', 'W'];
+  const dirs = ['E'];
+  for (let j = 1; j < w.sides; j++) dirs.push(extra[(idx + j - 1) % 3]);
+  return dirs;
+}
+
+/** 각 방향의 대표 진입점(타일). 실제 스폰은 이 점 주변에 몰립니다. */
+export function entryPoint(side) {
+  if (side === 'E') return { tx: C.MAPW - 2, ty: C.BASE_TY };
+  if (side === 'W') return { tx: 1, ty: C.BASE_TY };
+  if (side === 'N') return { tx: C.BASE_TX, ty: 1 };
+  return { tx: C.BASE_TX, ty: C.MAPH - 2 };
+}
+
+/** 진입점에서 거점까지 몬스터가 실제로 걸어갈 길을 흐름장을 따라 뽑아냅니다.
+    목책을 하나 놓을 때마다 이 길이 즉시 바뀌므로, 화면에 그려주면
+    "내가 놓은 목책이 적의 길을 어떻게 바꿨는가"가 눈으로 보입니다. */
+export function invasionPath(S, side) {
+  const e = entryPoint(side);
+  let tx = e.tx, ty = e.ty;
+  if (!inMap(tx, ty)) return [];
+  const path = [{ tx, ty }];
+  const seen = new Set([tkey(tx, ty)]);
+  for (let i = 0; i < 500; i++) {
+    const k = tkey(tx, ty);
+    if (S.dist[k] <= 0) break;                 // 거점에 닿았습니다
+    const fx2 = S.flowX[k], fy2 = S.flowY[k];
+    if (!fx2 && !fy2) break;                   // 길이 막혔습니다
+    tx += Math.round(fx2); ty += Math.round(fy2);
+    if (!inMap(tx, ty)) break;
+    const nk = tkey(tx, ty);
+    if (seen.has(nk)) break;
+    seen.add(nk); path.push({ tx, ty });
+  }
+  return path;
+}
+
+/** 다음 웨이브의 방향들. 아직 남은 웨이브가 없으면 빈 배열. */
+export function upcomingDirs(S) {
+  const w = nextWave(S);
+  if (!w) return [];
+  const i = C.WAVES.indexOf(w);
+  return S.plannedDirs[i] || [];
+}
 
 export function computeFlow(S) {
   const d = S.dist, occ = S.occ, N = C.MAPW * C.MAPH;
@@ -317,18 +401,98 @@ export function hireSoldier(S) {
   S.soldiers.push({
     x: S.base.x + rnd(-40, 40), y: S.base.y + rnd(20, 50),
     role: 'wood', hp: C.SOLDIER_HP, maxHp: C.SOLDIER_HP,
-    cd: 0, carry: 0, node: null, gp: 0, down: false, downT: 0
+    cd: 0, carry: 0, node: null, gp: 0, down: false, downT: 0,
+    merc: null, name: '병사', icon: '🗡️', contract: 0,
+    atk: C.SOLDIER_ATK * (S.gear.banner ? C.BANNER_ATK : 1),
+    cdMax: C.SOLDIER_CD, range: C.SOLDIER_RANGE,
+    gather: C.SOLDIER_GATHER_RATE, carryMax: C.SOLDIER_CARRY, armor: 0, noFight: false
   });
+  if (S.gear.banner) {
+    const so = S.soldiers[S.soldiers.length - 1];
+    so.maxHp = Math.round(so.maxHp * C.BANNER_HP); so.hp = so.maxHp;
+  }
   sound(S, 'hire');
   toast(S, '병사를 고용했습니다 — 눌러서 역할을 바꾸세요');
   emit(S, 'soldiers');
   return true;
 }
 
+/* ==================================================================
+   용병 — 병영 한도와 무관하게, 옥새 조각으로 즉시 고용합니다.
+   대신 계약 일수가 지나면 떠납니다. 옥새 조각을 쓸 곳이 생기고,
+   "지금 당장 손이 모자란다"는 문제를 돈으로 푸는 길이 열립니다.
+   ================================================================== */
+export function canHireMerc(S, id) {
+  const def = C.MERCS.find(m => m.id === id);
+  if (!def) return { ok: false, why: 'none' };
+  if (S.shard < def.cost) return { ok: false, why: 'shard', need: def.cost };
+  return { ok: true, def };
+}
+
+export function hireMerc(S, id) {
+  if (S.over) return false;
+  const chk = canHireMerc(S, id);
+  if (!chk.ok) {
+    toast(S, `옥새 조각이 부족합니다 — <b>${chk.need}</b> 필요`);
+    sound(S, 'deny');
+    return false;
+  }
+  const def = chk.def;
+  S.shard -= def.cost;
+  S.mercHired++;
+  S.soldiers.push({
+    x: S.base.x + rnd(-40, 40), y: S.base.y + rnd(20, 50),
+    role: def.role,
+    hp: Math.round(def.hp * (S.gear.banner ? C.BANNER_HP : 1)),
+    maxHp: Math.round(def.hp * (S.gear.banner ? C.BANNER_HP : 1)),
+    cd: 0, carry: 0, node: null, gp: 0, down: false, downT: 0,
+    merc: def.id, name: def.name, icon: def.icon,
+    contract: C.MERC_CONTRACT_DAYS,
+    atk: def.atk * (S.gear.banner ? C.BANNER_ATK : 1),
+    cdMax: def.cd || C.SOLDIER_CD, range: def.range || C.SOLDIER_RANGE,
+    gather: def.gather, carryMax: def.carry, armor: def.armor || 0,
+    noFight: def.id === 'gatherer'
+  });
+  sound(S, 'hire');
+  toast(S, `<b>${def.name}</b> 고용 — ${C.MERC_CONTRACT_DAYS}일 계약`);
+  emit(S, 'soldiers');
+  return true;
+}
+
+/** 하루가 지날 때 계약 일수를 깎고, 끝난 용병은 떠납니다. */
+function tickContracts(S) {
+  let left = false;
+  for (let i = S.soldiers.length - 1; i >= 0; i--) {
+    const s = S.soldiers[i];
+    if (!s.merc) continue;
+    s.contract--;
+    if (s.contract <= 0) {
+      S.soldiers.splice(i, 1);
+      toast(S, `<b>${s.name}</b>의 계약이 끝났습니다`);
+      left = true;
+    } else if (s.contract === 3) {
+      toast(S, `<b>${s.name}</b> 계약 <b>3일</b> 남았습니다`);
+    }
+  }
+  if (left) emit(S, 'soldiers');
+}
+
+/** 맡길 수 있는 역할 목록.
+    철은 돌 곡괭이가 있어야 나옵니다 — 장수만 중앙까지 오가는 부담을 병사가 나눠 집니다.
+    채집 용병은 싸우지 않으므로 '방어'가 없습니다. */
+export function roleList(S, s) {
+  const r = ['wood', 'stone', 'herb'];
+  if (S.pickaxe) r.push('iron');
+  if (!s || !s.noFight) r.push('def');
+  return r;
+}
+
 export function cycleRole(S, i) {
   const s = S.soldiers[i];
   if (!s) return;
-  s.role = s.role === 'wood' ? 'stone' : s.role === 'stone' ? 'def' : 'wood';
+  const list = roleList(S, s);
+  const at = list.indexOf(s.role);
+  s.role = list[(at + 1) % list.length];
   s.node = null;
   emit(S, 'soldiers');
 }
@@ -336,22 +500,32 @@ export function cycleRole(S, i) {
 /** 이미 만들었는가 */
 export function hasCraft(S, id) {
   if (id === 'pickaxe') return S.pickaxe;
-  if (id === 'weapon') return S.weaponLv >= 3;
+  if (id === 'weapon') return S.weaponLv >= (C.CRAFTS.find(x => x.id === 'weapon').max || 3);
   if (id === 'potion') return false;            // 소모품은 계속 만들 수 있습니다
   return !!S.gear[id];
 }
 
 /** 만들 수 있는지와 그 이유 — 화면이 "왜 안 되는지"를 보여줄 수 있게 */
+/** 무기 강화는 단계가 오를수록 비쌉니다 — 후반 성장에 값을 매겨야 합니다 */
+export function craftCost(S, id) {
+  const c = C.CRAFTS.find(x => x.id === id);
+  if (!c) return {};
+  if (id !== 'weapon') return c.cost;
+  const lv = S.weaponLv;                    // 0 → 1단계를 만들 때
+  return lv < 3 ? { iron: 5 } : { iron: 8 + (lv - 3) * 6, hide: 4 + (lv - 3) * 3 };
+}
+
 export function canCraft(S, id) {
   const c = C.CRAFTS.find(x => x.id === id);
   if (!c) return { ok:false, why:'없는 항목' };
   if (!S.forge) return { ok:false, why:'대장간이 필요합니다' };
   if (hasCraft(S, id)) return { ok:false, why:'이미 보유' };
+  if (id === 'towerup' && S.baseLv < 3) return { ok:false, why:'철옹성이 필요합니다' };
   if (c.need && !hasCraft(S, c.need)) {
     const pre = C.CRAFTS.find(x => x.id === c.need);
     return { ok:false, why:`먼저 ${pre ? pre.name : c.need} 필요` };
   }
-  if (!canAfford(S, c.cost)) return { ok:false, why:'자원 부족' };
+  if (!canAfford(S, craftCost(S, id))) return { ok:false, why:'자원 부족' };
   return { ok:true, why:'' };
 }
 
@@ -359,7 +533,7 @@ export function doCraft(S, id) {
   const c = C.CRAFTS.find(x => x.id === id);
   const chk = canCraft(S, id);
   if (!chk.ok) { toast(S, chk.why); sound(S, 'deny'); return false; }
-  pay(S, c.cost);
+  pay(S, craftCost(S, id));
 
   switch (id) {
     case 'pickaxe':
@@ -369,6 +543,16 @@ export function doCraft(S, id) {
     case 'weapon':
       S.weaponLv++;
       toast(S, `무기 강화 ${S.weaponLv}단계 — 공격력 +${25 * S.weaponLv}%`);
+      break;
+    case 'banner':
+      S.gear.banner = true;
+      // 이미 고용해둔 병사·용병에게도 바로 적용됩니다
+      for (const so of S.soldiers) {
+        so.atk = (so.atk || C.SOLDIER_ATK) * C.BANNER_ATK;
+        so.maxHp = Math.round(so.maxHp * C.BANNER_HP);
+        so.hp = Math.min(so.maxHp, so.hp * C.BANNER_HP);
+      }
+      toast(S, '군기 — 병사·용병의 공격과 체력이 올랐습니다');
       break;
     case 'potion':
       S.potions++;
@@ -396,7 +580,7 @@ export function usePotion(S) {
   S.hero.hp = Math.min(S.hero.maxHp, S.hero.hp + C.POTION_HEAL);
   fx(S, S.hero.x, S.hero.y - 26, `+${C.POTION_HEAL}`, '#5FAE72');
   emit(S, 'potion', {});
-  sound(S, 'craft');
+  sound(S, 'potion');
   return true;
 }
 
@@ -439,9 +623,9 @@ function updateBaseTower(S, dt) {
     if (d < bd) { bd = d; best = m; }
   }
   if (!best) return;
-  S.baseTowerCd = C.BASE_TOWER_CD;
+  S.baseTowerCd = C.BASE_TOWER_CD * (S.gear.towerup ? C.TOWER_UP_CD : 1);
   emit(S, 'towerShot', { from:{ x:S.base.x, y:S.base.y }, to:{ x:best.x, y:best.y } });
-  damageMonster(S, best, C.BASE_TOWER_DMG, 'soldier', null);
+  damageMonster(S, best, C.BASE_TOWER_DMG * (S.gear.towerup ? C.TOWER_UP_DMG : 1), 'soldier', null);
 }
 
 /** 마우스 클릭 타격 — 쿨다운이 돌아왔으면 즉시 한 대 칩니다.
@@ -610,22 +794,44 @@ export const dirName = d => ({ E: '동쪽', W: '서쪽', N: '북쪽', S: '남쪽
 
 function startWarn(S, w) {
   S.phase = 'warn'; S.warnT = 0;
-  S.spawnDirs = ['E', 'N', 'S', 'W'].slice(0, w.sides);
+  S.spawnDirs = (S.plannedDirs[C.WAVES.indexOf(w)] || planDirs(w, 0)).slice();
   emit(S, 'warn', { name: w.name, note: w.note, dirs: S.spawnDirs.slice() });
   sound(S, 'warn');
 }
 
+/* 스폰은 대표 진입점 ±4칸 안에 모입니다.
+   가장자리 전체에 흩뿌리면 화면에 그린 "예상 경로"가 거짓말이 됩니다. */
 function edgePoint(side) {
-  if (side === 'E') return { x: C.WORLD_W - C.TILE * 1.5, y: rnd(C.TILE * 2, C.WORLD_H - C.TILE * 2) };
-  if (side === 'W') return { x: C.TILE * 1.5, y: rnd(C.TILE * 2, C.WORLD_H - C.TILE * 2) };
-  if (side === 'N') return { x: rnd(C.TILE * 2, C.WORLD_W - C.TILE * 2), y: C.TILE * 1.5 };
-  return { x: rnd(C.TILE * 2, C.WORLD_W - C.TILE * 2), y: C.WORLD_H - C.TILE * 1.5 };
+  const e = entryPoint(side);
+  const cx = e.tx * C.TILE + C.TILE / 2, cy = e.ty * C.TILE + C.TILE / 2;
+  const spread = C.TILE * 4;
+  if (side === 'E' || side === 'W')
+    return { x: cx, y: clamp(cy + rnd(-spread, spread), C.TILE * 1.5, C.WORLD_H - C.TILE * 1.5) };
+  return { x: clamp(cx + rnd(-spread, spread), C.TILE * 1.5, C.WORLD_W - C.TILE * 1.5), y: cy };
 }
 
-function makeMonster(x, y, hp, spd, dmg, boss) {
+function makeMonster(x, y, hp, spd, dmg, boss, kind) {
+  const K = C.MONSTER_KINDS[kind] || C.MONSTER_KINDS.normal;
   return { x, y, hp, maxHp: hp, spd, dmg, cd: 0, boss: !!boss,
+           kind: boss ? 'boss' : (kind || 'normal'),
+           armor: boss ? 0.10 : K.armor,
+           scale: boss ? 1 : K.scale,
            breach: null, hitFlash: 0, facing: 0, dead: false,
            windup: 0, windupTgt: null, vx: 0, vy: 0, hitStop: 0 };
+}
+
+/** mix 비율대로 종류 목록을 만들고 섞습니다. 한 종류가 뭉쳐 오면 방어가 단조로워집니다. */
+function kindList(w, count) {
+  const mix = w.mix && w.mix.length ? w.mix : [['normal', 1]];
+  const list = [];
+  for (const [kind, pct] of mix) {
+    const n = Math.round(count * pct);
+    for (let i = 0; i < n; i++) list.push(kind);
+  }
+  while (list.length < count) list.push(mix[0][0]);
+  list.length = count;
+  for (let i = list.length - 1; i > 0; i--) { const j = ri(0, i); const t = list[i]; list[i] = list[j]; list[j] = t; }
+  return list;
 }
 
 function spawnWave(S, w) {
@@ -633,9 +839,12 @@ function spawnWave(S, w) {
   S.waveStats = { killed: 0, byTrap: 0, bySoldier: 0, byHero: 0, baseDmg: 0, trapKills: {} };
   const mul = S.heroDef.waveMul;
   const count = Math.round(w.count * mul);
+  const kinds = kindList(w, count);
   for (let i = 0; i < count; i++) {
     const p = edgePoint(S.spawnDirs[i % S.spawnDirs.length]);
-    S.monsters.push(makeMonster(p.x, p.y, w.hp * mul, w.spd, w.dmg, false));
+    const K = C.MONSTER_KINDS[kinds[i]] || C.MONSTER_KINDS.normal;
+    S.monsters.push(makeMonster(p.x, p.y,
+      w.hp * mul * K.hpMul, w.spd * K.spdMul, w.dmg * K.dmgMul, false, kinds[i]));
   }
   if (w.boss) {
     const bp = edgePoint(S.spawnDirs[0]);
@@ -648,7 +857,8 @@ function spawnWave(S, w) {
 function endWave(S) {
   const w = C.WAVES[S.waveIdx];
   S.waveIdx++;
-  const st = S.waveStats;
+  // 통계가 없는 상태로 들어올 수 있습니다(검수 코드가 phase 를 직접 바꾸는 경우 등).
+  const st = S.waveStats || { killed: 0, byTrap: 0, bySoldier: 0, byHero: 0, baseDmg: 0, trapKills: {} };
   const reward = C.WAVE_SHARD[S.waveIdx - 1] || 15;
   S.shard += reward;
 
@@ -692,6 +902,7 @@ export function update(S, dt) {
     S.dayT += dt;
     if (S.dayT >= C.DAY_SEC) {
       S.dayT = 0; S.day++;
+      tickContracts(S);
       if (S.day > C.TOTAL_DAYS) { endGame(S, true); return; }
       if (S.day === 22 && S.heroDef.lateGrow > 0)
         toast(S, `<b>${S.heroDef.name} 성장</b> — 공격력 +${Math.round(S.heroDef.lateGrow * 100)}%`);
@@ -744,7 +955,9 @@ function updateHero(S, dt) {
     if (h.respawn <= 0) {
       h.dead = false; h.hp = h.maxHp;
       h.x = S.base.x; h.y = S.base.y + C.TILE * 2;
-      toast(S, `<b>${S.heroDef.name}</b> 부활`);
+      h.invuln = Math.max(h.invuln, C.RESPAWN_INVULN);   // 부활 직후 잠깐 무적
+      h.cd = 0; h.dodgeCd = 0;
+      toast(S, `<b>${S.heroDef.name}</b> 부활 — ${C.RESPAWN_INVULN}초간 무적`);
       emit(S, 'respawn');
     }
     return;
@@ -872,7 +1085,9 @@ function updateSoldiers(S, dt) {
     }
     s.cd -= dt;
 
-    if (s.role === 'def' || night) {
+    // 채집 용병은 싸우지 않고 밤에도 계속 캡니다 (그게 이 용병을 뽑는 이유입니다)
+    if (!s.noFight && (s.role === 'def' || night)) {
+      const rng = s.range || C.SOLDIER_RANGE;
       let tgt = null, bd = 150 * 150;
       for (const m of S.monsters) {
         if (dist2(m.x, m.y, S.base.x, S.base.y) > 150 * 150) continue;
@@ -880,10 +1095,12 @@ function updateSoldiers(S, dt) {
         if (d < bd) { bd = d; tgt = m; }
       }
       if (tgt) {
-        moveToward(s, tgt.x, tgt.y, 95, dt, 30);
-        if (dist2(s.x, s.y, tgt.x, tgt.y) < C.SOLDIER_RANGE * C.SOLDIER_RANGE && s.cd <= 0) {
-          s.cd = C.SOLDIER_CD;
-          damageMonster(S, tgt, C.SOLDIER_ATK * (S.lastStand ? 1.5 : 1), 'soldier', null);
+        // 궁수는 사거리 안에 들어오면 더 다가가지 않습니다
+        moveToward(s, tgt.x, tgt.y, 95, dt, Math.max(30, rng - 12));
+        if (dist2(s.x, s.y, tgt.x, tgt.y) < rng * rng && s.cd <= 0) {
+          s.cd = s.cdMax || C.SOLDIER_CD;
+          if (rng > 70) emit(S, 'shot', { from: { x: s.x, y: s.y }, to: { x: tgt.x, y: tgt.y } });
+          damageMonster(S, tgt, (s.atk || C.SOLDIER_ATK) * (S.lastStand ? 1.5 : 1), 'soldier', null);
         }
       } else {
         moveToward(s, S.base.x, S.base.y + C.TILE * 2, 85, dt, 10);
@@ -902,7 +1119,7 @@ function updateSoldiers(S, dt) {
       s.node = bn;
     }
 
-    if (s.carry >= C.SOLDIER_CARRY) {
+    if (s.carry >= (s.carryMax || C.SOLDIER_CARRY)) {
       moveToward(s, S.base.x, S.base.y, 90, dt, 26);
       // ★ 도착 판정은 거점 중심이 아니라 "거점 가장자리"까지의 거리로 잽니다.
       //   중심 거리로 재면 3x3 크기의 거점 벽에 붙어도 영원히 도착 판정이 안 납니다.
@@ -915,7 +1132,7 @@ function updateSoldiers(S, dt) {
     } else if (s.node) {
       moveToward(s, s.node.x, s.node.y, 90, dt, 22);
       if (dist2(s.x, s.y, s.node.x, s.node.y) < 26 * 26) {
-        s.gp += C.SOLDIER_GATHER_RATE * dt;
+        s.gp += (s.gather || C.SOLDIER_GATHER_RATE) * dt;
         while (s.gp >= 1 && s.node.amt > 0) {
           s.gp -= 1; s.node.amt--; s.carry++;
           if (s.node.amt <= 0) { s.node.regrow = S.t + C.NODE_REGROW_SEC; emit(S, 'nodeDepleted', { node: s.node }); }
@@ -974,8 +1191,9 @@ function updateMonsters(S, dt) {
       const tr = S.traps[ti - 1];
       if (tr && tr.dur > 0) {
         slowMul = C.TRAP_SLOW;
-        damageMonster(S, m, C.TRAP_DPS * dt, 'trap', tr);
-        tr.dur -= C.TRAP_WEAR * dt;
+        const steel = S.gear.steelspike ? C.TRAP_DPS_STEEL : 1;
+        damageMonster(S, m, C.TRAP_DPS * steel * dt, 'trap', tr);
+        tr.dur -= C.TRAP_WEAR / (S.gear.steelspike ? C.TRAP_DUR_STEEL : 1) * dt;
         if (tr.dur <= 0) {
           S.trapAt[k] = 0; S.occ[k] = C.OCC_EMPTY;
           fx(S, tr.x, tr.y, '함정 파손', '#9E9384');
@@ -1103,9 +1321,9 @@ function resolveMonsterAttack(S, m) {
 
   if (tgt === S.hero) { damageHero(S, m.dmg, m); return; }
 
-  // 병사
+  // 병사·용병 (방패 용병은 받는 피해가 줄어듭니다)
   if (tgt.down) return;
-  tgt.hp -= m.dmg;
+  tgt.hp -= m.dmg * (1 - (tgt.armor || 0));
 }
 
 function nearestWall(S, x, y) {
@@ -1122,6 +1340,7 @@ function nearestWall(S, x, y) {
 
 export function damageMonster(S, m, amt, src, trap, heavy, crit) {
   if (m.dead) return;
+  if (m.armor) amt *= 1 - m.armor;      // 방패병·정예는 피해를 덜 받습니다
   m.hp -= amt;
   m.hitFlash = 0.12;
 

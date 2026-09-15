@@ -12,6 +12,7 @@ import { UnrealBloomPass } from '../vendor/addons/UnrealBloomPass.js';
 import { OutputPass } from '../vendor/addons/OutputPass.js';
 import * as BufferGeometryUtils from '../vendor/addons/BufferGeometryUtils.js';
 import * as C from './config.js';
+import * as Sim from './sim.js';
 import * as Tex from './textures.js';
 import * as Models from './models.js';
 
@@ -32,6 +33,7 @@ export const R = {
   rings: {}, ghostGroup: null, arrows: [], vfx: [],
   composer: null, bloom: null, sky: null, grass: null,
   shake: { t: 0, power: 0 },
+  path: { inst: null, gates: null, dirty: true, sig: '', dirs: [], points: [] },
   stats: { calls: 0, tris: 0, fps: 0 },
   _fpsT: 0, _fpsN: 0, _minimapT: 0
 };
@@ -257,6 +259,7 @@ function buildRings() {
 
 /* ---------------- 세계 만들기 ---------------- */
 export function buildWorld(S) {
+  R.path.dirty = true; R.path.sig = '';
   // 이전 판의 물체 정리
   for (const m of [...R.monsterMeshes.values(), ...R.soldierMeshes.values(),
                    ...R.wallMeshes.values(), ...R.trapMeshes.values()]) R.scene.remove(m);
@@ -818,13 +821,21 @@ export function removeTrap(tx, ty) {
 
 /* ---------------- 몬스터 · 병사 ---------------- */
 const MONSTER_COLOR = 0xA8382A, BOSS_COLOR = 0x8C2B1F;
-const ROLE_COLOR = { wood: 0x5FAE72, stone: 0x9E9384, def: 0xC6412F };
+const ROLE_COLOR = { wood: 0x5FAE72, stone: 0x9E9384, herb: 0x6FBF7A, iron: 0xC98A4B, def: 0xC6412F };
+
+/** 종류별 색 — 방패병은 잿빛, 기병은 주황, 정예는 보라. 한눈에 구분돼야 대응이 갈립니다. */
+function kindColor(m) {
+  if (m.boss) return BOSS_COLOR;
+  const K = C.MONSTER_KINDS[m.kind];
+  return K ? K.color : MONSTER_COLOR;
+}
+const monScale = m => (m.boss ? 1.7 : 0.95 * (m.scale || 1));
 
 function makeMonsterMesh(m) {
-  const scale = m.boss ? 1.7 : 0.95;
+  const scale = monScale(m);
   const slot = m.boss ? 'boss' : 'monster';
   if (Models.has(slot)) return wrapModel(slot);
-  const g = makeHumanoid(m.boss ? BOSS_COLOR : MONSTER_COLOR, 0xD9B84A, scale, false);
+  const g = makeHumanoid(kindColor(m), 0xD9B84A, scale, false);
   // 황건 — 노란 두건
   const band = new THREE.Mesh(
     new THREE.TorusGeometry(0.2 * scale, 0.05 * scale, 6, 12),
@@ -832,6 +843,21 @@ function makeMonsterMesh(m) {
   band.rotation.x = Math.PI / 2;
   band.position.y = 1.2 * scale;
   g.add(band);
+  if (m.kind === 'tank') {
+    const shield = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.34 * scale, 0.34 * scale, 0.07 * scale, 10),
+      new THREE.MeshStandardMaterial({ color: 0x4a5560, roughness: 0.7, metalness: 0.3 }));
+    shield.rotation.set(Math.PI / 2, 0, 0);
+    shield.position.set(-0.32 * scale, 0.9 * scale, 0.18 * scale);
+    g.add(shield);
+  }
+  if (m.kind === 'elite') {
+    const plume = new THREE.Mesh(
+      new THREE.ConeGeometry(0.09 * scale, 0.4 * scale, 6),
+      new THREE.MeshStandardMaterial({ color: 0xE0B44A, roughness: 0.6 }));
+    plume.position.y = 1.45 * scale;
+    g.add(plume);
+  }
   if (m.boss) {
     for (const sx of [-1, 1]) {
       const horn = new THREE.Mesh(
@@ -843,6 +869,118 @@ function makeMonsterMesh(m) {
     }
   }
   return g;
+}
+
+/* ==================================================================
+   예상 침공로 — 이 게임에서 가장 중요한 안내 장치
+   ------------------------------------------------------------------
+   "적이 어디로 오는지" 를 모르면 목책과 함정을 어디에 놓을지 판단할 수 없습니다.
+   그래서 다음 웨이브의 진입 지점과, 거기서 거점까지 실제로 걸어올 길을
+   낮에도 바닥에 그려줍니다. 목책을 하나 놓으면 이 길이 즉시 휘어집니다.
+   → 플레이어가 "내 목책이 적의 길을 바꿨다" 를 눈으로 보게 됩니다.
+   ================================================================== */
+const PATH_MAX = 520;                   // 화살표 인스턴스 최대 개수
+
+export function markPathDirty() { R.path.dirty = true; }
+
+function ensurePathInst() {
+  if (R.path.inst) return;
+  // 납작한 삼각형(쐐기) 하나를 거점 쪽으로 눕혀 씁니다 — 전부 합쳐 draw call 1
+  const g = new THREE.ConeGeometry(0.23, 0.52, 3);
+  g.rotateX(Math.PI / 2);               // 바닥에 눕힙니다
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xE0554A, transparent: true, opacity: 0.62,
+    depthWrite: false, toneMapped: false
+  });
+  const inst = new THREE.InstancedMesh(g, mat, PATH_MAX);
+  inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  inst.frustumCulled = false;
+  inst.count = 0;
+  inst.renderOrder = 2;
+  R.path.inst = inst;
+  R.scene.add(inst);
+
+  // 진입 지점 표시 — 붉은 기둥 + 고리
+  const gates = new THREE.Group();
+  R.path.gates = gates;
+  R.scene.add(gates);
+}
+
+function makeGate() {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color: 0xE0554A, transparent: true,
+                                            opacity: 0.5, depthWrite: false, toneMapped: false });
+  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, 2.6, 6), mat);
+  pillar.position.y = 1.3;
+  g.add(pillar);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.72, 0.92, 28), mat);
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04;
+  g.add(ring);
+  g.userData.mat = mat;
+  return g;
+}
+
+const _pm = new THREE.Matrix4(), _pq = new THREE.Quaternion(),
+      _pv = new THREE.Vector3(), _ps = new THREE.Vector3(1, 1, 1),
+      _pe = new THREE.Euler();
+
+function rebuildPath(S) {
+  ensurePathInst();
+  const dirs = Sim.upcomingDirs(S);
+  R.path.dirs = dirs;
+  const pts = [];
+  for (const d of dirs) {
+    const tiles = Sim.invasionPath(S, d);
+    for (let i = 0; i < tiles.length - 1; i++) {
+      const a = tiles[i], b = tiles[i + 1];
+      const ax = a.tx * C.TILE + C.TILE / 2, ay = a.ty * C.TILE + C.TILE / 2;
+      const bx = b.tx * C.TILE + C.TILE / 2, by = b.ty * C.TILE + C.TILE / 2;
+      pts.push({ x: ax, y: ay, a: Math.atan2(bx - ax, by - ay), i: pts.length });
+    }
+  }
+  R.path.points = pts;
+
+  // 진입 지점 기둥
+  const gates = R.path.gates;
+  while (gates.children.length < dirs.length) gates.add(makeGate());
+  gates.children.forEach((g, i) => {
+    g.visible = i < dirs.length;
+    if (i >= dirs.length) return;
+    const e = Sim.entryPoint(dirs[i]);
+    g.position.set(gx(e.tx * C.TILE + C.TILE / 2), 0, gz(e.ty * C.TILE + C.TILE / 2));
+  });
+}
+
+function updatePath(S, dt) {
+  const sig = `${S.wallList.length}|${S.waveIdx}|${S.baseLv}`;
+  if (R.path.dirty || sig !== R.path.sig) { R.path.sig = sig; R.path.dirty = false; rebuildPath(S); }
+  const inst = R.path.inst;
+  if (!inst) return;
+
+  const pts = R.path.points;
+  const n = Math.min(pts.length, PATH_MAX);
+  inst.count = n;
+  if (!n) return;
+
+  // 낮에는 또렷하게, 밤에는 실제 적이 보이므로 흐리게
+  const night = S.phase === 'night';
+  inst.material.opacity = night ? 0.18 : 0.6;
+  for (const g of R.path.gates.children)
+    if (g.visible) g.userData.mat.opacity = night ? 0.15 : 0.45 + Math.sin(S.t * 3) * 0.12;
+
+  // 거점 쪽으로 흐르는 느낌 — 세 칸에 하나씩만 밝게 커집니다
+  const flow = (S.t * 6) % 3;
+  for (let i = 0; i < n; i++) {
+    const p = pts[i];
+    const pulse = 1 + 0.45 * Math.max(0, 1 - Math.abs(((i % 3) - flow + 3) % 3));
+    _pe.set(0, p.a, 0);
+    _pq.setFromEuler(_pe);
+    _pv.set(gx(p.x), 0.06, gz(p.y));
+    _ps.set(pulse, pulse, pulse);
+    _pm.compose(_pv, _pq, _ps);
+    inst.setMatrixAt(i, _pm);
+  }
+  inst.instanceMatrix.needsUpdate = true;
 }
 
 /* ==================================================================
@@ -927,13 +1065,13 @@ export function sync(S, dt) {
     seen.add(m);
     mesh.position.set(gx(m.x), 0, gz(m.y));
     mesh.rotation.y = m.facing || 0;
-    const scale = m.boss ? 1.7 : 0.95;
+    const scale = monScale(m);
     if (!mesh.userData.isModel)
       mesh.userData.body.position.y = (0.82 + Math.sin(S.t * 10 + m.x) * 0.05) * scale;
     // 체력이 닳을수록 어두워지고, 맞는 순간 하얗게 번쩍입니다
     if (!mesh.userData.isModel) {
       const ratio = Math.max(0, m.hp / m.maxHp);
-      const base = new THREE.Color(m.boss ? BOSS_COLOR : MONSTER_COLOR);
+      const base = new THREE.Color(kindColor(m));
       base.multiplyScalar(0.45 + ratio * 0.55);
       if (m.hitFlash > 0) base.lerp(new THREE.Color(0xffffff), 0.75);
       mesh.userData.body.material.color.copy(base);
@@ -978,20 +1116,21 @@ export function sync(S, dt) {
   for (const s of S.soldiers) {
     let mesh = R.soldierMeshes.get(s);
     if (!mesh) {
-      mesh = makeHumanoid(ROLE_COLOR[s.role], 0xcfd6da, 0.82);
+      mesh = makeHumanoid(ROLE_COLOR[s.role] || 0x5FAE72, 0xcfd6da, 0.82);
       R.scene.add(mesh); R.soldierMeshes.set(s, mesh);
     }
     sseen.add(s);
     mesh.visible = !s.down;
     mesh.position.set(gx(s.x), 0, gz(s.y));
     mesh.rotation.y = s.facing || 0;
-    mesh.userData.body.material.color.set(ROLE_COLOR[s.role]);
+    mesh.userData.body.material.color.set(ROLE_COLOR[s.role] || 0x5FAE72);
     mesh.userData.body.position.y = 0.67 + Math.sin(S.t * 11 + s.x) * 0.04;
   }
   for (const [s, mesh] of R.soldierMeshes) {
     if (!sseen.has(s)) { R.scene.remove(mesh); R.soldierMeshes.delete(s); }
   }
 
+  updatePath(S, dt);
   updateRings(S);
   updateArrows(dt);
   updateVfx(S, dt);
@@ -1386,16 +1525,45 @@ function drawMinimap(S) {
     if (t.dur <= 0) continue;
     ctx.fillRect(t.tx * C.TILE * sx, t.ty * C.TILE * sy, Math.max(1.5, C.TILE * sx), Math.max(1.5, C.TILE * sy));
   }
+  // ★ 예상 침공로 — 3D 바닥에 그린 것과 같은 길을 미니맵에도 그립니다
+  const night = S.phase === 'night';
+  ctx.strokeStyle = night ? 'rgba(224,85,74,0.35)' : 'rgba(224,85,74,0.85)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([3, 3]);
+  ctx.lineDashOffset = -(S.t * 14) % 6;
+  for (const d of R.path.dirs) {
+    const tiles = Sim.invasionPath(S, d);
+    if (tiles.length < 2) continue;
+    ctx.beginPath();
+    tiles.forEach((t, i) => {
+      const px = (t.tx * C.TILE + C.TILE / 2) * sx, py = (t.ty * C.TILE + C.TILE / 2) * sy;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    });
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // 진입 지점
+  for (const d of R.path.dirs) {
+    const e = Sim.entryPoint(d);
+    const px = (e.tx * C.TILE + C.TILE / 2) * sx, py = (e.ty * C.TILE + C.TILE / 2) * sy;
+    ctx.fillStyle = '#E0554A';
+    ctx.beginPath(); ctx.arc(px, py, 3.4, 0, 6.283); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(px, py, 5.5 + Math.sin(S.t * 3) * 1.4, 0, 6.283); ctx.stroke();
+  }
+
   // 거점
   ctx.fillStyle = '#E0B44A';
   ctx.fillRect(S.base.x * sx - 4, S.base.y * sy - 4, 8, 8);
-  // 병사
-  ctx.fillStyle = '#5FAE72';
-  for (const s of S.soldiers) { if (!s.down) ctx.fillRect(s.x * sx - 1.5, s.y * sy - 1.5, 3, 3); }
-  // 몬스터
-  ctx.fillStyle = '#E0554A';
+  // 병사 · 용병 (부상자는 회색으로 남겨둡니다 — 몇 명이 빠졌는지 보여야 합니다)
+  for (const s of S.soldiers) {
+    ctx.fillStyle = s.down ? '#5a5a52' : s.merc ? '#5B8FC7' : '#5FAE72';
+    ctx.fillRect(s.x * sx - 1.5, s.y * sy - 1.5, 3, 3);
+  }
+  // 몬스터 — 종류별 색 그대로
   for (const m of S.monsters) {
-    const r = m.boss ? 4 : 2.2;
+    const r = m.boss ? 5 : 2.4;
+    ctx.fillStyle = '#' + kindColor(m).toString(16).padStart(6, '0');
     ctx.fillRect(m.x * sx - r / 2, m.y * sy - r / 2, r, r);
   }
   // 장수

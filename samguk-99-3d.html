@@ -211,15 +211,69 @@ details.panel[open] summary::before{content:'▾ ';}
   .hudBox{font-size:10.5px;padding:5px 7px;} .bar{width:86px;}
   .gcards{grid-template-columns:1fr;}
 }
+
+/* ── 부활 안내 ── */
+#respawnBox{display:none;position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);
+  text-align:center;background:rgba(18,16,14,0.82);border:1px solid rgba(224,85,74,0.55);
+  border-radius:12px;padding:16px 26px;pointer-events:none;z-index:6;
+  box-shadow:0 10px 34px rgba(0,0,0,0.5);}
+#respawnBox .rt{font-size:12.5px;color:var(--red);font-weight:800;letter-spacing:.06em;}
+#respawnBox .rc{font-size:44px;font-weight:900;line-height:1.1;color:#fff;
+  font-variant-numeric:tabular-nums;text-shadow:0 2px 10px rgba(0,0,0,.6);}
+#respawnBox .rs{font-size:11.5px;color:var(--dim);}
+#respawnBox .rbar{margin-top:8px;height:4px;border-radius:3px;background:rgba(255,255,255,.14);overflow:hidden;}
+#respawnBox .rbar>div{height:100%;width:0%;background:var(--red);transition:width .1s linear;}
+/* 부상 병사 머리 위 복귀 타이머 */
+.downTimer{position:absolute;transform:translate(-50%,-100%);font-size:10px;font-weight:800;
+  color:#e8d9bd;background:rgba(18,16,14,.72);border:1px solid rgba(224,85,74,.45);
+  border-radius:7px;padding:1px 5px;pointer-events:none;white-space:nowrap;
+  font-variant-numeric:tabular-nums;}
+/* 침공 방향 줄 */
+#hDirs{font-size:11px;color:var(--dim);margin-top:2px;}
+#hDirs b{color:#E0554A;}
+
+/* ── 용병 ── */
+.mercRow{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;}
+.mercCard{flex:1 1 180px;min-width:170px;text-align:left;background:var(--panel);
+  border:1px solid var(--line);border-radius:10px;padding:9px 11px;cursor:pointer;
+  color:var(--ink);font:inherit;transition:border-color .12s,transform .12s;}
+.mercCard:hover{border-color:var(--gold);transform:translateY(-1px);}
+.mercCard:disabled{opacity:.45;cursor:not-allowed;transform:none;}
+.mercCard .mh{display:flex;justify-content:space-between;align-items:baseline;gap:6px;}
+.mercCard .mn{font-size:13px;font-weight:800;}
+.mercCard .mc{font-size:12px;font-weight:800;color:var(--gold);white-space:nowrap;}
+.mercCard .md{font-size:11px;color:var(--dim);line-height:1.5;margin-top:3px;}
+.mercCard .mt{font-size:10.5px;color:var(--blue);margin-top:3px;}
+.sldChip.merc{border-color:var(--blue);}
+.hpBar.merc{border-color:rgba(91,143,199,.6);}
+.sldChip .ct{font-size:9.5px;color:var(--dim);display:block;}
+
+/* ── 상점 ── */
+.walletRow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:8px 0 10px;font-size:12.5px;}
+.walletRow .w{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:5px 10px;}
+.walletRow .w i{font-style:normal;}
+.walletRow .w.dim{color:var(--dim);}
+.pullRow{display:flex;gap:8px;flex-wrap:wrap;}
+.pullRow .btn{font-size:13.5px;padding:11px 18px;}
+.pullRow .btn small{font-size:10px;opacity:.75;font-weight:600;}
+.packRow{display:flex;gap:7px;flex-wrap:wrap;margin-top:6px;}
+.packCard{flex:1 1 130px;min-width:120px;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:10px;text-align:center;cursor:pointer;color:var(--ink);font:inherit;
+  transition:border-color .12s,transform .12s;}
+.packCard:hover{border-color:#9fd8ff;transform:translateY(-1px);}
+.packCard .pg{font-size:17px;font-weight:900;color:#9fd8ff;}
+.packCard .pb{font-size:10.5px;color:var(--gold);min-height:13px;}
+.packCard .pp{font-size:12px;color:var(--dim);margin-top:3px;}
 </style>
 </head>
 <body>
 <div id="app">
   <a href="./" class="backLink">← 제주 어항 해도로 돌아가기</a>
   <div class="topbar">
-    <div class="brand">삼국지 99일 생존 3D<small>1막 · Day 1~33 · 설치 불필요</small></div>
+    <div class="brand">삼국지 99일 생존 3D<small>Day 1~99 · 3막 · 설치 불필요</small></div>
     <div style="display:flex;gap:6px;">
-      <button class="btn" id="btnSound">🔊</button>
+      <button class="btn" id="btnSound" title="효과음 켜기/끄기">🔊 효과음</button>
+      <button class="btn" id="btnMusic" title="배경음악 켜기/끄기">🎵 음악</button>
       <button class="btn" id="btnPause">⏸ 일시정지</button>
     </div>
   </div>
@@ -227,7 +281,7 @@ details.panel[open] summary::before{content:'▾ ';}
   <div id="stage">
     <div id="hud">
       <div class="hudBox">
-        <div class="hudDay" id="hDay">Day 1 <span>/ 33</span></div>
+        <div class="hudDay" id="hDay">Day 1 <span>/ 99</span></div>
         <div id="hPhase" style="color:var(--dim);">봄 · 개척기</div>
         <div style="margin-top:4px;">거점 <span id="hBaseHp">1300</span>
           <div class="bar"><div id="hBaseBar" style="width:100%;background:var(--gold);"></div></div></div>
@@ -244,13 +298,23 @@ details.panel[open] summary::before{content:'▾ ';}
           · 병사 <span id="hSol">0</span>/<span id="hSolMax">0</span>
           · 🧪 <span id="hPotion">0</span> · 옥새 <span id="hShard">0</span></div>
         <div style="color:var(--red);font-weight:800;margin-top:3px;" id="hNext">다음 대란 D-10</div>
+        <div id="hDirs">침공 방향 —</div>
       </div>
     </div>
     <div id="fxLayer"></div>
     <div id="toast"></div>
     <div id="waveAlert"><div class="t" id="waTitle"></div><div class="s" id="waSub"></div></div>
     <div id="objective">목표를 불러오는 중…</div>
-    <div id="minimapWrap"><canvas id="minimap"></canvas><div id="mmLabel">미니맵</div></div>
+    <div id="respawnBox">
+      <div class="rt">쓰러졌습니다</div>
+      <div class="rc" id="respawnSec">0.0</div>
+      <div class="rs">초 후 부활 — <b>탈락은 없습니다</b></div>
+      <div class="rbar"><div id="respawnBar"></div></div>
+    </div>
+    <div id="minimapWrap">
+      <canvas id="minimap"></canvas>
+      <div id="mmLabel">미니맵 · <span style="color:#E0554A">┅ 예상 침공로</span></div>
+    </div>
     <div id="buildHint"></div>
     <div id="buildConfirm">
       <span class="t">여기에 지을까요?</span>
@@ -283,10 +347,19 @@ details.panel[open] summary::before{content:'▾ ';}
   <div id="soldierPanel">
     <p class="secTitle" style="margin:0 0 2px;">병사 위임 — 반복 노동은 병사에게</p>
     <div style="font-size:11.5px;color:var(--dim);line-height:1.6;">
-      병영을 지으면 병사를 고용할 수 있습니다. 병사를 눌러 <b style="color:var(--gold)">목재 → 석재 → 방어</b> 순으로 역할을 바꿉니다.
+      병영을 지으면 병사를 고용할 수 있습니다. 병사를 눌러
+      <b style="color:var(--gold)">목재 → 석재 → 약초 → 철 → 방어</b> 순으로 역할을 바꿉니다.
+      <b>철은 돌 곡괭이를 만든 뒤에만</b> 맡길 수 있습니다 — 중앙 철광까지 오가는 일을 병사가 나눠 집니다.
     </div>
     <div class="sldRow" id="sldRow"></div>
     <div style="margin-top:8px;"><button class="btn" id="btnHire">＋ 병사 고용 (목재 10 · 석재 5)</button></div>
+
+    <p class="secTitle" style="margin:14px 0 2px;">용병 고용 — <b style="color:var(--gold)">옥새 조각</b>으로 즉시 충원</p>
+    <div style="font-size:11.5px;color:var(--dim);line-height:1.6;">
+      병영 한도와 <b>무관</b>합니다. 대신 <b style="color:var(--gold)">18일 계약</b>이 끝나면 떠납니다.
+      손이 모자랄 때 옥새 조각을 써서 즉시 머릿수를 늘리는 수단입니다.
+    </div>
+    <div class="mercRow" id="mercRow"></div>
   </div>
 
   <details class="panel" id="helpPanel">
@@ -300,7 +373,9 @@ details.panel[open] summary::before{content:'▾ ';}
       <li><b>스킬</b> — <b>Q</b> 기본 / <b>E</b> 고유. 스킬로 때리면 적의 공격을 끊을 수 있습니다(평타로는 안 끊깁니다)</li>
       <li><b>건설</b> — 카드를 고르고 땅을 눌러 위치를 잡으면 <b>들어설 모습이 미리</b> 보입니다. 확인을 눌러야 실제로 지어집니다</li>
       <li><b>목책은 방어벽이 아니라 길을 조종하는 도구</b>입니다. 일부러 길을 터고 거기에 함정을 까세요</li>
-      <li><b>밤</b> — 11·22·33일에 대란이 옵니다. 5초 전에 공격 방향을 알려줍니다</li>
+      <li><b>설치 취소</b> — <b style="color:var(--gold)">마우스 오른쪽 버튼</b>으로 언제든 취소됩니다 (Esc 도 됩니다)</li>
+      <li><b>밤</b> — 11일마다 대란이 옵니다(총 9회). 공격 방향과 <b style="color:#E0554A">예상 침공로</b>는 첫날부터 바닥에 보입니다</li>
+      <li><b>용병</b> — 옥새 조각으로 즉시 고용합니다. 병영 한도와 무관하지만 18일 뒤 떠납니다</li>
     </ul>
     <div style="margin-top:9px;color:var(--dim);font-size:11.5px;">
       ※ 웨이브 리포트의 <b>함정 처치 비율</b>이 판마다 오르는지 보세요. 그게 이 프로토타입의 목적입니다.
@@ -317,18 +392,28 @@ details.panel[open] summary::before{content:'▾ ';}
   <div class="sheet">
     <h2>삼국지 99일 생존 <span style="color:var(--dim);font-size:13px;">3D 1막 프로토타입</span></h2>
     <p class="sub">
-      1일차 맨손에서 시작해 <b style="color:var(--gold)">33일</b>을 버티면 승리입니다.
-      하루는 7초, 11·22·33일 밤에 <b style="color:var(--red)">대란</b>이 옵니다.<br>
+      1일차 맨손에서 시작해 <b style="color:var(--gold)">99일</b>을 버티면 승리입니다.
+      하루는 8초, <b style="color:var(--red)">11일마다</b> 밤에 대란이 옵니다(총 9회).<br>
+      <b>1막 개척기</b>(1~33일) → <b>2막 확장기</b>(34~66일) → <b>3막 결전기</b>(67~99일)로
+      적의 구성이 바뀝니다.<br>
       출전할 장수를 고르세요. 등급이 높을수록 초반이 강한 대신 몬스터도 강하게 몰려옵니다.
     </p>
     <div class="gcards" id="heroCards"></div>
+    <div class="panel" style="border-left:3px solid var(--gold);">
+      <h3>적의 종류 — 한 가지 방어로는 막히지 않습니다</h3>
+      <div class="repRow"><span><b style="color:#E0554A">졸개</b> — 기본</span><b>1막부터</b></div>
+      <div class="repRow"><span><b style="color:#E08B3C">기병</b> — 1.5배 빠름, 함정을 빨리 빠져나감</span><b>44일~</b></div>
+      <div class="repRow"><span><b style="color:#7D8A96">방패병</b> — 체력 2.3배, 받는 피해 30% 감소</span><b>55일~</b></div>
+      <div class="repRow" style="border-bottom:none;"><span><b style="color:#9B6FC9">정예</b> — 체력 3.2배, 피해 1.6배</span><b>77일~</b></div>
+    </div>
     <div class="panel">
       <h3>명성(名聲) 시스템 — 페이투윈 완화 장치</h3>
       등급이 높은 장수는 이름값 때문에 <b>몬스터가 더 강하게 몰려오고 시작 자원이 적습니다.</b>
       낮은 등급은 초반이 고되지만 <b>22일차 이후 성장 보정</b>으로 역전합니다.
     </div>
     <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-      <button class="btn primary" id="btnStart" style="font-size:14px;padding:11px 22px;">▶ 1막 시작</button>
+      <button class="btn primary" id="btnStart" style="font-size:14px;padding:11px 22px;">▶ 99일 시작</button>
+      <button class="btn gold" id="btnTitleShop" style="font-size:13px;padding:11px 18px;">🎲 출전 전 뽑기</button>
       <span id="bestRec" style="font-size:12px;color:var(--dim);"></span>
     </div>
   </div>
@@ -363,6 +448,16 @@ details.panel[open] summary::before{content:'▾ ';}
       <b>가죽</b>은 몬스터를 잡아야 나오므로, 밤의 전투가 낮의 장비로 이어집니다.
     </div>
 
+    <div class="panel" style="border-left:3px solid var(--red);">
+      <h3>적이 어디로 오는지 — 미리 알려줍니다</h3>
+      바닥의 <b style="color:#E0554A">붉은 화살표 줄</b>이 다음 대란의 <b>예상 침공로</b>입니다.
+      붉은 기둥이 <b>적이 들어오는 입구</b>이고, 거기서 거점까지 실제로 걸어올 길을 그린 것입니다.
+      미니맵에도 같은 길이 점선으로 나옵니다.<br><br>
+      <b style="color:var(--gold)">중요</b> — 목책을 하나 놓을 때마다 이 길이 <b>즉시 휘어집니다.</b>
+      목책으로 길을 좁혀 한 줄로 만들고, 그 줄 위에 함정을 까는 것이 정석입니다.
+      화살표가 지나가지 않는 곳에 깐 함정은 한 마리도 못 잡습니다.
+    </div>
+
     <p class="secTitle">자원 — 어디서 얻고 어디에 쓰나</p>
     <div id="guideRes"></div>
 
@@ -375,6 +470,15 @@ details.panel[open] summary::before{content:'▾ ';}
     <p class="secTitle">성 단계</p>
     <div id="guideBase"></div>
 
+    <p class="secTitle">적의 종류 — 대응이 달라야 합니다</p>
+    <div id="guideMon"></div>
+
+    <p class="secTitle">병사와 용병</p>
+    <div id="guideMerc"></div>
+
+    <p class="secTitle">99일의 흐름</p>
+    <div id="guideActs"></div>
+
     <div class="panel">
       <h3>조작 요약</h3>
       <ul>
@@ -385,6 +489,7 @@ details.panel[open] summary::before{content:'▾ ';}
         <li><b>치유약</b> — H</li>
         <li><b>카메라</b> — 드래그로 회전, 휠로 확대</li>
         <li><b>건설</b> — 카드를 고르고 땅을 눌러 위치를 잡은 뒤 확인</li>
+        <li><b>설치 취소</b> — <b style="color:var(--gold)">마우스 오른쪽 버튼</b> 또는 Esc</li>
       </ul>
     </div>
 
@@ -424,14 +529,34 @@ details.panel[open] summary::before{content:'▾ ';}
 <!-- 가챠·확률표 -->
 <div class="screen" id="scShop">
   <div class="sheet">
-    <h2>장수 가챠 <span style="color:var(--dim);font-size:13px;">화면 목업 · 실제 결제 없음</span></h2>
-    <p class="sub">재미가 검증되기 전에는 결제를 붙이지 않습니다. 게임으로 얻은 <b style="color:var(--gold)">옥새 조각</b>으로만 뽑습니다.</p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-      <button class="btn gold" id="btnPull" style="font-size:14px;padding:11px 20px;">🎲 1회 뽑기 (옥새 10)</button>
-      <span style="font-size:12.5px;">보유 <b id="shopShard">0</b></span>
-      <span style="font-size:12px;color:var(--dim);">천장까지 <b id="pityLeft">90</b>회</span>
+    <h2>장수 뽑기 <span style="color:var(--dim);font-size:13px;">프로토타입 · 실제 결제 없음</span></h2>
+    <p class="sub">
+      뽑아서 열린 장수는 <b style="color:var(--gold)">출전 화면에서 바로 고를 수 있습니다.</b>
+      게임에서 얻는 <b>옥새 조각</b>으로도, 유료 재화인 <b style="color:#9fd8ff">보석</b>으로도 뽑을 수 있습니다.
+    </p>
+
+    <div class="walletRow">
+      <span class="w"><i>🔶</i> 옥새 조각 <b id="shopShard">0</b></span>
+      <span class="w"><i>💎</i> 보석 <b id="shopGem">0</b></span>
+      <span class="w dim">천장까지 <b id="pityLeft">90</b>회</span>
+      <button class="btn" id="btnFreeGem">🎁 오늘의 무료 보석</button>
+    </div>
+
+    <div class="pullRow">
+      <button class="btn gold" id="btnPull">🎲 1회 — 옥새 10</button>
+      <button class="btn gold" id="btnPullGem">💎 1회 — 보석 30</button>
+      <button class="btn primary" id="btnPull10">💎 10연차 — 보석 270 <small>1회분 할인</small></button>
     </div>
     <div class="panel" id="pullResult" style="display:none;text-align:center;"></div>
+
+    <p class="secTitle">보석 충전 <span style="font-weight:600;color:var(--dim);font-size:11px;">— 프로토타입이라 결제 창 없이 그냥 지급됩니다</span></p>
+    <div class="packRow" id="packRow"></div>
+    <div class="panel" style="border-left:3px solid var(--red);font-size:11.5px;color:var(--dim);">
+      <b style="color:var(--red)">알림</b> — 여기서는 <b>실제 결제가 일어나지 않습니다.</b> 가격표는 상점 화면이
+      어떻게 생길지 보여주는 예시이고, 버튼을 누르면 보석이 그냥 지급됩니다.
+      실제 서비스로 낼 때는 구글·애플 결제를 붙이고 청약철회·환불 안내를 함께 넣어야 합니다.
+    </div>
+
     <div class="panel">
       <h3>확률표 (확률형 아이템 정보공개 대상)</h3>
       <div class="repRow"><span style="color:#9aa7b0;">일반</span><b>55.000%</b></div>
@@ -443,8 +568,13 @@ details.panel[open] summary::before{content:'▾ ';}
         <li><b>천장</b> — 90회 이내 전설 이상, 180회 이내 신화 확정</li>
         <li><b>중복 보상</b> — 보유 장수 중복 시 각성 재료로 전환</li>
         <li><b>랭크전 정규화</b> — 랭크에서는 스탯이 정규화되어 과금 우위가 사라집니다</li>
+        <li>한국에서 확률형 아이템은 <b>확률 전체 공개가 법적 의무</b>입니다(게임산업법 제33조).
+            그래서 이 표를 상점에 항상 띄워둡니다.</li>
       </ul>
     </div>
+
+    <div class="panel"><h3>플레이 가능한 장수</h3>
+      <div id="playableList" style="font-size:12px;line-height:1.9;"></div></div>
     <div class="panel"><h3>도감</h3><div id="dexList" style="font-size:12px;line-height:1.9;color:var(--dim);">아직 없습니다.</div></div>
     <button class="btn primary" id="btnShopClose" style="margin-top:14px;padding:10px 20px;">닫기</button>
   </div>

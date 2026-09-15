@@ -9,9 +9,21 @@ export const TILE = 28;                 // 타일 한 칸(게임 단위)
 export const MAPW = 46, MAPH = 34;      // 지도 크기(타일 수)
 export const WORLD_W = MAPW * TILE;
 export const WORLD_H = MAPH * TILE;
-export const DAY_SEC = 7;               // 하루 길이(초)
-export const TOTAL_DAYS = 33;           // 1막 = 1~33일
+export const DAY_SEC = 8;               // 하루 길이(초)
+export const TOTAL_DAYS = 99;           // 전체 99일 (3막 × 33일)
 export const WARN_SEC = 5;              // 웨이브 예고 시간
+
+/* 3막 구조 — 기획서의 99일 체제를 그대로 옮겼습니다.
+   막이 바뀌면 적의 구성이 바뀌고, 플레이어가 배워야 할 것도 바뀝니다. */
+export const ACTS = [
+  { act:1, from:1,  to:33, name:'개척기',
+    lesson:'목책으로 길을 좁히고 함정을 까는 법을 배웁니다.' },
+  { act:2, from:34, to:66, name:'확장기',
+    lesson:'기병은 빠르고 방패병은 단단합니다. 한 가지 방어로는 막히지 않습니다.' },
+  { act:3, from:67, to:99, name:'결전기',
+    lesson:'사방에서 몰려옵니다. 병력·성·함정을 모두 굴려야 버팁니다.' }
+];
+export const actOf = day => ACTS.find(a => day >= a.from && day <= a.to) || ACTS[2];
 
 /* 3D 환산 비율 — 1게임단위 = 0.1 three단위.
    이렇게 해야 장수 키가 약 2유닛(사람 크기)이 되어 조명·그림자·텍스처 밀도가 자연스럽습니다.
@@ -36,6 +48,9 @@ export const HERO_SPD = 152;
 export const HERO_HP = 100;
 export const HERO_REGEN = 6;            // 초당 회복(주변에 적이 없을 때)
 export const RESPAWN_BASE = 8;          // 부활 시간(초) — 일차가 지날수록 증가
+/* 부활 직후 무적 — 이게 없으면 되살아나는 순간 옆에 있던 적에게 바로 또 맞아
+   죽고, 죽고, 죽는 늪에 빠집니다. 되살아난 사람에게 숨 돌릴 틈을 줍니다. */
+export const RESPAWN_INVULN = 1.6;
 export const GATHER_RANGE = 58;        // 가까이만 가면 캐지도록 넉넉하게
 
 /* 건설 가능 범위 — 장수 주변에만 지을 수 있습니다.
@@ -72,6 +87,26 @@ export const SOLDIER_RANGE = 36;
 export const SOLDIER_CARRY = 8;
 export const SOLDIER_DOWN_SEC = 15;     // 부상 후 복귀까지
 export const SOLDIER_COST = { wood: 10, stone: 5 };
+
+/* ---------- 용병 ----------
+   병사는 자원으로 고용하고 병영 한도에 묶입니다.
+   용병은 '옥새 조각'으로 고용하고 한도가 없는 대신 계약 일수가 지나면 떠납니다.
+   → 급할 때 즉시 머릿수를 늘리는 수단이자, 옥새 조각을 쓰는 곳이 됩니다. */
+export const MERC_CONTRACT_DAYS = 18;   // 계약 기간(일)
+export const MERCS = [
+  { id:'gatherer', name:'채집 용병', icon:'🧺', cost:6,
+    hp:90, atk:5, gather:4.2, carry:14, role:'wood',
+    desc:'싸우지 않고 자원만 캡니다. 병사보다 두 배 빠르고 한 번에 더 많이 나릅니다.',
+    tip:'낮이 짧게 느껴진다면 이 용병부터 뽑으세요.' },
+  { id:'archer', name:'궁수 용병', icon:'🏹', cost:10,
+    hp:95, atk:16, range:120, cd:1.0, gather:1.6, carry:8, role:'def',
+    desc:'멀리서 화살을 쏩니다. 목책 뒤에 세워두면 안전하게 싸웁니다.',
+    tip:'길목을 좁힌 뒤 그 뒤에 배치하는 게 가장 효율적입니다.' },
+  { id:'shield', name:'방패 용병', icon:'🛡️', cost:12,
+    hp:260, atk:12, cd:0.9, gather:1.4, carry:8, role:'def', armor:0.35,
+    desc:'체력이 매우 높고 받는 피해가 35% 줄어듭니다. 적을 자기 쪽으로 붙잡아 둡니다.',
+    tip:'방패병이 몰려오는 55일·88일에 특히 값어치를 합니다.' }
+];
 
 /* ---------- 타일 점유 상태 ---------- */
 export const OCC_EMPTY = 0, OCC_NODE = 1, OCC_BASE = 2;
@@ -158,18 +193,60 @@ export const GENERALS = [
 /** 기본 제공 장수 (가챠 없이 바로 쓸 수 있는 장수) */
 export const FREE_HEROES = GENERALS.filter(g => g.free).map(g => g.id);
 
-/* ---------- 웨이브 (1막 3회) ---------- */
+/* ---------- 몬스터 종류 ----------
+   같은 방어가 모든 적에게 통하면 전략이 사라집니다.
+   기병은 함정을 빨리 지나가고, 방패병은 목책을 오래 두드립니다. */
+export const MONSTER_KINDS = {
+  normal: { name:'졸개',   hpMul:1.0, spdMul:1.0,  dmgMul:1.0, armor:0,    scale:1.0,  color:0xE0554A },
+  fast:   { name:'기병',   hpMul:0.7, spdMul:1.5,  dmgMul:0.9, armor:0,    scale:0.92, color:0xE08B3C },
+  tank:   { name:'방패병', hpMul:2.3, spdMul:0.68, dmgMul:1.2, armor:0.30, scale:1.28, color:0x7D8A96 },
+  elite:  { name:'정예',   hpMul:3.2, spdMul:0.95, dmgMul:1.6, armor:0.15, scale:1.38, color:0x9B6FC9 }
+};
+
+/* ---------- 웨이브 (99일 · 11일마다 9회) ----------
+   mix 는 [종류, 비율] 목록입니다. 비율의 합은 1 이 되게 적습니다. */
 export const WAVES = [
-  { day:11, name:'황건적의 습격', note:'튜토리얼 웨이브 · 소수 약체',
+  { day:11, act:1, name:'황건적의 습격', note:'튜토리얼 웨이브 · 소수 약체',
     count:10, hp:34, spd:70, dmg:6, sides:1,
+    mix:[['normal',1]],
     advice:'성벽이 없어도 막을 수 있는 웨이브입니다. 다음 22일은 다릅니다 — 지금 목책을 세우세요.' },
-  { day:22, name:'산적 무리', note:'다수 약체 · 성벽의 필요성을 배우는 구간',
+  { day:22, act:1, name:'산적 무리', note:'다수 약체 · 성벽의 필요성을 배우는 구간',
     count:18, hp:46, spd:78, dmg:8, sides:2,
+    mix:[['normal',1]],
     advice:'함정 처치 비율이 30% 아래라면 배치가 잘못된 겁니다. 목책으로 길을 좁히고 그 길목에 함정을 까세요.' },
-  { day:33, name:'산적 두목', note:'1막 보스 · 함정의 가치를 배우는 구간',
+  { day:33, act:1, name:'산적 두목', note:'1막 보스 · 함정의 가치를 배우는 구간',
     count:20, hp:56, spd:85, dmg:10, sides:2,
-    boss:{ hp:600, dmg:22, spd:55 },
-    advice:'보스는 체력이 높습니다. 함정 위를 오래 걷게 만드는 쪽이 정면으로 때리는 쪽보다 효율이 큽니다.' }
+    mix:[['normal',0.8],['fast',0.2]],
+    boss:{ hp:600, dmg:22, spd:55, name:'산적 두목' },
+    advice:'보스는 체력이 높습니다. 함정 위를 오래 걷게 만드는 쪽이 정면으로 때리는 쪽보다 효율이 큽니다.' },
+
+  { day:44, act:2, name:'오환 기병대', note:'2막 시작 · 빠른 적이 처음 등장합니다',
+    count:22, hp:62, spd:92, dmg:12, sides:2,
+    mix:[['normal',0.45],['fast',0.55]],
+    advice:'기병은 함정을 금방 빠져나갑니다. 함정 한 칸보다 두세 칸을 잇는 쪽이 낫습니다.' },
+  { day:55, act:2, name:'남만 상군', note:'단단한 방패병 · 목책이 오래 버텨야 합니다',
+    count:24, hp:78, spd:74, dmg:14, sides:3,
+    mix:[['normal',0.5],['tank',0.5]],
+    advice:'방패병은 목책을 오래 두드립니다. 성을 석성 이상으로 올리고 병사를 길목에 세우세요.' },
+  { day:66, act:2, name:'맹획', note:'2막 보스 · 세 방향 동시 공격',
+    count:26, hp:88, spd:82, dmg:15, sides:3,
+    mix:[['normal',0.4],['fast',0.3],['tank',0.3]],
+    boss:{ hp:1500, dmg:30, spd:52, name:'맹획' },
+    advice:'세 방향을 한 사람이 다 막을 수는 없습니다. 병사와 용병에게 길목 하나씩을 맡기세요.' },
+
+  { day:77, act:3, name:'위군 선봉', note:'3막 시작 · 정예가 섞여 들어옵니다',
+    count:30, hp:105, spd:88, dmg:17, sides:3,
+    mix:[['normal',0.4],['fast',0.25],['tank',0.25],['elite',0.1]],
+    advice:'정예 한 마리가 졸개 셋보다 아픕니다. 회피로 예비 동작을 흘리고 스킬로 끊으세요.' },
+  { day:88, act:3, name:'조조의 정예', note:'사방에서 몰려옵니다',
+    count:32, hp:120, spd:90, dmg:18, sides:4,
+    mix:[['normal',0.4],['fast',0.25],['tank',0.2],['elite',0.15]],
+    advice:'네 방향입니다. 철옹성의 망루가 없으면 손이 모자랍니다.' },
+  { day:99, act:3, name:'최후의 대란', note:'최종 보스 · 99일의 끝',
+    count:36, hp:140, spd:90, dmg:20, sides:4,
+    mix:[['normal',0.35],['fast',0.25],['tank',0.2],['elite',0.2]],
+    boss:{ hp:2300, dmg:34, spd:58, name:'여포(적)' },
+    advice:'마지막입니다. 치유약을 아끼지 말고, 보스는 함정 위로 끌어들이세요.' }
 ];
 
 /* ---------- 건설 ---------- */
@@ -185,6 +262,8 @@ export const BUILDS = [
 ];
 
 export const TRAP_DPS = 42;
+export const TRAP_DPS_STEEL = 1.7;      // 강철 가시를 만들면 곱해지는 값
+export const TRAP_DUR_STEEL = 1.6;
 export const TRAP_SLOW = 0.45;          // 함정 위 이동 속도 배율
 export const TRAP_WEAR = 7;             // 초당 내구도 감소
 export const WALL_DMG_MUL = 1.6;        // 몬스터가 목책을 때릴 때의 피해 배율
@@ -206,15 +285,28 @@ export const CRAFTS = [
     desc:'밤에 보이는 범위가 넓어집니다.',
     effect:'야간 시야 +60%' },
 
-  { id:'weapon',  name:'무기 강화', icon:'⚔️', cost:{ iron:5 }, max:3, group:'전투',
-    desc:'공격력이 오릅니다. 세 번까지 강화할 수 있습니다.',
-    effect:'공격력 +25% (누적)' },
+  { id:'weapon',  name:'무기 강화', icon:'⚔️', cost:{ iron:5 }, max:6, group:'전투',
+    desc:'공격력이 오릅니다. 여섯 번까지 강화할 수 있고, 단계가 오를수록 철이 더 듭니다.',
+    effect:'공격력 +25% (누적, 최대 +150%)' },
   { id:'leather', name:'가죽 갑옷', icon:'🦺', cost:{ hide:8, wood:5 }, group:'전투',
     desc:'최대 체력이 늘어납니다.',
     effect:'최대 체력 +40' },
   { id:'ironmail', name:'철 갑옷', icon:'🛡️', cost:{ iron:10, hide:5 }, group:'전투', need:'leather',
     desc:'받는 피해가 줄어듭니다.',
     effect:'받는 피해 -20%' },
+  /* ── 3막 장비 ──
+     후반 웨이브를 넘으려면 후반에도 성장할 거리가 있어야 합니다.
+     자동 시뮬레이션으로 재보니, 이 셋이 없으면 잘 준비해도 88일에서 막혔습니다. */
+  { id:'steelspike', name:'강철 가시', icon:'🗡️', cost:{ iron:20, stone:30 }, group:'3막 장비', need:'ironmail',
+    desc:'모든 가시함정의 피해와 내구도가 크게 오릅니다. 이미 깔아둔 함정에도 적용됩니다.',
+    effect:'함정 피해 +70% · 내구도 +60%' },
+  { id:'towerup', name:'망루 강화', icon:'🏹', cost:{ iron:25, wood:40 }, group:'3막 장비', need:'steelspike',
+    desc:'철옹성 망루의 공격력이 두 배가 되고 더 빨리 쏩니다. 성 3단계가 필요합니다.',
+    effect:'망루 피해 2배 · 발사 속도 +40%' },
+  { id:'banner', name:'군기(軍旗)', icon:'🚩', cost:{ hide:20, iron:15 }, group:'3막 장비', need:'towerup',
+    desc:'병사와 용병의 공격력과 체력이 함께 오릅니다. 머릿수가 힘이 되는 시점입니다.',
+    effect:'병사·용병 공격 +50% · 체력 +40%' },
+
   { id:'potion', name:'치유약', icon:'🧪', cost:{ herb:5 }, group:'소모품', stack:true,
     desc:'즉시 체력을 회복합니다. 여러 개 만들어 둘 수 있습니다. (H 키)',
     effect:'체력 50 회복' }
@@ -227,11 +319,15 @@ export const BASE_LEVELS = [
     desc:'흙과 돌로 쌓은 기본 거점입니다.' },
   { lv:2, name:'석성',   maxHp:1900, cost:{ stone:60, wood:40 },
     desc:'성벽이 높아지고 체력이 크게 늘어납니다.' },
-  { lv:3, name:'철옹성', maxHp:2700, cost:{ stone:120, iron:30 },
-    desc:'망루에서 다가오는 적을 자동으로 공격합니다.' }
+  { lv:3, name:'철옹성', maxHp:3200, cost:{ stone:120, iron:30 },
+    desc:'망루에서 다가오는 적을 자동으로 공격합니다. 3막을 버티려면 반드시 필요합니다.' }
 ];
 export const BASE_TOWER_DMG = 14;       // 3단계 망루의 자동 공격
 export const BASE_TOWER_CD = 1.4;
+export const TOWER_UP_DMG = 2.0;        // 망루 강화
+export const TOWER_UP_CD = 0.6;
+export const BANNER_ATK = 1.5;          // 군기 — 병사·용병 공격
+export const BANNER_HP = 1.4;
 export const BASE_TOWER_RANGE = 8 * 28;
 
 /* ---------- 자원 ----------
@@ -259,8 +355,25 @@ export const SOLDIER_GATHER_RATE = 2.2;
 export const NODE_REGROW_SEC = 24;
 export const HIDE_PER_KILL = 1;         // 몬스터 처치 시 가죽
 
+/* ---------- 뽑기 · 재화 ----------
+   ※ 프로토타입입니다. 실제 결제는 일어나지 않고, 보석은 버튼으로 모의 지급됩니다.
+   ※ 한국에서 확률형 아이템은 확률 전체 공개가 법적 의무입니다(게임산업법 제33조).
+     그래서 확률표를 상점 화면에 항상 띄우고, 이 배열이 그 표의 원본입니다. */
+export const GACHA_COST_SHARD = 10;     // 옥새 조각 1회
+export const GACHA_COST_GEM = 30;       // 보석 1회
+export const GACHA_COST_GEM10 = 270;    // 보석 10연차 (1회분 할인)
+export const GACHA_PITY = 90;           // 천장 — 이 횟수까지 전설 이상이 없으면 확정
+export const GACHA_PITY_HARD = 180;     // 신화 확정
+export const GEM_PACKS = [
+  { id:'p1', gem:60,   price:'₩1,200',  bonus:0,   tag:'' },
+  { id:'p2', gem:330,  price:'₩6,500',  bonus:30,  tag:'보너스 +10%' },
+  { id:'p3', gem:1200, price:'₩22,000', bonus:200, tag:'인기' },
+  { id:'p4', gem:3000, price:'₩49,000', bonus:700, tag:'최대 혜택' }
+];
+export const GEM_FREE_DAILY = 30;       // 하루 한 번 무료 보석
+
 /* ---------- 보상 ---------- */
-export const WAVE_SHARD = [15, 25, 40];
+export const WAVE_SHARD = [15, 25, 40, 50, 60, 80, 95, 115, 150];
 export const OBJECTIVE_SHARD = 3;
 export const WIN_SHARD = 30, LOSE_SHARD = 10;
 

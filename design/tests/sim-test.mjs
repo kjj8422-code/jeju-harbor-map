@@ -18,6 +18,32 @@ function run(S, seconds, dt = 1 / 30) {
   }
 }
 function drain(S) { return Sim.drainEvents(S); }
+/* 지도는 매번 무작위로 생성됩니다. 목책을 일렬로 세우는 검사에서
+   그 자리에 나무·바위가 걸리면 벽에 구멍이 생겨 결과가 판마다 달라집니다.
+   검사 전에 그 줄만 비워서 판정을 결정적으로 만듭니다. */
+function clearColumn(S, tx, y0, y1) {
+  for (let y = y0; y <= y1; y++) {
+    const k = Sim.tkey(tx, y);
+    if (S.occ[k] === C.OCC_NODE) {
+      const i = S.nodes.findIndex(n => n.tx === tx && n.ty === y);
+      if (i >= 0) S.nodes.splice(i, 1);
+      S.occ[k] = C.OCC_EMPTY;
+    }
+  }
+  Sim.computeFlow(S);
+}
+/* 하루를 n번 확실히 넘깁니다.
+   그냥 시간을 흘리면 중간에 대란이 끼어들어 밤에 멈춰버리므로,
+   낮 상태를 유지한 채 날짜만 밀어줍니다. */
+function advanceDays(S, n) {
+  for (let i = 0; i < n; i++) {
+    S.phase = 'day';
+    S.monsters.length = 0;
+    S.dayT = C.DAY_SEC - 0.01;
+    Sim.update(S, 0.02);
+    if (S.phase !== 'day') { S.phase = 'day'; S.warnT = 0; }
+  }
+}
 
 console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
 
@@ -54,8 +80,11 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   S.res.wood = 999; S.res.stone = 999;
   const tx = C.BASE_TX + 5, ty = C.BASE_TY;
   S.hero.x = tx * C.TILE; S.hero.y = ty * C.TILE;   // 건설 범위 안으로
+  clearColumn(S, C.BASE_TX + 5, ty - 4, ty + 4);
   const before = S.dist[Sim.tkey(tx + 1, ty)];
-  for (let y = ty - 4; y <= ty + 4; y++) Sim.tryBuild(S, C.BASE_TX + 5, y, 'wall');
+  let placed = 0;
+  for (let y = ty - 4; y <= ty + 4; y++) if (Sim.tryBuild(S, C.BASE_TX + 5, y, 'wall')) placed++;
+  ok('비워둔 9칸에 목책이 전부 서진다', placed === 9, `${placed}/9`);
   const after = S.dist[Sim.tkey(tx + 1, ty)];
   ok('목책을 세우면 그 너머의 경로 거리가 실제로 늘어난다 (우회 성립)',
      after > before, `${before}칸 → ${after}칸`);
@@ -170,9 +199,9 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   ok('거점 체력이 0이 되면 패배한다', S.over === true && S.win === false);
 
   const W = Sim.createSim('taesaja');
-  W.waveIdx = 3;
+  W.waveIdx = C.WAVES.length;
   Sim.closeReport(W);
-  ok('3회 웨이브를 모두 막으면 승리한다', W.over === true && W.win === true);
+  ok(`${C.WAVES.length}회 웨이브를 모두 막으면 승리한다`, W.over === true && W.win === true);
 }
 
 /* ── 9. 명성 시스템 (장수 등급 트레이드오프) ──────────── */
@@ -279,6 +308,231 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   ok('창(방천화극)이 검보다 사거리가 길다', Sim.heroRange(c) > Sim.heroRange(a),
      `창 ${Math.round(Sim.heroRange(c))}`);
   ok('활은 한 방이 검보다 약하다', Sim.heroDamage(b) / b.heroDef.combat < Sim.heroDamage(a) / a.heroDef.combat);
+}
+
+/* ── 16. 침공 방향과 예상 경로 (이번 판의 핵심 안내) ──── */
+{
+  const S = Sim.createSim('taesaja');
+  ok('게임이 시작될 때 모든 웨이브의 공격 방향이 이미 정해져 있다',
+     S.plannedDirs.length === C.WAVES.length && S.plannedDirs.every(d => d.length > 0));
+  ok('웨이브마다 방향 수가 기획값(sides)과 일치한다',
+     S.plannedDirs.every((d, i) => d.length === C.WAVES[i].sides));
+  ok('첫날부터 다음 대란 방향을 알 수 있다', Sim.upcomingDirs(S).length === C.WAVES[0].sides,
+     Sim.upcomingDirs(S).join(','));
+
+  const path = Sim.invasionPath(S, 'E');
+  ok('동쪽 진입점에서 거점까지 예상 경로가 이어진다', path.length > 10, `${path.length}칸`);
+  const last = path[path.length - 1];
+  const nearBase = Math.abs(last.tx - C.BASE_TX) <= 2 && Math.abs(last.ty - C.BASE_TY) <= 2;
+  ok('예상 경로의 끝은 거점이다', nearBase, `끝 (${last.tx},${last.ty}) / 거점 (${C.BASE_TX},${C.BASE_TY})`);
+
+  // ★ 목책을 세우면 경로가 실제로 바뀌어야 합니다. 이게 안 바뀌면 안내가 거짓말이 됩니다.
+  const beforeKeys = path.map(t => t.tx + ',' + t.ty).join('|');
+  S.res.wood = 9999;
+  const wx = C.BASE_TX + 5;
+  clearColumn(S, wx, C.BASE_TY - 4, C.BASE_TY + 4);
+  S.hero.x = wx * C.TILE; S.hero.y = C.BASE_TY * C.TILE;
+  let built = 0;
+  for (let y = C.BASE_TY - 4; y <= C.BASE_TY + 4; y++) if (Sim.tryBuild(S, wx, y, 'wall')) built++;
+  const after = Sim.invasionPath(S, 'E');
+  const afterKeys = after.map(t => t.tx + ',' + t.ty).join('|');
+  ok('목책을 세우면 예상 침공로가 실제로 휘어진다', built > 0 && afterKeys !== beforeKeys,
+     `목책 ${built}개 · ${path.length}칸 → ${after.length}칸`);
+
+  // 스폰 위치가 진입점 근처에 모여야 그린 경로가 사실이 됩니다
+  const T = Sim.createSim('taesaja');
+  T.day = 10; T.dayT = C.DAY_SEC - 0.05;
+  run(T, C.WARN_SEC + 2);
+  const e = Sim.entryPoint(T.spawnDirs[0]);
+  const ex = e.tx * C.TILE, ey = e.ty * C.TILE;
+  const near = T.monsters.every(m => Math.hypot(m.x - ex, m.y - ey) < C.TILE * 6);
+  ok('몬스터는 화면에 그린 진입점 근처에서만 나온다', T.monsters.length > 0 && near,
+     `${T.monsters.length}마리`);
+}
+
+/* ── 17. 몬스터 종류 ───────────────────────────────────── */
+{
+  const S = Sim.createSim('taesaja');
+  const w55 = C.WAVES.find(w => w.day === 55);
+  S.day = 54; S.dayT = C.DAY_SEC - 0.05;
+  run(S, C.WARN_SEC + 2);
+  const kinds = new Set(S.monsters.filter(m => !m.boss).map(m => m.kind));
+  ok('55일 웨이브에는 방패병이 섞여 나온다', kinds.has('tank'), [...kinds].join(','));
+  ok('방패병은 졸개보다 체력이 높다', (() => {
+    const t = S.monsters.find(m => m.kind === 'tank'), n = S.monsters.find(m => m.kind === 'normal');
+    return t && n && t.maxHp > n.maxHp;
+  })());
+
+  const tank = S.monsters.find(m => m.kind === 'tank');
+  const hp0 = tank.hp;
+  Sim.damageMonster(S, tank, 100, 'hero');
+  ok('방패병은 받는 피해가 줄어든다 (100 피해 → 70)',
+     Math.abs((hp0 - tank.hp) - 70) < 0.001, `실제 ${Math.round(hp0 - tank.hp)}`);
+
+  const F = Sim.createSim('taesaja');
+  F.day = 43; F.dayT = C.DAY_SEC - 0.05;
+  run(F, C.WARN_SEC + 2);
+  const fast = F.monsters.find(m => m.kind === 'fast'), norm = F.monsters.find(m => m.kind === 'normal');
+  ok('44일 웨이브의 기병은 졸개보다 빠르다', fast && norm && fast.spd > norm.spd,
+     fast && norm ? `${Math.round(fast.spd)} vs ${Math.round(norm.spd)}` : '표본 없음');
+}
+
+/* ── 18. 용병 ──────────────────────────────────────────── */
+{
+  const S = Sim.createSim('taesaja');
+  ok('옥새 조각이 없으면 용병을 못 뽑는다', Sim.hireMerc(S, 'archer') === false);
+
+  S.shard = 100;
+  ok('옥새 조각으로 용병을 고용한다', Sim.hireMerc(S, 'archer') === true);
+  ok('용병 고용에 옥새 조각이 실제로 빠진다', S.shard === 100 - C.MERCS.find(m => m.id === 'archer').cost,
+     `남은 ${S.shard}`);
+  ok('용병은 병영 한도와 무관하다 (병영 0인데 고용됨)', S.camps === 0 && S.soldiers.length === 1);
+  ok('궁수 용병은 병사보다 사거리가 길다', S.soldiers[0].range > C.SOLDIER_RANGE,
+     `${S.soldiers[0].range} vs ${C.SOLDIER_RANGE}`);
+
+  Sim.hireMerc(S, 'shield');
+  const sh = S.soldiers.find(x => x.merc === 'shield');
+  ok('방패 용병은 체력이 병사보다 훨씬 높다', sh.maxHp > C.SOLDIER_HP * 2, `${sh.maxHp}`);
+
+  // 계약 만료 — 하루씩 넘겨봅니다
+  const days = C.MERC_CONTRACT_DAYS;
+  advanceDays(S, days - 1);
+  ok(`용병은 계약 ${days}일 동안은 남아 있다`, S.soldiers.length === 2, `${S.soldiers.length}명`);
+  advanceDays(S, 1);
+  ok('계약이 끝나면 용병이 떠난다', S.soldiers.length === 0, `${S.soldiers.length}명`);
+
+  // 채집 용병은 밤에도 캡니다
+  const G = Sim.createSim('taesaja');
+  G.shard = 50; Sim.hireMerc(G, 'gatherer');
+  // 실제 밤과 같은 상태를 만듭니다 (멀리 있는 몬스터 1마리 → 밤이 안 끝남)
+  G.phase = 'night';
+  G.waveStats = { killed: 0, byTrap: 0, bySoldier: 0, byHero: 0, baseDmg: 0, trapKills: {} };
+  G.monsters.push({ x: 10, y: 10, hp: 9999, maxHp: 9999, spd: 0, dmg: 1, cd: 999, boss: false,
+                    hitFlash: 0, dead: false, windup: 0, windupTgt: null, vx: 0, vy: 0, hitStop: 0, armor: 0 });
+  G.got.wood = 0;
+  run(G, 40);
+  ok('채집 용병은 밤에도 자원을 캔다', G.got.wood > 0, `누적 목재 ${G.got.wood}`);
+}
+
+/* ── 19. 99일 구조 ─────────────────────────────────────── */
+{
+  ok('총 99일이다', C.TOTAL_DAYS === 99);
+  ok('대란은 11일 간격으로 9회다',
+     C.WAVES.length === 9 && C.WAVES.every((w, i) => w.day === (i + 1) * 11),
+     C.WAVES.map(w => w.day).join(','));
+  ok('웨이브 보상표가 웨이브 수와 맞는다', C.WAVE_SHARD.length === C.WAVES.length);
+  ok('mix 비율의 합이 1이다',
+     C.WAVES.every(w => Math.abs(w.mix.reduce((a, m) => a + m[1], 0) - 1) < 1e-9));
+  ok('뒤 웨이브가 앞 웨이브보다 어렵다',
+     C.WAVES.every((w, i) => i === 0 || (w.count >= C.WAVES[i - 1].count && w.hp >= C.WAVES[i - 1].hp)));
+  ok('막 구분이 99일을 빈틈없이 덮는다',
+     C.actOf(1).act === 1 && C.actOf(33).act === 1 && C.actOf(34).act === 2
+     && C.actOf(66).act === 2 && C.actOf(67).act === 3 && C.actOf(99).act === 3);
+  ok('목표 목록이 마지막 웨이브까지 이어진다',
+     Sim.OBJECTIVES[Sim.OBJECTIVES.length - 1].ok({ waveIdx: 9 }) === true);
+}
+
+/* ── 20. 부활 ──────────────────────────────────────────── */
+{
+  const S = Sim.createSim('taesaja');
+  S.hero.hp = 1;
+  S.monsters.push({ x: S.hero.x, y: S.hero.y, hp: 999, maxHp: 999, spd: 0, dmg: 99, cd: 0,
+                    boss: false, hitFlash: 0, dead: false, windup: 0, windupTgt: null,
+                    vx: 0, vy: 0, hitStop: 0, armor: 0 });
+  run(S, 2);
+  ok('장수가 쓰러지면 부활 카운트다운이 생긴다', S.hero.dead === true && S.hero.respawn > 0,
+     `${S.hero.respawn.toFixed(1)}초`);
+  const t0 = S.hero.respawn;
+  run(S, 1);
+  ok('부활까지 남은 시간이 실제로 줄어든다', S.hero.respawn < t0,
+     `${t0.toFixed(1)} → ${S.hero.respawn.toFixed(1)}`);
+  run(S, t0 + 2);
+  ok('시간이 지나면 되살아난다 (완전 탈락 없음)', S.hero.dead === false && S.hero.hp === S.hero.maxHp);
+  ok('부활 직후에는 잠깐 무적이다 (부활 자리에서 바로 또 죽지 않게)',
+     S.hero.invuln > 0 || S.hero.hp === S.hero.maxHp, `무적 ${S.hero.invuln.toFixed(2)}초`);
+
+  // ★ 되살아난 자리 바로 옆에 적이 있어도 즉사 반복에 빠지지 않아야 합니다
+  const R2 = Sim.createSim('taesaja');
+  R2.hero.hp = 1;
+  R2.monsters.push({ x: R2.base.x, y: R2.base.y + C.TILE * 2, hp: 9999, maxHp: 9999, spd: 0,
+                     dmg: 99, cd: 0, boss: false, hitFlash: 0, dead: false, windup: 0,
+                     windupTgt: null, vx: 0, vy: 0, hitStop: 0, armor: 0 });
+  R2.hero.x = R2.base.x; R2.hero.y = R2.base.y + C.TILE * 2;
+  run(R2, 2);
+  const firstRespawn = R2.hero.respawn;
+  run(R2, firstRespawn + 0.5);
+  ok('부활 자리에 적이 붙어 있어도 곧바로 다시 죽지 않는다', R2.hero.dead === false,
+     `체력 ${Math.round(R2.hero.hp)}`);
+}
+
+/* ── 21. 후반 성장 · 역할 확장 ───────────────────────── */
+{
+  const S = Sim.createSim('taesaja');
+  S.forge = true; S.res.iron = 999; S.res.hide = 999; S.res.stone = 999; S.res.wood = 999;
+  for (let i = 0; i < 6; i++) Sim.doCraft(S, 'weapon');
+  ok('무기는 6단계까지 강화된다', S.weaponLv === 6, `${S.weaponLv}단계`);
+  ok('6단계까지 올리면 더는 강화할 수 없다', Sim.canCraft(S, 'weapon').ok === false);
+  ok('무기 강화는 뒤로 갈수록 비싸다',
+     (() => { const a = Sim.createSim('taesaja'); a.weaponLv = 0;
+              const b = Sim.createSim('taesaja'); b.weaponLv = 5;
+              return Sim.craftCost(b, 'weapon').iron > Sim.craftCost(a, 'weapon').iron; })());
+
+  // 강철 가시
+  const T = Sim.createSim('taesaja');
+  T.res.wood = 999; T.res.stone = 999;
+  T.hero.x = (C.BASE_TX + 5) * C.TILE; T.hero.y = C.BASE_TY * C.TILE;
+  clearColumn(T, C.BASE_TX + 5, C.BASE_TY, C.BASE_TY);   // 그 칸에 나무가 걸리지 않게
+  const trapOk = Sim.tryBuild(T, C.BASE_TX + 5, C.BASE_TY, 'trap');
+  ok('시험용 함정이 실제로 깔렸다', trapOk === true);
+  T.hero.x = 20; T.hero.y = 20;          // 장수가 같이 때리면 함정 피해만 잴 수 없습니다
+  const mk = () => ({ x: (C.BASE_TX + 5) * C.TILE + C.TILE / 2, y: C.BASE_TY * C.TILE + C.TILE / 2,
+                      hp: 5000, maxHp: 5000, spd: 0, dmg: 1, cd: 99, boss: false, hitFlash: 0,
+                      dead: false, windup: 0, windupTgt: null, vx: 0, vy: 0, hitStop: 0, armor: 0 });
+  T.monsters.push(mk());
+  const m1 = T.monsters[0], h1 = m1.hp; run(T, 1); const plain = h1 - m1.hp;
+  T.gear.steelspike = true;
+  T.monsters.length = 0; T.monsters.push(mk());
+  const m2 = T.monsters[0], h2 = m2.hp; run(T, 1); const steel = h2 - m2.hp;
+  ok('강철 가시를 만들면 함정 피해가 오른다', steel > plain * 1.4,
+     `${plain.toFixed(0)} → ${steel.toFixed(0)}`);
+
+  // 망루 강화
+  const W = Sim.createSim('taesaja');
+  W.baseLv = 3;
+  const noCastle = Sim.createSim('taesaja'); noCastle.forge = true;
+  ok('망루 강화는 철옹성이 있어야 만들 수 있다',
+     Sim.canCraft(noCastle, 'towerup').why === '철옹성이 필요합니다',
+     Sim.canCraft(noCastle, 'towerup').why);
+
+  // 군기
+  const B = Sim.createSim('taesaja');
+  B.shard = 100; Sim.hireMerc(B, 'archer');
+  const atk0 = B.soldiers[0].atk;
+  B.forge = true; B.res.hide = 99; B.res.iron = 99;
+  B.gear.ironmail = true; B.gear.steelspike = true; B.gear.towerup = true;
+  Sim.doCraft(B, 'banner');
+  ok('군기는 이미 고용한 용병에게도 적용된다', B.soldiers[0].atk > atk0,
+     `${atk0} → ${B.soldiers[0].atk}`);
+
+  // 역할 확장
+  const R3 = Sim.createSim('taesaja');
+  ok('곡괭이가 없으면 병사에게 철을 못 맡긴다', !Sim.roleList(R3, null).includes('iron'));
+  R3.pickaxe = true;
+  ok('곡괭이를 만들면 병사에게 철을 맡길 수 있다', Sim.roleList(R3, null).includes('iron'),
+     Sim.roleList(R3, null).join('→'));
+  R3.shard = 50; Sim.hireMerc(R3, 'gatherer');
+  ok('채집 용병에게는 방어 역할이 없다', !Sim.roleList(R3, R3.soldiers[0]).includes('def'));
+
+  // 병사가 실제로 철을 캐서 내려놓는가
+  const I = Sim.createSim('taesaja');
+  I.pickaxe = true; I.res.wood = 999; I.res.stone = 999;
+  I.hero.x = I.base.x; I.hero.y = I.base.y;
+  Sim.tryBuild(I, C.BASE_TX - 3, C.BASE_TY - 3, 'camp');
+  Sim.hireSoldier(I);
+  I.soldiers[0].role = 'iron';
+  I.got.iron = 0;
+  run(I, 150);
+  ok('병사가 철을 캐서 거점에 내려놓는다', I.got.iron > 0, `누적 철 ${I.got.iron}`);
 }
 
 console.log(results.join('\n'));
