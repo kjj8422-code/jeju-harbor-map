@@ -25,7 +25,7 @@ export const R = {
   sun: null, hemi: null, baseLight: null, heroLight: null,
   hero: null, ground: null, gravel: null,
   monsterMeshes: new Map(), soldierMeshes: new Map(),
-  wallMeshes: new Map(), trapMeshes: new Map(),
+  wallMeshes: new Map(), trapMeshes: new Map(), structMeshes: new Map(),
   nodeInst: {}, nodeIndex: new Map(),
   cam: { yaw: 0.6, pitch: 0.72, dist: 14, target: new THREE.Vector3() },
   quality: { shadows: true, lowSpec: false },
@@ -269,7 +269,7 @@ export function buildWorld(S) {
   // 이전 판의 물체 정리
   for (const m of [...R.monsterMeshes.values(), ...R.soldierMeshes.values(),
                    ...R.wallMeshes.values(), ...R.trapMeshes.values()]) R.scene.remove(m);
-  R.monsterMeshes.clear(); R.soldierMeshes.clear();
+  R.monsterMeshes.clear(); R.soldierMeshes.clear(); R.structMeshes.clear();
   R.wallMeshes.clear(); R.trapMeshes.clear();
   wallTiles.length = 0;
   if (R.wallInst) { R.wallInst.count = 0; R.wallInst.instanceMatrix.needsUpdate = true; }
@@ -884,6 +884,7 @@ export function addStruct(st) {
     const g = wrapModel(st.type);
     g.position.set(gx(st.x), 0, gz(st.y));
     R.scene.add(g);
+    R.structMeshes.set(st.ty * C.MAPW + st.tx, g);
     return g;
   }
   const g = new THREE.Group();
@@ -914,7 +915,17 @@ export function addStruct(st) {
   }
   g.position.set(gx(st.x), 0, gz(st.y));
   R.scene.add(g);
+  R.structMeshes.set(st.ty * C.MAPW + st.tx, g);
   return g;
+}
+
+/** 철거된 시설을 화면에서 지웁니다 */
+export function removeStruct(tx, ty) {
+  const k = ty * C.MAPW + tx;
+  const g = R.structMeshes.get(k);
+  if (!g) return;
+  R.scene.remove(g);
+  R.structMeshes.delete(k);
 }
 
 /* ---------------- 목책 · 함정 ---------------- */
@@ -1563,6 +1574,20 @@ function ghostMaterial(color) {
 function buildGhostShape(kind) {
   const g = new THREE.Group();
   const mat = ghostMaterial(0x5FAE72);
+  if (kind === 'demolish') {
+    // 철거 표시 — 바닥에 X 자
+    const half = C.TILE * S3 * 0.42;
+    for (const rot of [Math.PI / 4, -Math.PI / 4]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(half * 2.2, 0.06, 0.16), mat);
+      bar.position.y = 0.08;
+      bar.rotation.y = rot;
+      g.add(bar);
+    }
+    const ring = new THREE.Mesh(new THREE.RingGeometry(half * 0.95, half * 1.08, 20), mat);
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06;
+    g.add(ring);
+    return g;
+  }
   if (kind === 'wall') {
     const half = C.TILE * S3 * 0.5;
     for (let j = 0; j < 4; j++) {

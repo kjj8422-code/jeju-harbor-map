@@ -249,6 +249,8 @@ function handleEvents() {
         refreshBuildCards();
         break;
       case 'wallBroken': R3.removeWall(e.tx, e.ty); R3.markPathDirty(); Audio.play('wallBreak'); break;
+      case 'structRemoved': R3.removeStruct(e.tx, e.ty); break;
+      case 'demolished': refreshBuildCards(); refreshSoldiers(); refreshHUD(); break;
       case 'trapBroken': R3.removeTrap(e.tx, e.ty); break;
       case 'nodeDepleted': R3.refreshNodes(S); break;
       case 'soldiers': refreshSoldiers(); break;
@@ -380,11 +382,17 @@ function refreshHUD() {
 
   /* ★ 깔아둔 함정 중 몇 개가 실제로 그 길 위에 있는가.
      목책을 옮겨 길이 바뀌면 이 숫자가 바로 변합니다 — 판단의 근거가 됩니다. */
+  refreshObjective();          // 부족분이 실시간으로 보이게
+
   const tp = Sim.trapsOnPath(S);
   const ti = $('trapInfo');
-  if (!tp.total) {
+  if (!dirs.length) {
+    // 남은 대란이 없으면 "침공로" 자체가 없습니다. 0/n 으로 겁주지 않습니다.
     ti.className = '';
-    ti.textContent = dirs.length ? '함정 없음 — 붉은 화살표 위에 까세요' : '';
+    ti.textContent = '';
+  } else if (!tp.total) {
+    ti.className = '';
+    ti.textContent = '함정 없음 — 붉은 화살표 위에 까세요';
   } else {
     const good = tp.on === tp.total;
     ti.className = tp.on === 0 ? 'bad' : good ? 'good' : '';
@@ -396,9 +404,35 @@ function refreshHUD() {
     + (R3.R.quality.shadows ? '' : ' · 그림자 OFF');
 }
 
+/* 현재 목표가 "무언가를 짓거나 만들라" 면, 그 비용과 부족분을 함께 보여줍니다.
+   자동 플레이를 돌려보니 "지금 뭐가 모자란지" 를 모르면 엉뚱한 자원만 캐다가
+   성도 못 올리고 함정도 못 깝니다. 사람도 똑같이 헤맵니다. */
+function objectiveCost(S2, idx) {
+  const o = Sim.OBJECTIVES[idx];
+  if (!o) return null;
+  const t = o.t;
+  if (t.includes('병사를 고용')) return C.SOLDIER_COST;
+  if (/석성|철옹성/.test(t)) { const nx = Sim.nextBaseLevel(S2); return nx ? nx.cost : null; }
+  for (const c of C.CRAFTS) if (t.includes(c.name)) return Sim.craftCost(S2, c.id);
+  for (const b of C.BUILDS) if (t.includes(b.name)) return b.cost;
+  return null;
+}
+
 function refreshObjective() {
   const o = Sim.currentObjective(S);
-  $('objective').innerHTML = o ? `목표 — ${o.t}` : `목표 — Day ${C.TOTAL_DAYS}까지 거점을 지켜내세요`;
+  if (!o) { $('objective').innerHTML = `목표 — Day ${C.TOTAL_DAYS}까지 거점을 지켜내세요`; return; }
+  const cost = S ? objectiveCost(S, S.objIdx) : null;
+  let need = '';
+  if (cost) {
+    const parts = [];
+    for (const r in cost) {
+      const have = Math.floor(S.res[r]), want = cost[r];
+      const R = C.RESOURCES[r];
+      parts.push(`<span class="oNeed${have >= want ? ' ok' : ''}">${R.icon} ${have}/${want}</span>`);
+    }
+    if (parts.length) need = `<div class="oCost">필요 ${parts.join(' ')}</div>`;
+  }
+  $('objective').innerHTML = `목표 — ${o.t}${need}`;
 }
 
 /* 화면 안 건설 바 — 마우스를 화면 밖으로 내리지 않고 고를 수 있게 합니다.
@@ -408,7 +442,8 @@ function refreshBuildDock() {
   if (!row) return;
   const sig = C.BUILDS.map(b =>
     `${b.id}${buildSel === b.id ? '*' : ''}${S && Sim.canAfford(S, b.cost) ? '1' : '0'}`
-    + `${b.id === 'forge' && S && S.forge ? 'L' : ''}`).join('|');
+    + `${b.id === 'forge' && S && S.forge ? 'L' : ''}`).join('|')
+    + (buildSel === DEMOLISH ? '|X*' : '|X');
   if (row.dataset.sig === sig) return;          // 바뀐 게 없으면 DOM 을 손대지 않습니다
   row.dataset.sig = sig;
   row.innerHTML = '';
@@ -425,7 +460,19 @@ function refreshBuildDock() {
     el.onclick = () => selectBuild(b.id);
     row.appendChild(el);
   });
+
+  /* 철거 — 목책을 옮기면 적의 길이 바뀌고, 예전 함정이 길에서 벗어납니다.
+     치울 수 없으면 그 자원이 영원히 묶입니다. 절반을 돌려받고 다시 놓게 합니다. */
+  const del = document.createElement('button');
+  del.className = 'bdBtn del' + (buildSel === DEMOLISH ? ' on' : '');
+  del.title = '목책·함정·건물을 부수고 자원의 절반을 돌려받습니다 (숫자키 5)';
+  del.innerHTML = `<span class="num">5</span><span class="ic">⛏️</span>`
+    + `<span class="tx"><b class="nm">철거</b><span class="cs">절반 회수</span></span>`;
+  del.onclick = () => selectBuild(DEMOLISH);
+  row.appendChild(del);
 }
+
+const DEMOLISH = '__demolish';
 
 /** 건설 카드 선택 — 화면 안 바와 화면 밖 카드가 같은 함수를 씁니다 */
 function selectBuild(id) {
@@ -436,7 +483,10 @@ function selectBuild(id) {
     ? '🧱 <b style="color:var(--gold)">건설 모드</b> — 땅을 눌러 위치를 잡고 확인'
     : '🖱 드래그 = 카메라 회전 · 휠 = 확대';
   if (!buildSel) cancelBuild();
-  else {
+  else if (buildSel === DEMOLISH) {
+    $('modeTag').innerHTML = '⛏️ <b style="color:#e39184">철거 모드</b> — 부술 것을 누르세요';
+    toast('부술 것을 누르세요 — <b>자원의 절반</b>을 돌려받습니다');
+  } else {
     const b = C.BUILDS.find(x => x.id === buildSel);
     toast(`땅을 눌러 <b>${b.name}</b> 위치를 잡으세요`
         + (b.id === 'trap' ? ' — <b style="color:#E0554A">붉은 화살표 위</b>에 놓아야 잡습니다' : ''));
@@ -678,6 +728,10 @@ function showReport(e) {
   $('repTrap').textContent = `${e.trapPct}%`;
   $('repSold').textContent = `${e.soldPct}%`;
   $('repMvp').textContent = e.mvp;
+  $('repOnPath').innerHTML = e.trapsTotal
+    ? `<b style="color:${e.trapsOn === e.trapsTotal ? '#5FAE72' : e.trapsOn === 0 ? '#C6412F' : '#E0B44A'}">`
+      + `${e.trapsOn}/${e.trapsTotal}</b>`
+    : '<b style="color:#9E9384">함정 없음</b>';
   $('repDmg').textContent = e.baseDmg;
   $('repShard').textContent = `+${e.reward}`;
   let adv = `<h3>다음 판을 위한 조언</h3>${e.advice}`;
@@ -687,6 +741,21 @@ function showReport(e) {
       + `이 수치가 오르는 걸 직접 확인하는 게 이 프로토타입의 목적입니다.</div>`;
   } else if (e.trapPct >= 55) {
     adv += `<div style="margin-top:8px;color:#5FAE72;font-weight:700;">함정 처치 비율 ${e.trapPct}% — 경로 유도가 제대로 먹혔습니다.</div>`;
+  }
+  /* ★ 다음 대란이 몇 방향인지 미리 알려줍니다.
+     자동 플레이에서 방향이 늘어나는 순간 깔아둔 함정 12개가 통째로 길 밖이 됐습니다.
+     "다시 배치해야 한다" 를 리포트에서 미리 말해줘야 합니다. */
+  if (e.nextDay) {
+    const more = e.nextSides > e.sides;
+    adv += `<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--line);">`
+      + `<b style="color:${more ? '#E0554A' : 'var(--gold)'}">다음 대란 — ${e.nextDay}일 ${e.nextName}</b><br>`
+      + `공격 방향 <b>${e.nextDirs.join(' · ')}</b> (${e.nextSides}방향)`
+      + (more
+          ? `<div style="margin-top:5px;color:#E0554A;font-weight:700;">방향이 ${e.sides} → ${e.nextSides}개로 늘어납니다. `
+            + `새 길이 열리므로 <b>지금 깔아둔 함정 상당수가 길 밖이 됩니다.</b> `
+            + `바닥의 붉은 화살표를 다시 보고, 벗어난 함정은 <b>⛏️ 철거</b>로 회수해 옮기세요.</div>`
+          : `<div style="margin-top:5px;color:var(--dim);">방향은 그대로입니다. 지금 배치를 유지하면 됩니다.</div>`)
+      + `</div>`;
   }
   $('repAdvice').innerHTML = adv;
   openScreen('scReport');
@@ -1102,9 +1171,10 @@ window.addEventListener('keydown', e => {
   if (!keys[k]) {                       // 꾹 눌러도 한 번만 발동합니다
     if (k === ' ') doSkill(2);            // Space = 궁극기
     // 숫자키로 건설 카드를 고릅니다 — 화면 밖으로 마우스를 내릴 필요가 없습니다
-    if (k >= '1' && k <= '9') {
-      const b = C.BUILDS[Number(k) - 1];
-      if (b && S && !uiOpen && !S.over) selectBuild(b.id);
+    if (k >= '1' && k <= '9' && S && !uiOpen && !S.over) {
+      const n = Number(k);
+      if (n === C.BUILDS.length + 1) selectBuild(DEMOLISH);
+      else { const b = C.BUILDS[n - 1]; if (b) selectBuild(b.id); }
     }
     if (k === 'q') doSkill(0);
     if (k === 'e') doSkill(1);
@@ -1267,6 +1337,24 @@ let aim = null, pending = false, instantBuild = false;
 
 function refreshGhost() {
   if (!S || !buildSel || !aim) { R3.hideGhost(); return; }
+  if (buildSel === DEMOLISH) {
+    const d = Sim.canDemolish(S, aim.tx, aim.ty);
+    R3.showGhost(aim.tx, aim.ty, d.ok, 'demolish', pending);
+    const hint = $('buildHint');
+    if (hint) {
+      if (d.ok) {
+        const def = C.BUILDS.find(b => b.id === d.kind);
+        const back = Sim.refundOf(d.kind);
+        hint.innerHTML = `⛏️ ${def ? def.name : ''} 철거 — ${Sim.costText(back) || '회수 없음'} 돌려받습니다`;
+        hint.style.background = 'rgba(150,110,20,.92)';
+      } else {
+        hint.textContent = '여기에는 철거할 것이 없습니다';
+        hint.style.background = 'rgba(140,30,20,.9)';
+      }
+      hint.style.display = '';
+    }
+    return;
+  }
   const chk = Sim.canBuildAt(S, aim.tx, aim.ty, buildSel);
   R3.showGhost(aim.tx, aim.ty, chk.ok, buildSel, pending);
   const hint = $('buildHint');
@@ -1293,10 +1381,14 @@ function refreshGhost() {
 
 function showConfirm() {
   if (instantBuild) { confirmBuild(); return; }
-  const chk = Sim.canBuildAt(S, aim.tx, aim.ty, buildSel);
+  const chk = buildSel === DEMOLISH
+    ? Sim.canDemolish(S, aim.tx, aim.ty)
+    : Sim.canBuildAt(S, aim.tx, aim.ty, buildSel);
   const box = $('buildConfirm');
   if (!box) return;
   box.style.display = 'flex';
+  box.querySelector('.t').textContent = buildSel === DEMOLISH ? '여기를 부술까요?' : '여기에 지을까요?';
+  $('btnConfirmBuild').textContent = buildSel === DEMOLISH ? '⛏️ 철거 (Enter)' : '✔ 설치 (Enter)';
   $('btnConfirmBuild').disabled = !chk.ok;
   refreshGhost();
 }
@@ -1306,7 +1398,9 @@ function hideConfirm() {
 }
 function confirmBuild() {
   if (!aim || !buildSel) return;
-  const built = Sim.tryBuild(S, aim.tx, aim.ty, buildSel);
+  const built = buildSel === DEMOLISH
+    ? Sim.demolish(S, aim.tx, aim.ty)
+    : Sim.tryBuild(S, aim.tx, aim.ty, buildSel);
   handleEvents();
   pending = false;
   hideConfirm();

@@ -165,17 +165,29 @@ function buildMap(S) {
       if (inMap(C.BASE_TX + dx, C.BASE_TY + dy))
         S.occ[tkey(C.BASE_TX + dx, C.BASE_TY + dy)] = C.OCC_BASE;
 
-  for (let c = 0; c < 16; c++) {
+  /* 나무는 숲을 이룹니다 */
+  for (let c = 0; c < 14; c++) {
     const cx = ri(2, C.MAPW - 3), cy = ri(2, C.MAPH - 3);
     const n = ri(4, 9);
     for (let i = 0; i < n; i++)
       addNode(S, clamp(cx + ri(-2, 2), 1, C.MAPW - 2), clamp(cy + ri(-2, 2), 1, C.MAPH - 2), 'wood');
   }
-  for (let r = 0; r < 30; r++) addNode(S, ri(2, C.MAPW - 3), ri(2, C.MAPH - 3), 'stone');
+
+  /* 바위도 무리지어 놓습니다 — 채석장처럼.
+     예전에는 30개를 지도 전체에 흩뿌려서, 하나 캐고 다음 바위까지 한참 걸어야 했습니다.
+     총량이 모자랐던 것은 아니고(자동 플레이로 재보면 99일 수급은 넉넉합니다),
+     "어디로 가면 돌을 캘 수 있는지" 가 한눈에 안 보이는 게 문제였습니다.
+     무리지어 놓으면 미니맵의 회색 점 뭉치가 그대로 목적지가 됩니다. */
+  for (let c = 0; c < 11; c++) {
+    const cx = ri(2, C.MAPW - 3), cy = ri(2, C.MAPH - 3);
+    const n = ri(3, 6);
+    for (let i = 0; i < n; i++)
+      addNode(S, clamp(cx + ri(-2, 2), 1, C.MAPW - 2), clamp(cy + ri(-2, 2), 1, C.MAPH - 2), 'stone');
+  }
 
   // 철광은 지도 정중앙 8칸 폭에만 — 양 팀이 반드시 만나는 지점
   const mid = Math.floor(C.MAPW / 2);
-  for (let m = 0; m < 14; m++) addNode(S, ri(mid - 4, mid + 4), ri(4, C.MAPH - 5), 'iron');
+  for (let m = 0; m < 18; m++) addNode(S, ri(mid - 4, mid + 4), ri(4, C.MAPH - 5), 'iron');
 
   // 약초 — 들판 곳곳에. 도구 없이 바로 캘 수 있어 초반 목표가 하나 늘어납니다
   for (let h = 0; h < 26; h++) addNode(S, ri(2, C.MAPW - 3), ri(2, C.MAPH - 3), 'herb');
@@ -420,6 +432,77 @@ export function tryBuild(S, tx, ty, buildId) {
   }
   sound(S, 'build');
   fx(S, tx * C.TILE + C.TILE / 2, ty * C.TILE, def.name, '#E0B44A');
+  return true;
+}
+
+/* ==================================================================
+   철거 — 잘못 놓은 것, 길이 바뀌어 쓸모없어진 것을 되돌립니다
+   ================================================================== */
+export function canDemolish(S, tx, ty) {
+  if (!inMap(tx, ty)) return { ok:false, why:'out' };
+  const k = tkey(tx, ty);
+  const o = S.occ[k];
+  if (o === C.OCC_WALL) return { ok:true, kind:'wall' };
+  if (o === C.OCC_TRAP) return { ok:true, kind:'trap' };
+  if (o === C.OCC_STRUCT) {
+    const st = S.structs.find(x => x.tx === tx && x.ty === ty);
+    return st ? { ok:true, kind:st.type } : { ok:false, why:'none' };
+  }
+  return { ok:false, why:'none' };
+}
+
+/** 돌려받는 자원 — 원래 비용의 절반(내림) */
+export function refundOf(kind) {
+  const def = C.BUILDS.find(b => b.id === kind);
+  if (!def) return {};
+  const out = {};
+  for (const r in def.cost) {
+    const n = Math.floor(def.cost[r] * C.REFUND_RATIO);
+    if (n > 0) out[r] = n;
+  }
+  return out;
+}
+
+export function demolish(S, tx, ty) {
+  const chk = canDemolish(S, tx, ty);
+  if (!chk.ok) { toast(S, '여기에는 철거할 것이 없습니다'); sound(S, 'deny'); return false; }
+  const k = tkey(tx, ty), kind = chk.kind;
+
+  if (kind === 'wall') {
+    S.occ[k] = C.OCC_EMPTY; S.wallHp[k] = 0; S.cnt.wall--;
+    computeFlow(S);
+    emit(S, 'wallBroken', { tx, ty });
+  } else if (kind === 'trap') {
+    const i = S.trapAt[k] - 1;
+    if (i >= 0 && S.traps[i]) S.traps[i].dur = 0;
+    S.trapAt[k] = 0; S.occ[k] = C.OCC_EMPTY; S.cnt.trap--;
+    emit(S, 'trapBroken', { tx, ty });
+  } else {
+    const i = S.structs.findIndex(x => x.tx === tx && x.ty === ty);
+    if (i >= 0) S.structs.splice(i, 1);
+    S.occ[k] = C.OCC_EMPTY;
+    if (kind === 'camp') {
+      S.camps--; S.cnt.camp--;
+      // 정원이 줄면 넘치는 병사는 떠납니다
+      while (S.soldiers.filter(x => !x.merc).length > S.camps) {
+        const idx = S.soldiers.map(x => !x.merc).lastIndexOf(true);
+        if (idx < 0) break;
+        S.soldiers.splice(idx, 1);
+        toast(S, '병영이 줄어 병사 한 명이 떠났습니다');
+      }
+      emit(S, 'soldiers');
+    }
+    if (kind === 'forge') S.forge = false;
+    emit(S, 'structRemoved', { tx, ty, kind });
+  }
+
+  const back = refundOf(kind);
+  for (const r in back) { S.res[r] += back[r]; }
+  const def = C.BUILDS.find(b => b.id === kind);
+  fx(S, tx * C.TILE + C.TILE / 2, ty * C.TILE,
+     `${def ? def.name : ''} 철거 ${costText(back) ? '+' + costText(back) : ''}`, '#C7D9A8');
+  sound(S, 'wallBreak');
+  emit(S, 'demolished', { tx, ty, kind, refund: back });
   return true;
 }
 
@@ -879,6 +962,10 @@ function spawnWave(S, w) {
 
 function endWave(S) {
   const w = C.WAVES[S.waveIdx];
+  /* ★ 함정 경로 판정은 waveIdx 를 올리기 **전에** 재야 합니다.
+     올린 뒤에 재면 "다음 웨이브" 기준이 되고, 마지막 웨이브에서는 다음이 없어
+     모든 함정이 '경로 밖'으로 찍힙니다(실제로는 36% 를 잡았는데 0/12 로 나왔습니다). */
+  const tpNow = trapsOnPath(S);
   S.waveIdx++;
   // 통계가 없는 상태로 들어올 수 있습니다(검수 코드가 phase 를 직접 바꾸는 경우 등).
   const st = S.waveStats || { killed: 0, byTrap: 0, bySoldier: 0, byHero: 0, baseDmg: 0, trapKills: {} };
@@ -892,12 +979,16 @@ function endWave(S) {
   const trapPct = st.killed ? Math.round(st.byTrap / st.killed * 100) : 0;
   const soldPct = st.killed ? Math.round(st.bySoldier / st.killed * 100) : 0;
 
-  const tp = trapsOnPath(S);
+  const nw = C.WAVES[S.waveIdx] || null;
   S.phase = 'report';
   emit(S, 'report', {
     day: w.day, name: w.name, note: w.note, advice: w.advice,
     killed: st.killed, trapPct, soldPct, mvp,
-    trapsOn: tp.on, trapsTotal: tp.total,
+    trapsOn: tpNow.on, trapsTotal: tpNow.total,
+    sides: w.sides,
+    nextName: nw ? nw.name : null, nextDay: nw ? nw.day : null,
+    nextSides: nw ? nw.sides : null,
+    nextDirs: nw ? (S.plannedDirs[S.waveIdx] || []).map(dirName) : [],
     baseDmg: Math.round(st.baseDmg), reward
   });
   sound(S, 'report');
@@ -929,6 +1020,15 @@ export function update(S, dt) {
       S.dayT = 0; S.day++;
       tickContracts(S);
       if (S.day > C.TOTAL_DAYS) { endGame(S, true); return; }
+      // 막이 바뀌면 무엇이 달라지는지 그 자리에서 알려줍니다
+      const actNow = C.actOf(S.day), actPrev = C.actOf(S.day - 1);
+      if (actNow.act !== actPrev.act) {
+        toast(S, `<b style="color:#E0B44A">${actNow.act}막 ${actNow.name}</b> — ${actNow.lesson}`);
+        if (actNow.act === 3)
+          toast(S, '이제 <b style="color:#E0554A">사방</b>에서 옵니다 — 거점을 빙 둘러싸고 '
+                 + '<b>문을 몇 개만</b> 내어 그 길목에 함정을 까세요');
+        emit(S, 'actChanged', { act: actNow.act, name: actNow.name });
+      }
       if (S.day === 22 && S.heroDef.lateGrow > 0)
         toast(S, `<b>${S.heroDef.name} 성장</b> — 공격력 +${Math.round(S.heroDef.lateGrow * 100)}%`);
       const w = waveForDay(S.day);

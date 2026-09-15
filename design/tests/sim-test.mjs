@@ -670,8 +670,120 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   clearColumn(S, C.BASE_TX - 4, C.BASE_TY + 3, C.BASE_TY + 3);
   Sim.tryBuild(S, C.BASE_TX - 4, C.BASE_TY + 3, 'forge');
   ok('대장간을 지으면 제작이 열린다', S.forge === true && Sim.canCraft(S, 'pickaxe').ok === true);
+  clearColumn(S, C.BASE_TX - 5, C.BASE_TY + 3, C.BASE_TY + 3);   // 그 칸에 나무가 걸리지 않게
   ok('대장간은 한 채면 충분하다 (두 번째는 막힘)',
-     Sim.canBuildAt(S, C.BASE_TX - 5, C.BASE_TY + 3, 'forge').why === 'owned');
+     Sim.canBuildAt(S, C.BASE_TX - 5, C.BASE_TY + 3, 'forge').why === 'owned',
+     Sim.canBuildAt(S, C.BASE_TX - 5, C.BASE_TY + 3, 'forge').why);
+}
+
+/* ── 26. 철거 (길이 바뀐 뒤 되돌리기) ──────────────────── */
+{
+  const S = Sim.createSim('taesaja');
+  S.res.wood = 999; S.res.stone = 999;
+  const tx = C.BASE_TX + 4, ty = C.BASE_TY;
+  clearColumn(S, tx, ty, ty);
+  S.hero.x = tx * C.TILE; S.hero.y = ty * C.TILE;
+
+  ok('빈 땅에는 철거할 것이 없다', Sim.demolish(S, tx, ty) === false);
+
+  Sim.tryBuild(S, tx, ty, 'wall');
+  const w0 = S.res.wood, n0 = S.cnt.wall;
+  ok('목책을 철거할 수 있다', Sim.demolish(S, tx, ty) === true);
+  ok('철거하면 목책 수가 줄어든다', S.cnt.wall === n0 - 1);
+  const back = Sim.refundOf('wall');
+  ok(`철거하면 자원의 절반을 돌려받는다 (목재 ${back.wood})`,
+     S.res.wood === w0 + back.wood, `${w0} → ${S.res.wood}`);
+  ok('철거한 자리에는 다시 지을 수 있다', Sim.canBuildAt(S, tx, ty, 'wall').ok === true);
+
+  // 목책을 철거하면 길이 다시 뚫립니다
+  clearColumn(S, tx, C.BASE_TY - 3, C.BASE_TY + 3);
+  for (let y = C.BASE_TY - 3; y <= C.BASE_TY + 3; y++) {
+    S.hero.x = tx * C.TILE; S.hero.y = y * C.TILE;
+    Sim.tryBuild(S, tx, y, 'wall');
+  }
+  const blocked = S.dist[Sim.tkey(tx, C.BASE_TY)];
+  for (let y = C.BASE_TY - 3; y <= C.BASE_TY + 3; y++) Sim.demolish(S, tx, y);
+  ok('목책을 철거하면 막혔던 길이 다시 뚫린다',
+     blocked === -1 && S.dist[Sim.tkey(tx, C.BASE_TY)] >= 0);
+
+  // 함정 철거
+  clearColumn(S, tx, ty, ty);
+  S.hero.x = tx * C.TILE; S.hero.y = ty * C.TILE;
+  Sim.tryBuild(S, tx, ty, 'trap');
+  const t0 = S.cnt.trap, st0 = S.res.stone;
+  ok('함정을 철거할 수 있다', Sim.demolish(S, tx, ty) === true);
+  ok('함정 수가 줄고 석재가 돌아온다',
+     S.cnt.trap === t0 - 1 && S.res.stone > st0, `석재 ${st0} → ${S.res.stone}`);
+
+  // 병영을 철거하면 정원이 줄고 넘치는 병사는 떠납니다
+  const B = Sim.createSim('taesaja');
+  B.res.wood = 999; B.res.stone = 999;
+  B.hero.x = B.base.x; B.hero.y = B.base.y;
+  clearColumn(B, C.BASE_TX - 4, C.BASE_TY - 3, C.BASE_TY - 3);
+  Sim.tryBuild(B, C.BASE_TX - 4, C.BASE_TY - 3, 'camp');
+  Sim.hireSoldier(B);
+  ok('병영 1채 · 병사 1명', B.camps === 1 && B.soldiers.length === 1);
+  Sim.demolish(B, C.BASE_TX - 4, C.BASE_TY - 3);
+  ok('병영을 철거하면 정원이 줄고 병사가 떠난다',
+     B.camps === 0 && B.soldiers.filter(x => !x.merc).length === 0,
+     `정원 ${B.camps} · 병사 ${B.soldiers.length}`);
+
+  // 대장간을 철거하면 제작이 닫힙니다
+  const F = Sim.createSim('taesaja');
+  F.res.wood = 999; F.res.stone = 999;
+  F.hero.x = F.base.x; F.hero.y = F.base.y;
+  clearColumn(F, C.BASE_TX - 4, C.BASE_TY + 3, C.BASE_TY + 3);
+  Sim.tryBuild(F, C.BASE_TX - 4, C.BASE_TY + 3, 'forge');
+  Sim.demolish(F, C.BASE_TX - 4, C.BASE_TY + 3);
+  ok('대장간을 철거하면 제작이 닫힌다', F.forge === false);
+  ok('대장간을 철거하면 다시 지을 수 있다',
+     Sim.canBuildAt(F, C.BASE_TX - 4, C.BASE_TY + 3, 'forge').ok === true);
+
+  ok('돌려받는 양은 원래 비용의 절반이다',
+     C.BUILDS.every(b => {
+       const r = Sim.refundOf(b.id);
+       return Object.keys(b.cost).every(k => (r[k] || 0) === Math.floor(b.cost[k] * C.REFUND_RATIO));
+     }));
+}
+
+/* ── 27. 리포트의 함정 경로 판정은 "방금 치른 웨이브" 기준 ──── */
+{
+  const S = Sim.createSim('taesaja');
+  S.res.wood = 9999; S.res.stone = 9999;
+  // 마지막 웨이브를 치릅니다 — 그 뒤에는 남은 대란이 없습니다
+  S.waveIdx = C.WAVES.length - 1;
+  S.day = C.WAVES[C.WAVES.length - 1].day;
+  const path = Sim.invasionPath(S, Sim.upcomingDirs(S)[0]);
+  const on = path[Math.floor(path.length / 2)];
+  clearColumn(S, on.tx, on.ty, on.ty);
+  S.hero.x = on.tx * C.TILE; S.hero.y = on.ty * C.TILE;
+  const built = Sim.tryBuild(S, on.tx, on.ty, 'trap');
+  ok('마지막 웨이브 경로 위에 함정을 깐다', built === true);
+
+  S.spawnDirs = S.plannedDirs[S.waveIdx].slice();
+  S.phase = 'night';
+  S.waveStats = { killed:0, byTrap:0, bySoldier:0, byHero:0, baseDmg:0, trapKills:{} };
+  Sim.update(S, 1/30);                      // 몬스터 0 → endWave
+  const rep = Sim.drainEvents(S).find(e => e.type === 'report');
+  ok('마지막 웨이브 리포트에서도 경로 위 함정이 제대로 잡힌다',
+     rep && rep.trapsTotal === 1 && rep.trapsOn === 1,
+     rep ? `${rep.trapsOn}/${rep.trapsTotal}` : '리포트 없음');
+  ok('마지막 웨이브 뒤에는 다음 대란 정보가 없다', rep && rep.nextDay === null);
+}
+
+/* ── 28. 리포트가 다음 대란의 방향 수를 미리 알려준다 ──────── */
+{
+  const S = Sim.createSim('taesaja');
+  S.waveIdx = 0;
+  S.phase = 'night';
+  S.waveStats = { killed:0, byTrap:0, bySoldier:0, byHero:0, baseDmg:0, trapKills:{} };
+  Sim.update(S, 1/30);
+  const rep = Sim.drainEvents(S).find(e => e.type === 'report');
+  ok('리포트에 다음 대란의 날짜·이름이 실린다',
+     rep && rep.nextDay === C.WAVES[1].day && rep.nextName === C.WAVES[1].name);
+  ok('리포트에 다음 대란의 방향 수가 실린다',
+     rep && rep.nextSides === C.WAVES[1].sides && rep.nextDirs.length === C.WAVES[1].sides,
+     rep ? `${rep.sides} → ${rep.nextSides}방향 (${rep.nextDirs.join(',')})` : '');
 }
 
 console.log(results.join('\n'));

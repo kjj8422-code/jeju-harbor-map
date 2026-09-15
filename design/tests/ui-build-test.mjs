@@ -109,6 +109,30 @@ const swing1 = await p.evaluate(()=>window.__sg.S.hero.swing);
 ok('건설 바 클릭이 장수의 공격으로 새지 않는다', !(swing1 > swing0 + 0.1), `${swing0} → ${swing1}`);
 
 
+// ⑧ 철거 — 방금 지은 것을 부수고 자원을 돌려받는다
+await p.evaluate(()=>{ const c=document.getElementById('chkInstant'); c.checked=true; c.dispatchEvent(new Event('change')); });
+const wallsNow = await p.evaluate(()=>window.__sg.S.cnt.wall);
+ok('철거 버튼이 건설 바에 있다', (await p.locator('#buildDock .bdBtn.del').count())===1);
+await p.locator('#buildDock .bdBtn.del').click(); await p.waitForTimeout(250);
+ok('철거 모드가 선택된다', await p.evaluate(()=>!!document.querySelector('#buildDock .bdBtn.del.on')));
+// 방금 지은 목책들 중 하나를 화면 좌표로 찾아 누릅니다
+const hit = await p.evaluate(()=>{ const S=window.__sg.S,C=window.__sg.C,R3=window.__sg.R3;
+  for (const k of S.wallList) {
+    if (S.occ[k]!==C.OCC_WALL) continue;
+    const tx=k%C.MAPW, ty=(k/C.MAPW)|0;
+    const s=R3.worldToScreen(tx*C.TILE+C.TILE/2, ty*C.TILE+C.TILE/2, 0.2);
+    if (s.visible) return { x:s.x, y:s.y, tx, ty };
+  }
+  return null; });
+let demolished = false;
+if (hit) {
+  const r = await p.locator('#stage').boundingBox();
+  await p.mouse.move(r.x+hit.x, r.y+hit.y); await p.mouse.down(); await p.mouse.up();
+  await p.waitForTimeout(450);
+  demolished = (await p.evaluate(()=>window.__sg.S.cnt.wall)) < wallsNow;
+}
+ok('철거 모드로 목책을 부술 수 있다', demolished, hit?`(${hit.tx},${hit.ty})`:'화면 안에 목책이 없음');
+
 console.log('\n=== 건설 조작 검수 ===\n');
 console.log(R.join('\n'));
 const bad = R.filter(x=>x.startsWith('❌')).length;

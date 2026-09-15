@@ -266,7 +266,8 @@ export const WAVES = [
     count:26, hp:88, spd:82, dmg:15, sides:3,
     mix:[['normal',0.4],['fast',0.3],['tank',0.3]],
     boss:{ hp:1500, dmg:30, spd:52, name:'맹획' },
-    advice:'세 방향을 한 사람이 다 막을 수는 없습니다. 병사와 용병에게 길목 하나씩을 맡기세요.' },
+    advice:'세 방향을 한 사람이 다 막을 수는 없습니다. 병사와 용병에게 길목 하나씩을 맡기세요.<br>'
+         + '<b>다음 막부터는 사방에서 옵니다.</b> 지금부터 거점을 빙 둘러싸고 문을 몇 개만 내두세요.' },
 
   { day:77, act:3, name:'위군 선봉', note:'3막 시작 · 정예가 섞여 들어옵니다',
     count:30, hp:105, spd:88, dmg:17, sides:3,
@@ -275,12 +276,16 @@ export const WAVES = [
   { day:88, act:3, name:'조조의 정예', note:'사방에서 몰려옵니다',
     count:32, hp:120, spd:90, dmg:18, sides:4,
     mix:[['normal',0.4],['fast',0.25],['tank',0.2],['elite',0.15]],
-    advice:'네 방향입니다. 철옹성의 망루가 없으면 손이 모자랍니다.' },
+    advice:'네 방향입니다. 철옹성의 망루가 없으면 손이 모자랍니다.<br>'
+         + '<b>정석</b> — 거점에서 4~5칸 떨어진 곳을 목책으로 <b>빙 둘러싸고</b>, '
+         + '네 방향에 문을 하나씩만 냅니다. 그 문 안쪽 두세 칸에 함정을 겹쳐 까세요. '
+         + '적은 반드시 그 문으로만 들어옵니다.' },
   { day:99, act:3, name:'최후의 대란', note:'최종 보스 · 99일의 끝',
     count:36, hp:140, spd:90, dmg:20, sides:4,
     mix:[['normal',0.35],['fast',0.25],['tank',0.2],['elite',0.2]],
     boss:{ hp:2300, dmg:34, spd:58, name:'여포(적)' },
-    advice:'마지막입니다. 치유약을 아끼지 말고, 보스는 함정 위로 끌어들이세요.' }
+    advice:'마지막입니다. 치유약을 아끼지 말고, 보스는 함정 위로 끌어들이세요.<br>'
+         + '문을 둘러싼 목책이 온전한지, 함정이 전부 <b>침공로 위</b>에 있는지 마지막으로 확인하세요.' }
 ];
 
 /* ---------- 건설 ---------- */
@@ -305,6 +310,13 @@ export const TRAP_DUR_STEEL = 1.6;
 export const TRAP_SLOW = 0.45;          // 함정 위 이동 속도 배율
 export const TRAP_WEAR = 7;             // 초당 내구도 감소
 export const WALL_DMG_MUL = 1.6;        // 몬스터가 목책을 때릴 때의 피해 배율
+
+/* ---------- 철거 ----------
+   목책을 옮기면 적의 길이 바뀌고, 그러면 예전에 깔아둔 함정이 길에서 벗어납니다.
+   치울 방법이 없으면 그 자원이 영원히 묶입니다(자동 플레이에서 함정 15개 중 13개가
+   쓸모없어진 채로 남았습니다). 그래서 되돌릴 수 있게 합니다.
+   전부 돌려주면 무한히 다시 지을 수 있으니 절반만 돌려줍니다. */
+export const REFUND_RATIO = 0.5;
 
 /* ---------- 제작 ---------- */
 /* ---------- 장비 제작 ----------
@@ -387,7 +399,7 @@ export const RESOURCES = {
            from:'몬스터를 처치하면 나옵니다. 사냥용 칼이 있으면 두 배',
            use:'가죽 갑옷·철 갑옷' }
 };
-export const NODE_MAX = { wood:26, stone:22, iron:16, herb:10 };
+export const NODE_MAX = { wood:26, stone:26, iron:16, herb:10 };
 export const GATHER_RATE = { wood:4, stone:3, iron:2, herb:5 };   // 장수 채집 속도(초당)
 export const SOLDIER_GATHER_RATE = 2.2;
 export const NODE_REGROW_SEC = 24;
