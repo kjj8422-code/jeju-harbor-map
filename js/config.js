@@ -116,6 +116,11 @@ export const GENERALS = [
     weapon:'sword',
     desc:'검을 쓰는 방패잡이. 초반이 고된 대신 시작 자원이 가장 많고, 22일차부터 공격력이 30% 오릅니다.',
     skill:'대기만성 — 22일차부터 공격력 +30%',
+    /* 외형 — 3D 장수와 도감 초상이 같은 데이터를 읽습니다.
+       삼국지 인물의 잘 알려진 특징을 한두 개씩만 잡았습니다. */
+    look: { helm:'plain', armor:'scale', shield:true, beard:'short', cape:0.9,
+            skin:'#e8c9a0', hair:'#2b2118', cloth:'#6c6a63',
+            note:'수수한 찰갑과 큰 방패 — 버티는 장수' },
     skills:[
       { key:'Q', name:'참격', cd:6, desc:'전방을 크게 베어 여러 적을 한 번에 밀쳐냅니다',
         type:'arc', range:1.7, arc:2.1, dmg:2.2, knock:1.0 },
@@ -131,6 +136,9 @@ export const GENERALS = [
     weapon:'bow',
     desc:'활을 쓰는 명궁. 멀리서 안전하게 싸울 수 있습니다. 처음 잡아보기에 가장 편한 장수.',
     skill:'강궁 — 공격 사거리 +30%',
+    look: { helm:'cap', armor:'light', quiver:true, beard:'short', cape:0.85,
+            skin:'#e8c9a0', hair:'#241d16', cloth:'#3f5f86',
+            note:'가벼운 가죽 갑옷과 등에 멘 화살통 — 움직이는 궁수' },
     skills:[
       { key:'Q', name:'연사', cd:6, desc:'화살 3발을 빠르게 쏩니다',
         type:'multi', shots:3, dmg:0.9, interval:0.12 },
@@ -146,6 +154,9 @@ export const GENERALS = [
     weapon:'halberd',
     desc:'방천화극을 든 최강의 무장. 초반 전투력이 압도적이지만 시작 자원이 적고 몬스터가 15% 더 강하게 몰려옵니다.',
     skill:'무쌍 — 공격 속도 +25%',
+    look: { helm:'horned', armor:'heavy', shoulder:true, beard:'short', cape:1.35,
+            skin:'#e5c298', hair:'#1e1712', cloth:'#8a4c18',
+            note:'꿩깃을 꽂은 뿔 투구와 긴 망토 — 삼국 제일의 무장' },
     skills:[
       { key:'Q', name:'회선', cd:6, desc:'제자리에서 360도 휘둘러 주변을 전부 쓸어버립니다',
         type:'spin', range:1.9, dmg:2.0, knock:1.2 },
@@ -163,6 +174,9 @@ export const GENERALS = [
     desc:'때릴 때마다 체력을 조금씩 되찾습니다. 오래 버티는 싸움에 강합니다.',
     skill:'발형 — 타격 시 피해의 12%를 회복',
     lifesteal: 0.12,
+    look: { helm:'crest', armor:'heavy', eyepatch:true, shoulder:true, beard:'short', cape:1.0,
+            skin:'#e2bf95', hair:'#1b1510', cloth:'#5a3f7a',
+            note:'한쪽 눈을 잃고도 싸운 장수 — 검은 안대' },
     skills:[
       { key:'Q', name:'혈전', cd:6, desc:'전방을 베며 회복량이 크게 늘어납니다',
         type:'arc', range:1.6, arc:2.0, dmg:2.0, knock:0.8 },
@@ -178,6 +192,9 @@ export const GENERALS = [
     desc:'노장의 활 솜씨. 치명타가 자주 터집니다.',
     skill:'백발백중 — 치명타 확률 +18%',
     critBonus: 0.18,
+    look: { helm:'cap', armor:'scale', quiver:true, beard:'white', cape:0.9,
+            skin:'#dfbc93', hair:'#d8d2c4', cloth:'#3f6b4c',
+            note:'흰 수염의 노장 — 나이를 무색하게 하는 활 솜씨' },
     skills:[
       { key:'Q', name:'속사', cd:6, desc:'화살 4발을 연달아 쏩니다',
         type:'multi', shots:4, dmg:0.85, interval:0.1 },
@@ -193,6 +210,9 @@ export const GENERALS = [
     desc:'청룡언월도를 든 무신. 한 번에 여러 적을 쓸어버립니다.',
     skill:'위압 — 주변 적의 이동 속도 20% 감소',
     slowAura: 0.2,
+    look: { helm:'hood', armor:'scale', beard:'long', cape:1.25,
+            skin:'#c98a6a', hair:'#17120e', cloth:'#2f6b4a',
+            note:'붉은 얼굴과 다섯 자 수염, 녹색 전포 — 미염공(美髥公)' },
     skills:[
       { key:'Q', name:'월참', cd:6, desc:'반달 모양으로 크게 베어 넘깁니다',
         type:'arc', range:2.1, arc:2.6, dmg:2.4, knock:1.1 },

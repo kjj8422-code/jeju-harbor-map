@@ -660,16 +660,191 @@ function makeWeapon(type) {
   return g;
 }
 
+/* ==================================================================
+   장수 외형 — config 의 look 데이터를 그대로 읽어 만듭니다
+   ------------------------------------------------------------------
+   장수가 6명인데 색만 다르면 "누구를 골라도 똑같다" 는 느낌이 납니다.
+   삼국지 인물의 잘 알려진 특징을 한두 개씩만 뽑아 실루엣을 다르게 했습니다
+   (여포=뿔 투구, 하후돈=안대, 관우=긴 수염, 황충=흰 수염, 요화=방패, 태사자=화살통).
+   장수는 화면에 1명뿐이라 메시를 몇 개 더 써도 예산에 영향이 없습니다.
+   ================================================================== */
+const _hexMat = (hex, rough = 0.7, metal = 0) =>
+  new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: rough, metalness: metal });
+
+function addHeroLook(g, d, scale) {
+  const L = d.look || {};
+  const head = g.userData.head;
+  const headY = head ? head.position.y : 1.48;
+
+  // 피부색 — 관우는 붉은 얼굴로 알려져 있습니다
+  if (head && L.skin) head.material.color.set(L.skin);
+
+  /* ── 투구 ──
+     makeHumanoid 의 기본 투구는 머리를 통째로 덮는 원뿔이라
+     장수는 그걸 끄고(withHelm=false) 여기서 전용 투구를 씌웁니다.
+     얼굴이 보여야 눈·수염·안대 같은 특징이 살아납니다. */
+  const helmMat = _hexMat(d.accent || d.color, 0.45, 0.45);
+  const helmR = 0.215 * scale;
+  const capDome = () => {
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(helmR, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.46), helmMat);
+    dome.position.y = headY + 0.07 * scale;
+    g.add(dome);
+    return dome;
+  };
+  if (L.helm === 'horned') {
+    capDome();
+    for (const sx of [-1, 1]) {
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.07 * scale, 0.44 * scale, 6), helmMat);
+      horn.position.set(sx * 0.19 * scale, headY + 0.3 * scale, 0);
+      horn.rotation.z = sx * 0.55;
+      g.add(horn);
+    }
+    // 꿩깃
+    const plume = new THREE.Mesh(new THREE.ConeGeometry(0.065 * scale, 0.55 * scale, 5),
+                                 _hexMat('#C6412F', 0.8));
+    plume.position.set(0, headY + 0.45 * scale, -0.02 * scale);
+    g.add(plume);
+  } else if (L.helm === 'crest') {
+    capDome();
+    const crest = new THREE.Mesh(new THREE.BoxGeometry(0.05 * scale, 0.3 * scale, 0.38 * scale), helmMat);
+    crest.position.set(0, headY + 0.3 * scale, 0);
+    g.add(crest);
+  } else if (L.helm === 'cap') {
+    capDome();
+    // 챙 — 궁수의 낮은 투구
+    const brim = new THREE.Mesh(
+      new THREE.CylinderGeometry(helmR * 1.25, helmR * 1.25, 0.035 * scale, 14), helmMat);
+    brim.position.y = headY + 0.075 * scale;
+    g.add(brim);
+  } else if (L.helm === 'plain') {
+    capDome();
+  } else if (L.helm === 'hood') {
+    /* 두건은 얼굴을 덮으면 안 됩니다.
+       뒤통수와 정수리만 감싸도록 위로 올리고 뒤로 물립니다. */
+    const hood = new THREE.Mesh(new THREE.SphereGeometry(0.225 * scale, 12, 8,
+                                  0, Math.PI * 2, 0, Math.PI * 0.5),
+                                _hexMat(L.cloth || '#2f6b4a', 0.9));
+    hood.position.set(0, headY + 0.055 * scale, -0.02 * scale);
+    g.add(hood);
+    // 뒤로 늘어뜨린 천
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.3 * scale, 0.26 * scale, 0.04 * scale),
+                                _hexMat(L.cloth || '#2f6b4a', 0.9));
+    tail.position.set(0, headY - 0.06 * scale, -0.19 * scale);
+    g.add(tail);
+  }
+
+  /* ── 얼굴 방향 표시 ──
+     저폴리 구체만으로는 앞뒤가 구분되지 않습니다.
+     장수는 화면에 한 명뿐이라 눈 두 개를 붙여도 예산에 영향이 없습니다. */
+  if (head) {
+    const eyeMat = _hexMat('#17120e', 0.9);
+    for (const sx of [-1, 1]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.032 * scale, 6, 5), eyeMat);
+      eye.position.set(sx * 0.075 * scale, headY + 0.03 * scale, 0.175 * scale);
+      g.add(eye);
+    }
+  }
+
+  /* ── 수염 — 관우의 다섯 자 수염, 황충의 흰 수염 ──
+     예전에는 몸통 안에 파묻혀 아예 안 보였습니다.
+     턱 끝에서 시작해 가슴 앞으로 흘러내리게 앞(z+)으로 빼냅니다. */
+  if (L.beard && L.beard !== 'short') {
+    const long = L.beard === 'long';
+    const len = (long ? 0.62 : 0.34) * scale;
+    const beard = new THREE.Mesh(
+      new THREE.ConeGeometry(0.115 * scale, len, 7),
+      _hexMat(L.beard === 'white' ? '#ded8ca' : (L.hair || '#1b1510'), 0.95));
+    beard.position.set(0, headY - 0.14 * scale - len * 0.42, 0.17 * scale);
+    beard.rotation.x = 0.34;                 // 앞으로 흘러내립니다
+    g.add(beard);
+  }
+
+  /* ── 안대 — 하후돈 ── */
+  if (L.eyepatch) {
+    const patch = new THREE.Mesh(new THREE.BoxGeometry(0.1 * scale, 0.07 * scale, 0.03 * scale),
+                                 _hexMat('#15120f', 0.95));
+    patch.position.set(-0.08 * scale, headY + 0.03 * scale, 0.185 * scale);
+    patch.rotation.z = 0.2;
+    g.add(patch);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.205 * scale, 0.012 * scale, 5, 14),
+                                _hexMat('#15120f', 0.95));
+    band.position.y = headY + 0.03 * scale;
+    band.rotation.y = Math.PI / 2; band.rotation.x = 0.2;
+    g.add(band);
+  }
+
+  /* ── 어깨 갑옷 ── */
+  if (L.shoulder) {
+    for (const sx of [-1, 1]) {
+      const pad = new THREE.Mesh(new THREE.SphereGeometry(0.16 * scale, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+                                 _hexMat(d.accent || d.color, 0.5, 0.4));
+      pad.position.set(sx * 0.27 * scale, 0.92 * scale, 0);
+      pad.rotation.z = sx * 0.4;
+      g.add(pad);
+    }
+  }
+
+  /* ── 갑옷 결 — 찰갑은 가슴판, 중갑은 두꺼운 흉갑 ── */
+  if (L.armor === 'scale' || L.armor === 'heavy') {
+    const plate = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.29 * scale, 0.27 * scale,
+                                 (L.armor === 'heavy' ? 0.42 : 0.3) * scale, 10, 1, true),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(L.cloth || d.color),
+        roughness: 0.55, metalness: L.armor === 'heavy' ? 0.55 : 0.3, side: THREE.DoubleSide }));
+    plate.position.y = 0.78 * scale;
+    g.add(plate);
+  }
+
+  /* ── 방패 — 요화 ── */
+  if (L.shield) {
+    const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.3 * scale, 0.3 * scale, 0.06 * scale, 12),
+                              _hexMat(L.cloth || '#6c6a63', 0.6, 0.3));
+    sh.rotation.set(Math.PI / 2, 0, 0.12);
+    sh.position.set(-0.33 * scale, 0.78 * scale, 0.14 * scale);
+    g.add(sh);
+    const boss = new THREE.Mesh(new THREE.SphereGeometry(0.08 * scale, 8, 6),
+                                _hexMat(d.accent || d.color, 0.4, 0.6));
+    boss.position.set(-0.33 * scale, 0.78 * scale, 0.2 * scale);
+    g.add(boss);
+  }
+
+  /* ── 화살통 — 태사자·황충 ── */
+  if (L.quiver) {
+    const q = new THREE.Mesh(new THREE.CylinderGeometry(0.085 * scale, 0.085 * scale, 0.42 * scale, 8),
+                             _hexMat('#6b4a2c', 0.9));
+    q.position.set(-0.2 * scale, 0.86 * scale, -0.2 * scale);
+    q.rotation.set(0.35, 0, 0.45);
+    g.add(q);
+    for (let i = 0; i < 3; i++) {
+      const arw = new THREE.Mesh(new THREE.CylinderGeometry(0.012 * scale, 0.012 * scale, 0.3 * scale, 4),
+                                 _hexMat('#d8cdb6', 0.9));
+      arw.position.set((-0.24 + i * 0.035) * scale, 1.12 * scale, -0.24 * scale);
+      arw.rotation.set(0.35, 0, 0.45);
+      g.add(arw);
+    }
+  }
+}
+
 function buildHero(S) {
   const d = S.heroDef;
   const modelSlot = 'hero_' + d.weapon;
-  const g = Models.has(modelSlot) ? wrapModel(modelSlot) : makeHumanoid(d.color, d.accent, 1);
+  const usingModel = Models.has(modelSlot);
+  const g = usingModel ? wrapModel(modelSlot) : makeHumanoid(d.color, d.accent, 1, false);
+  const hscale = 1.32;                       // makeHumanoid 안의 배율과 같습니다
 
-  // 망토
+  // 장수별 특징 — 모델을 등록했으면 그 모델을 그대로 존중하고 건너뜁니다
+  if (!usingModel) addHeroLook(g, d, hscale);
+
+  /* 망토 — 길이는 장수마다 다르지만, **위쪽은 항상 어깨에 고정**합니다.
+     예전에는 길이를 늘리면 망토가 위로도 자라서 머리까지 가렸습니다.
+     어깨(y≈1.08)에서 아래로만 늘어지게 계산합니다. */
+  const capeLen = (d.look && d.look.cape) || 1;
+  const capeH = 0.8 * capeLen;
   const cape = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.8, 1.05),
+    new THREE.PlaneGeometry(0.62 + capeLen * 0.08, capeH),
     new THREE.MeshStandardMaterial({ color: d.accent, roughness: 0.8, side: THREE.DoubleSide }));
-  cape.position.set(0, 0.87, -0.32);
+  cape.position.set(0, 1.08 - capeH / 2, -0.3);
   g.add(cape);
   g.userData.cape = cape;
 

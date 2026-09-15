@@ -734,10 +734,13 @@ function renderHeroCards() {
     el.className = 'gcard' + (i === selHero ? ' on' : '') + (locked ? ' locked' : '');
     el.style.borderTopColor = g.color;
     el.innerHTML = (locked ? '<div class="lockTag">🔒 가챠로 획득</div>' : '')
+      + `<div class="gTop">${heroPortrait(g, 52)}<div class="gTopTx">`
       + `<div class="gr" style="color:${g.color}">${g.grade} · ${g.tag}`
       + (awakenOf(g.id) ? ` <span style="color:var(--gold)">${'★'.repeat(awakenOf(g.id))}</span>` : '')
       + `</div>`
-      + `<div class="nm">${g.name}</div><div class="ds">${g.desc}</div>`
+      + `<div class="nm">${g.name}</div></div></div>`
+      + `<div class="ds">${g.desc}</div>`
+      + (g.look && g.look.note ? `<div class="gNote">${g.look.note}</div>` : '')
       + `<div class="stat"><span>전투 스탯</span><b>${Math.round(g.combat * (1 + C.AWAKEN_BONUS * awakenOf(g.id)) * 100)}%</b>`
       + (awakenOf(g.id) ? `<span style="color:var(--good);font-size:10px;"> ★${awakenOf(g.id)}</span>` : '') + `</div>`
       + `<div class="stat"><span>시작 자원</span><b class="${g.startRes > 1 ? 'up' : 'down'}">${Math.round(g.startRes * 100)}%</b></div>`
@@ -953,6 +956,7 @@ function refreshShop() {
           <span class="hdStar">${'★'.repeat(lv)}${'☆'.repeat(C.AWAKEN_MAX - lv)}</span></div>
         <div class="hdTag">${g.tag}${cnt ? ` · 뽑은 횟수 ${cnt}` : ''}</div>
         <div class="hdSkill">${g.skill}</div>
+        ${g.look && g.look.note ? `<div class="hdNote">${g.look.note}</div>` : ''}
         ${have
           ? (lv >= C.AWAKEN_MAX
               ? '<div class="hdMax">각성 완료 — 전투력 +30%</div>'
@@ -982,15 +986,109 @@ function refreshShop() {
     : '아직 없습니다. 뽑기를 돌려보세요.';
 }
 
-/* 장수 얼굴 — 이미지 파일 없이 색·이니셜·무기로 구분되는 카드 초상입니다.
-   외부 이미지를 쓰면 라이선스가 걸리고, 이 프로젝트는 빌드도 없습니다. */
+/* ==================================================================
+   장수 초상 — SVG 로 그립니다 (이미지 파일 0장)
+   ------------------------------------------------------------------
+   왜 그림 파일을 안 쓰나:
+     ① 이 프로젝트는 빌드가 없고 저장소에 그림을 넣으면 무거워집니다
+     ② 남의 그림은 상업적 이용 라이선스를 일일이 확인해야 합니다
+     ③ 3D 장수와 도감이 **같은 look 데이터**를 읽으면 둘이 절대 어긋나지 않습니다
+   그래서 투구·수염·안대·갑옷을 config 의 look 대로 조립해 그립니다.
+   나중에 진짜 일러스트가 생기면 look.portrait 에 경로만 넣으면 됩니다.
+   ================================================================== */
 const WEAPON_ICON = { sword: '🗡️', bow: '🏹', halberd: '🔱' };
+
+function heroPortrait(g, size = 58) {
+  const L = g.look || {};
+  const skin = L.skin || '#e8c9a0';
+  const hair = L.hair || '#1f1812';
+  const cloth = L.cloth || g.color;
+  const acc = g.accent || g.color;
+  const P = [];
+
+  // 배경 — 등급 색 그라데이션
+  P.push(`<defs><linearGradient id="bg${g.id}" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="${g.color}"/><stop offset="1" stop-color="${acc}"/></linearGradient></defs>`);
+  P.push(`<rect width="100" height="120" fill="url(#bg${g.id})"/>`);
+  P.push(`<ellipse cx="50" cy="28" rx="46" ry="34" fill="#fff" opacity="0.16"/>`);
+
+  // 몸통·갑옷
+  P.push(`<path d="M18 120 Q22 84 50 80 Q78 84 82 120 Z" fill="${cloth}"/>`);
+  if (L.shoulder) {
+    P.push(`<ellipse cx="22" cy="92" rx="13" ry="10" fill="${acc}" stroke="rgba(0,0,0,.25)"/>`);
+    P.push(`<ellipse cx="78" cy="92" rx="13" ry="10" fill="${acc}" stroke="rgba(0,0,0,.25)"/>`);
+  }
+  if (L.armor === 'scale') {
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++)
+      P.push(`<circle cx="${34 + c * 8}" cy="${94 + r * 8}" r="3.4" fill="rgba(0,0,0,.18)"/>`);
+  } else if (L.armor === 'heavy') {
+    P.push(`<path d="M34 90 H66 V118 H34 Z" fill="rgba(255,255,255,.15)" stroke="rgba(0,0,0,.25)"/>`);
+  }
+
+  // 목·얼굴
+  P.push(`<rect x="44" y="70" width="12" height="14" fill="${skin}"/>`);
+  P.push(`<ellipse cx="50" cy="52" rx="21" ry="24" fill="${skin}"/>`);
+
+  // 수염
+  if (L.beard === 'long')
+    P.push(`<path d="M36 62 Q50 118 64 62 Q50 76 36 62 Z" fill="${hair}"/>`);
+  else if (L.beard === 'white')
+    P.push(`<path d="M34 60 Q50 96 66 60 Q50 74 34 60 Z" fill="#ded8ca"/>`);
+  else
+    P.push(`<path d="M38 64 Q50 78 62 64 Q50 72 38 64 Z" fill="${hair}" opacity=".85"/>`);
+
+  // 눈
+  if (L.eyepatch) {
+    P.push(`<circle cx="58" cy="50" r="2.6" fill="#1a1410"/>`);
+    P.push(`<path d="M28 44 L72 40" stroke="#15120f" stroke-width="3.5" fill="none"/>`);
+    P.push(`<ellipse cx="42" cy="49" rx="7" ry="6" fill="#15120f"/>`);
+  } else {
+    P.push(`<circle cx="42" cy="50" r="2.6" fill="#1a1410"/>`);
+    P.push(`<circle cx="58" cy="50" r="2.6" fill="#1a1410"/>`);
+  }
+  // 눈썹
+  P.push(`<path d="M36 43 Q42 40 47 43" stroke="${hair}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`);
+  P.push(`<path d="M53 43 Q58 40 64 43" stroke="${hair}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`);
+
+  // 투구
+  if (L.helm === 'horned') {
+    P.push(`<path d="M27 40 Q50 16 73 40 L73 32 Q50 8 27 32 Z" fill="${acc}" stroke="rgba(0,0,0,.3)"/>`);
+    P.push(`<path d="M27 34 Q16 16 24 10 Q34 18 33 34 Z" fill="${acc}"/>`);
+    P.push(`<path d="M73 34 Q84 16 76 10 Q66 18 67 34 Z" fill="${acc}"/>`);
+    P.push(`<path d="M50 18 L46 2 L54 2 Z" fill="#C6412F"/>`);
+  } else if (L.helm === 'crest') {
+    P.push(`<path d="M27 40 Q50 18 73 40 Z" fill="${acc}" stroke="rgba(0,0,0,.3)"/>`);
+    P.push(`<path d="M46 20 Q50 4 54 20 Z" fill="#C6412F"/>`);
+  } else if (L.helm === 'hood') {
+    P.push(`<path d="M24 46 Q26 14 50 14 Q74 14 76 46 Q64 30 50 30 Q36 30 24 46 Z" fill="${cloth}"/>`);
+  } else if (L.helm === 'cap') {
+    P.push(`<path d="M29 40 Q50 22 71 40 Z" fill="${acc}" stroke="rgba(0,0,0,.25)"/>`);
+    P.push(`<rect x="27" y="38" width="46" height="4" rx="2" fill="rgba(0,0,0,.28)"/>`);
+  } else {
+    P.push(`<path d="M29 42 Q50 24 71 42 Z" fill="${acc}" stroke="rgba(0,0,0,.25)"/>`);
+  }
+  // 머리카락이 투구 밖으로
+  if (L.helm !== 'hood')
+    P.push(`<path d="M30 44 Q30 62 26 70 Q34 62 33 46 Z M70 44 Q70 62 74 70 Q66 62 67 46 Z" fill="${hair}"/>`);
+
+  // 장비 — 방패 / 화살통
+  if (L.shield) {
+    P.push(`<ellipse cx="17" cy="100" rx="14" ry="17" fill="${cloth}" stroke="rgba(0,0,0,.3)" stroke-width="2"/>`);
+    P.push(`<circle cx="17" cy="100" r="4.5" fill="${acc}"/>`);
+  }
+  if (L.quiver) {
+    P.push(`<rect x="76" y="76" width="11" height="30" rx="4" fill="#6b4a2c" transform="rotate(14 81 91)"/>`);
+    for (let i = 0; i < 3; i++)
+      P.push(`<rect x="${77 + i * 3.4}" y="68" width="2" height="12" fill="#d8cdb6" transform="rotate(14 81 74)"/>`);
+  }
+
+  return `<svg class="hdSvg" viewBox="0 0 100 120" width="${size}" height="${Math.round(size * 1.2)}"
+      role="img" aria-label="${g.name} 초상" preserveAspectRatio="xMidYMid slice">${P.join('')}</svg>`;
+}
+
 function heroFace(g, have) {
-  return `<div class="hdFace" style="background:linear-gradient(160deg,${g.color},${g.accent || g.color});
-            ${have ? '' : 'filter:grayscale(1) brightness(.5);'}">
-      <span class="hdInit">${g.name[0]}</span>
-      <span class="hdWeapon">${WEAPON_ICON[g.weapon] || ''}</span>
-    </div>`;
+  return `<div class="hdFace${have ? '' : ' off'}">${heroPortrait(g)}
+      <span class="hdWeapon">${WEAPON_ICON[g.weapon] || ''}</span></div>`;
 }
 
 /* ==================================================================
