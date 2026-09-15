@@ -13,6 +13,21 @@ let S = null, selHero = 1, paused = false, uiOpen = true;
 let buildSel = null, soundOn = true;
 let wallet = Number(localStorage.getItem('sg3d_shard') || 0);
 
+/* 뽑아서 열린 장수들 — 기본 3명은 항상 열려 있습니다 */
+function unlockedHeroes() {
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem('sg3d_heroes') || '[]'); } catch (e) { saved = []; }
+  return new Set([...C.FREE_HEROES, ...saved]);
+}
+function unlockHero(id) {
+  const set = unlockedHeroes();
+  if (set.has(id)) return false;
+  const saved = [...set].filter(x => !C.FREE_HEROES.includes(x));
+  saved.push(id);
+  localStorage.setItem('sg3d_heroes', JSON.stringify(saved));
+  return true;
+}
+
 /* ---------------- 소리 ---------------- */
 let AC = null;
 function refreshSkillBar() {
@@ -80,6 +95,16 @@ function toast(msg) {
   box.appendChild(el);
   setTimeout(() => el.remove(), 2600);
   while (box.children.length > 4) box.firstChild.remove();
+}
+
+function addDamageNumber(e) {
+  const el = document.createElement('div');
+  el.className = 'dmgNum' + (e.crit ? ' crit' : '') + (e.src === 'trap' ? ' trap' : '');
+  el.textContent = (e.crit ? '' : '-') + e.amount + (e.crit ? '!' : '');
+  $('fxLayer').appendChild(el);
+  floaters.push({ el, x: e.x + (Math.random() - 0.5) * 14, y: e.y + (Math.random() - 0.5) * 10,
+                  life: e.crit ? 1.2 : 0.9, rise: 0 });
+  if (floaters.length > 60) { const f = floaters.shift(); f.el.remove(); }
 }
 
 const floaters = [];
@@ -205,6 +230,11 @@ function handleEvents() {
         toast(`<b style="color:#C6412F">${e.name}</b> — 몬스터 ${e.count}마리`);
         break;
       case 'shot': R3.spawnArrow(e.from, e.to); break;
+      case 'towerShot': R3.spawnArrow(e.from, e.to); break;
+      case 'hitNumber': addDamageNumber(e); break;
+      case 'hitSpark': R3.spawnHitSpark(e.x, e.y, e.crit); if (e.crit) R3.shakeCamera(0.22); break;
+      case 'baseUpgraded': R3.rebuildBase(S); refreshHUD(); break;
+      case 'crafted': refreshCraft(); refreshBuildCards(); break;
       case 'dodge': R3.spawnShockwave(e.x, e.y, 90, 0x9fd8ff, 0.3); break;
       case 'dodgeSuccess': R3.shakeCamera(0.05); break;
       case 'heroHit': R3.shakeCamera(0.28); break;
@@ -244,6 +274,10 @@ function refreshHUD() {
   $('hWood').textContent = Math.floor(S.res.wood);
   $('hStone').textContent = Math.floor(S.res.stone);
   $('hIron').textContent = Math.floor(S.res.iron);
+  $('hHerb').textContent = Math.floor(S.res.herb);
+  $('hHide').textContent = Math.floor(S.res.hide);
+  $('hPotion').textContent = S.potions;
+  $('hBaseLv').textContent = (C.BASE_LEVELS.find(b => b.lv === S.baseLv) || {}).name || '';
   const wounded = S.soldiers.filter(s => s.down).length;
   $('hSol').textContent = S.soldiers.length + (wounded ? ` (부상 ${wounded})` : '');
   $('hSolMax').textContent = S.camps;
@@ -314,22 +348,109 @@ function refreshSoldiers() {
 }
 
 function refreshCraft() {
-  const box = $('craftList');
-  box.innerHTML = '';
-  for (const c of C.CRAFTS) {
-    const owned = c.id === 'pickaxe' && S.pickaxe;
-    const lv = c.id === 'weapon' ? S.weaponLv : 0;
-    const el = document.createElement('button');
-    el.className = 'gcard';
-    el.style.borderTopColor = '#E0B44A';
-    el.innerHTML = `<div class="gr" style="color:#E0B44A">${c.icon} 제작</div>`
-      + `<div class="nm">${c.name}${c.id === 'weapon' ? ` <span style="font-size:12px;color:#9E9384">${lv}/${c.max}</span>` : ''}</div>`
-      + `<div class="ds">${c.desc}</div>`
-      + `<div class="stat"><span>필요 자원</span><b>${Sim.costText(c.cost)}</b></div>`
-      + (owned ? '<div class="stat"><span style="color:#5FAE72">보유 중</span><b></b></div>' : '');
-    el.onclick = () => { Sim.doCraft(S, c.id); refreshCraft(); refreshBuildCards(); };
-    box.appendChild(el);
-  }
+  if (!S) return;
+  // 성 업그레이드
+  const nx = Sim.nextBaseLevel(S);
+  const upChk = Sim.canUpgradeBase(S);
+  $('baseUpgrade').innerHTML = nx
+    ? `<div class="gRow">
+         <div class="gHead"><span class="gIcon">🏯</span>
+           <b>${S.baseLv}단계 → ${nx.lv}단계 ${nx.name}</b>
+           <span class="gHave">체력 ${S.base.maxHp} → ${nx.maxHp}</span></div>
+         <div class="gLine"><span class="gTag">필요</span>${costChips(nx.cost)}</div>
+         <div class="gLine"><span class="gTag">효과</span>${nx.desc}</div>
+         <button class="btn ${upChk.ok ? 'gold' : ''}" id="btnUpgradeBase"
+           ${upChk.ok ? '' : 'disabled'} style="margin-top:6px;">
+           ${upChk.ok ? '🏯 성 올리기' : upChk.why}</button>
+       </div>`
+    : `<div class="gRow done"><div class="gHead"><span class="gIcon">🏯</span>
+         <b>철옹성 — 최고 단계입니다</b></div></div>`;
+  const ub = $('btnUpgradeBase');
+  if (ub) ub.onclick = () => { Sim.upgradeBase(S); handleEvents(); refreshCraft(); refreshHUD(); };
+
+  // 장비 — 종류별로 묶어서
+  const groups = {};
+  for (const c of C.CRAFTS) (groups[c.group] = groups[c.group] || []).push(c);
+
+  $('craftList').innerHTML = Object.entries(groups).map(([g, list]) => `
+    <div class="craftGroup"><h4>${g}</h4>${list.map(c => {
+      const owned = Sim.hasCraft(S, c.id);
+      const chk = Sim.canCraft(S, c.id);
+      const extra = c.id === 'weapon' ? ` <span class="gHave">${S.weaponLv}/${c.max}단계</span>`
+                  : c.id === 'potion' ? ` <span class="gHave">보유 ${S.potions}개</span>` : '';
+      return `<button class="craftItem${owned ? ' done' : ''}" data-craft="${c.id}"
+                ${chk.ok ? '' : 'disabled'}>
+        <div class="gHead"><span class="gIcon">${c.icon}</span><b>${c.name}</b>${extra}
+          <span class="gHave">${owned ? '보유 중' : (chk.ok ? '만들 수 있음' : chk.why)}</span></div>
+        <div class="gLine"><span class="gTag">필요</span>${costChips(c.cost)}</div>
+        <div class="gLine"><span class="gTag">효과</span>${c.effect}</div>
+      </button>`;
+    }).join('')}</div>`).join('');
+
+  $('craftList').querySelectorAll('[data-craft]').forEach(b => {
+    b.onclick = () => { Sim.doCraft(S, b.dataset.craft); handleEvents(); refreshCraft(); refreshBuildCards(); refreshHUD(); };
+  });
+}
+
+/* ---------------- 안내 화면 ----------------
+   "무엇을 캐야 하고, 무엇을 지으려면 무엇이 필요한가"를 한 곳에서 봅니다.
+   초보자가 가장 자주 막히는 지점이라 별도 화면으로 뺐습니다. */
+function resChip(key, amount) {
+  const r = C.RESOURCES[key];
+  const have = S ? Math.floor(S.res[key]) : 0;
+  const enough = !amount || have >= amount;
+  return `<span class="resChip${enough ? '' : ' lack'}" title="${r.name}">`
+    + `${r.icon} ${r.name}${amount ? ` <b>${amount}</b>` : ''}`
+    + (amount ? `<i>보유 ${have}</i>` : '') + '</span>';
+}
+function costChips(cost) {
+  return Object.entries(cost || {}).map(([k, v]) => resChip(k, v)).join('');
+}
+
+function refreshGuide() {
+  // 1) 자원 — 어디서 얻고 어디에 쓰는가
+  $('guideRes').innerHTML = Object.entries(C.RESOURCES).map(([k, r]) => {
+    const have = S ? Math.floor(S.res[k]) : 0;
+    const got = S ? Math.floor(S.got[k]) : 0;
+    return `<div class="gRow">
+      <div class="gHead"><span class="gIcon">${r.icon}</span>
+        <b style="color:${r.color}">${r.name}</b>
+        <span class="gHave">보유 ${have}${got ? ` · 누적 ${got}` : ''}</span></div>
+      <div class="gLine"><span class="gTag">어디서</span>${r.from}</div>
+      <div class="gLine"><span class="gTag">어디에</span>${r.use}</div>
+    </div>`;
+  }).join('');
+
+  // 2) 건설 — 무엇이 필요한가
+  $('guideBuild').innerHTML = C.BUILDS.map(b => `
+    <div class="gRow">
+      <div class="gHead"><span class="gIcon">${b.icon}</span><b>${b.name}</b></div>
+      <div class="gLine"><span class="gTag">필요</span>${costChips(b.cost)}</div>
+      <div class="gLine"><span class="gTag">효과</span>${b.desc}</div>
+    </div>`).join('');
+
+  // 3) 제작 — 순서와 효과
+  $('guideCraft').innerHTML = C.CRAFTS.map(c => {
+    const chk = S ? Sim.canCraft(S, c.id) : { ok:false, why:'' };
+    const owned = S ? Sim.hasCraft(S, c.id) : false;
+    return `<div class="gRow${owned ? ' done' : ''}">
+      <div class="gHead"><span class="gIcon">${c.icon}</span><b>${c.name}</b>
+        <span class="gHave">${owned ? '보유 중' : (chk.ok ? '제작 가능' : chk.why)}</span></div>
+      <div class="gLine"><span class="gTag">필요</span>${costChips(c.cost)}</div>
+      <div class="gLine"><span class="gTag">효과</span>${c.effect}</div>
+    </div>`;
+  }).join('');
+
+  // 4) 성 단계
+  $('guideBase').innerHTML = C.BASE_LEVELS.map(b => {
+    const cur = S && S.baseLv === b.lv;
+    return `<div class="gRow${cur ? ' done' : ''}">
+      <div class="gHead"><span class="gIcon">🏯</span><b>${b.lv}단계 ${b.name}</b>
+        <span class="gHave">${cur ? '현재' : ''}체력 ${b.maxHp}</span></div>
+      <div class="gLine"><span class="gTag">필요</span>${b.cost ? costChips(b.cost) : '기본'}</div>
+      <div class="gLine"><span class="gTag">효과</span>${b.desc}</div>
+    </div>`;
+  }).join('');
 }
 
 /* ---------------- 오버레이 ---------------- */
@@ -390,19 +511,27 @@ function showEnd(e) {
 /* ---------------- 시작 화면 ---------------- */
 function renderHeroCards() {
   const box = $('heroCards');
+  const open = unlockedHeroes();
   box.innerHTML = '';
+  // 잠긴 장수도 보여줍니다 — 뽑을 이유가 눈에 보여야 가챠가 의미를 가집니다
+  if (!open.has(C.GENERALS[selHero].id)) selHero = 0;
   C.GENERALS.forEach((g, i) => {
+    const locked = !open.has(g.id);
     const el = document.createElement('button');
-    el.className = 'gcard' + (i === selHero ? ' on' : '');
+    el.className = 'gcard' + (i === selHero ? ' on' : '') + (locked ? ' locked' : '');
     el.style.borderTopColor = g.color;
-    el.innerHTML = `<div class="gr" style="color:${g.color}">${g.grade} · ${g.tag}</div>`
+    el.innerHTML = (locked ? '<div class="lockTag">🔒 가챠로 획득</div>' : '')
+      + `<div class="gr" style="color:${g.color}">${g.grade} · ${g.tag}</div>`
       + `<div class="nm">${g.name}</div><div class="ds">${g.desc}</div>`
       + `<div class="stat"><span>전투 스탯</span><b>${Math.round(g.combat * 100)}%</b></div>`
       + `<div class="stat"><span>시작 자원</span><b class="${g.startRes > 1 ? 'up' : 'down'}">${Math.round(g.startRes * 100)}%</b></div>`
       + `<div class="stat"><span>웨이브 강도</span><b class="${g.waveMul > 1 ? 'down' : 'up'}">${Math.round(g.waveMul * 100)}%</b></div>`
       + `<div class="stat"><span>22일 이후 성장</span><b class="${g.lateGrow > 0 ? 'up' : ''}">${g.lateGrow > 0 ? '+' + Math.round(g.lateGrow * 100) + '%' : '없음'}</b></div>`
       + `<div class="stat" style="border-top:none;"><span style="color:${g.color}">${g.skill}</span><b></b></div>`;
-    el.onclick = () => { selHero = i; renderHeroCards(); };
+    el.onclick = () => {
+      if (locked) { toast(`<b>${g.name}</b>은(는) 가챠로 뽑아야 열립니다`); return; }
+      selHero = i; renderHeroCards();
+    };
     box.appendChild(el);
   });
   const best = Number(localStorage.getItem('sg3d_best') || 0);
@@ -414,8 +543,8 @@ function renderHeroCards() {
 const GACHA = [
   { g: '일반', p: .55, c: '#9aa7b0', pool: ['주창','부첨','장익','마대','왕평','유봉','곽준','요화'] },
   { g: '희귀', p: .30, c: '#5B8FC7', pool: ['태사자','장료','서황','감녕'] },
-  { g: '영웅', p: .12, c: '#9B6FC9', pool: ['하후돈','황충','위연','방덕'] },
-  { g: '전설', p: .027, c: '#E08B3C', pool: ['조운','장비','관우','허저'] },
+  { g: '영웅', p: .12, c: '#9B6FC9', pool: ['하후돈','황충','위연','방덕'] },   // 하후돈·황충은 플레이 가능
+  { g: '전설', p: .027, c: '#E08B3C', pool: ['관우','조운','장비','허저'] },   // 관우는 플레이 가능
   { g: '신화', p: .003, c: '#E0B44A', pool: ['여포','제갈량','조조'] }
 ];
 const getDex = () => { try { return JSON.parse(localStorage.getItem('sg3d_dex') || '[]'); } catch { return []; } };
@@ -440,7 +569,15 @@ function pull() {
   const name = pick.pool[Math.floor(Math.random() * pick.pool.length)];
   const dex = getDex(), key = `${pick.g} ${name}`, dup = dex.includes(key);
   if (!dup) { dex.push(key); localStorage.setItem('sg3d_dex', JSON.stringify(dex)); }
-  const playable = ['요화','태사자','여포'].includes(name);
+
+  // 이름이 플레이 가능한 장수와 같으면 그 장수를 실제로 열어줍니다
+  const hero = C.GENERALS.find(h => h.name === name);
+  const playable = !!hero;
+  let newlyUnlocked = false;
+  if (hero) {
+    newlyUnlocked = unlockHero(hero.id);
+    if (newlyUnlocked) renderHeroCards();
+  }
 
   const box = $('pullResult');
   box.style.display = 'block';
@@ -448,10 +585,11 @@ function pull() {
   box.innerHTML = `<div style="font-size:44px;">${pick.g === '신화' ? '🐉' : pick.g === '전설' ? '⚔️' : pick.g === '영웅' ? '🏹' : '🛡️'}</div>`
     + `<div style="font-size:13px;font-weight:800;color:${pick.c}">${pick.g}</div>`
     + `<div style="font-size:22px;font-weight:900;">${name}</div>`
-    + `<div style="font-size:11.5px;color:#9E9384;margin-top:6px;">`
-    + (dup ? '중복 — 실제 서비스에서는 각성 재료로 전환됩니다'
-           : playable ? '이 프로토타입에서 플레이 가능한 장수입니다'
-                      : '프로토타입 미구현 — 도감에만 기록됩니다') + '</div>';
+    + `<div style="font-size:11.5px;margin-top:6px;color:${newlyUnlocked ? '#5FAE72' : '#9E9384'};">`
+    + (newlyUnlocked ? '<b>새 장수 해금!</b> 시작 화면에서 고를 수 있습니다'
+       : playable ? '이미 보유한 장수입니다'
+       : dup ? '중복 — 실제 서비스에서는 각성 재료로 전환됩니다'
+             : '프로토타입 미구현 — 도감에만 기록됩니다') + '</div>';
   $('shopShard').textContent = wallet + (S ? S.shard : 0);
   $('pityLeft').textContent = Math.max(0, 90 - pity);
   $('dexList').innerHTML = dex.length ? dex.map(x => '· ' + x).join('<br>') : '아직 없습니다.';
@@ -471,6 +609,7 @@ window.addEventListener('keydown', e => {
     if (k === ' ' || k === 'shift') doDodge();
     if (k === 'q') doSkill(0);
     if (k === 'e') doSkill(1);
+    if (k === 'h') { Sim.usePotion(S); handleEvents(); refreshHUD(); }
   }
   keys[k] = true;
   if (e.key === 'Escape') { buildSel = null; refreshBuildCards(); R3.setBuildMode(false); cancelBuild(); }
@@ -549,6 +688,11 @@ function applyInput() {
 
   stage.addEventListener('pointerdown', e => {
     if (!S || S.over || fromUI(e)) return;
+    // 건설 모드가 아닐 때의 좌클릭 = 직접 타격
+    if (!buildSel && e.button === 0 && !uiOpen && !paused) {
+      Sim.clickAttack(S);
+      handleEvents();
+    }
     dragging = true;
     lastX = e.clientX; lastY = e.clientY;
     stage.setPointerCapture(e.pointerId);
@@ -654,11 +798,9 @@ if ($('btnConfirmBuild')) $('btnConfirmBuild').onclick = confirmBuild;
 if ($('btnCancelBuild')) $('btnCancelBuild').onclick = cancelBuild;
 if ($('chkInstant')) $('chkInstant').onchange = e => { instantBuild = e.target.checked; };
 $('btnHire').onclick = () => Sim.hireSoldier(S);
-$('btnCraft').onclick = () => {
-  if (!S) return;
-  if (!S.forge) { toast('먼저 <b>대장간</b>을 지어야 합니다'); return; }
-  refreshCraft(); openScreen('scCraft');
-};
+$('btnCraft').onclick = () => { if (!S) return; refreshCraft(); openScreen('scCraft'); };
+$('btnGuide').onclick = () => { refreshGuide(); openScreen('scGuide'); };
+$('btnGuideClose').onclick = () => closeAll();
 $('btnCraftClose').onclick = () => closeAll();
 $('btnShop').onclick = () => {
   $('shopShard').textContent = wallet + (S ? S.shard : 0);

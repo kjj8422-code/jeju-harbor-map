@@ -70,8 +70,8 @@ export function createSim(heroId) {
     day: 1, dayT: 0, warnT: 0, t: 0,
     over: false, win: false,
 
-    res: { wood: Math.round(60 * mul), stone: Math.round(30 * mul), iron: 0 },
-    got: { wood: 0, stone: 0, iron: 0 },
+    res: { wood: Math.round(60 * mul), stone: Math.round(30 * mul), iron: 0, herb: 0, hide: 0 },
+    got: { wood: 0, stone: 0, iron: 0, herb: 0, hide: 0 },
     cnt: { wall: 0, trap: 0, camp: 0 },
     shard: 0,
 
@@ -93,7 +93,7 @@ export function createSim(heroId) {
     base: {
       x: C.BASE_TX * C.TILE + C.TILE / 2,
       y: C.BASE_TY * C.TILE + C.TILE / 2,
-      hp: C.BASE_HP, maxHp: C.BASE_HP
+      hp: C.BASE_LEVELS[0].maxHp, maxHp: C.BASE_LEVELS[0].maxHp
     },
 
     occ: new Uint8Array(C.MAPW * C.MAPH),
@@ -109,6 +109,10 @@ export function createSim(heroId) {
     waveIdx: 0, waveStats: null,
     objIdx: 0,
     pickaxe: false, weaponLv: 0, forge: false, camps: 0,
+    // 장비 — 만든 것만 true 가 됩니다
+    gear: { ironpick:false, huntknife:false, torch:false, leather:false, ironmail:false },
+    potions: 0,
+    baseLv: 1, baseTowerCd: 0,
     lastStand: false,
     trapSeq: 0,
     input: { x: 0, y: 0 },
@@ -138,6 +142,9 @@ function buildMap(S) {
   // 철광은 지도 정중앙 8칸 폭에만 — 양 팀이 반드시 만나는 지점
   const mid = Math.floor(C.MAPW / 2);
   for (let m = 0; m < 14; m++) addNode(S, ri(mid - 4, mid + 4), ri(4, C.MAPH - 5), 'iron');
+
+  // 약초 — 들판 곳곳에. 도구 없이 바로 캘 수 있어 초반 목표가 하나 늘어납니다
+  for (let h = 0; h < 26; h++) addNode(S, ri(2, C.MAPW - 3), ri(2, C.MAPH - 3), 'herb');
 
   // 시작 자원 보장
   addNode(S, C.BASE_TX + 3, C.BASE_TY - 2, 'wood');
@@ -326,17 +333,149 @@ export function cycleRole(S, i) {
   emit(S, 'soldiers');
 }
 
+/** 이미 만들었는가 */
+export function hasCraft(S, id) {
+  if (id === 'pickaxe') return S.pickaxe;
+  if (id === 'weapon') return S.weaponLv >= 3;
+  if (id === 'potion') return false;            // 소모품은 계속 만들 수 있습니다
+  return !!S.gear[id];
+}
+
+/** 만들 수 있는지와 그 이유 — 화면이 "왜 안 되는지"를 보여줄 수 있게 */
+export function canCraft(S, id) {
+  const c = C.CRAFTS.find(x => x.id === id);
+  if (!c) return { ok:false, why:'없는 항목' };
+  if (!S.forge) return { ok:false, why:'대장간이 필요합니다' };
+  if (hasCraft(S, id)) return { ok:false, why:'이미 보유' };
+  if (c.need && !hasCraft(S, c.need)) {
+    const pre = C.CRAFTS.find(x => x.id === c.need);
+    return { ok:false, why:`먼저 ${pre ? pre.name : c.need} 필요` };
+  }
+  if (!canAfford(S, c.cost)) return { ok:false, why:'자원 부족' };
+  return { ok:true, why:'' };
+}
+
 export function doCraft(S, id) {
   const c = C.CRAFTS.find(x => x.id === id);
-  if (!c) return false;
-  if (!S.forge) { toast(S, '먼저 <b>대장간</b>을 지어야 합니다'); return false; }
-  if (id === 'pickaxe' && S.pickaxe) { toast(S, '이미 가지고 있습니다'); return false; }
-  if (id === 'weapon' && S.weaponLv >= c.max) { toast(S, '최대 강화 단계입니다'); return false; }
-  if (!canAfford(S, c.cost)) { toast(S, `자원이 부족합니다 — ${costText(c.cost)}`); return false; }
+  const chk = canCraft(S, id);
+  if (!chk.ok) { toast(S, chk.why); sound(S, 'deny'); return false; }
   pay(S, c.cost);
-  if (id === 'pickaxe') { S.pickaxe = true; toast(S, '돌 곡괭이 완성 — 지도 <b>중앙의 철광</b>을 캘 수 있습니다'); }
-  if (id === 'weapon') { S.weaponLv++; toast(S, `무기 강화 ${S.weaponLv}단계 — 공격력 +${25 * S.weaponLv}%`); }
+
+  switch (id) {
+    case 'pickaxe':
+      S.pickaxe = true;
+      toast(S, '돌 곡괭이 완성 — 지도 <b>중앙의 철광</b>을 캘 수 있습니다');
+      break;
+    case 'weapon':
+      S.weaponLv++;
+      toast(S, `무기 강화 ${S.weaponLv}단계 — 공격력 +${25 * S.weaponLv}%`);
+      break;
+    case 'potion':
+      S.potions++;
+      toast(S, `치유약 ${S.potions}개 — <b>H</b> 키로 마십니다`);
+      break;
+    case 'leather':
+      S.gear.leather = true;
+      S.hero.maxHp += 40; S.hero.hp += 40;
+      toast(S, '가죽 갑옷 — 최대 체력 +40');
+      break;
+    default:
+      S.gear[id] = true;
+      toast(S, `${c.name} 완성 — ${c.effect}`);
+  }
   sound(S, 'craft');
+  emit(S, 'crafted', { id });
+  return true;
+}
+
+/** 치유약 마시기 */
+export function usePotion(S) {
+  if (S.potions <= 0 || S.hero.dead) return false;
+  if (S.hero.hp >= S.hero.maxHp) { toast(S, '체력이 이미 가득합니다'); return false; }
+  S.potions--;
+  S.hero.hp = Math.min(S.hero.maxHp, S.hero.hp + C.POTION_HEAL);
+  fx(S, S.hero.x, S.hero.y - 26, `+${C.POTION_HEAL}`, '#5FAE72');
+  emit(S, 'potion', {});
+  sound(S, 'craft');
+  return true;
+}
+
+/* ==================================================================
+   성(거점) 업그레이드
+   ================================================================== */
+export function nextBaseLevel(S) {
+  return C.BASE_LEVELS.find(b => b.lv === S.baseLv + 1) || null;
+}
+export function canUpgradeBase(S) {
+  const nx = nextBaseLevel(S);
+  if (!nx) return { ok:false, why:'최고 단계입니다' };
+  if (!canAfford(S, nx.cost)) return { ok:false, why:'자원 부족' };
+  if (isNight(S)) return { ok:false, why:'밤에는 공사할 수 없습니다' };
+  return { ok:true, why:'' };
+}
+export function upgradeBase(S) {
+  const chk = canUpgradeBase(S);
+  const nx = nextBaseLevel(S);
+  if (!chk.ok) { toast(S, chk.why); sound(S, 'deny'); return false; }
+  pay(S, nx.cost);
+  S.baseLv = nx.lv;
+  const gain = nx.maxHp - S.base.maxHp;
+  S.base.maxHp = nx.maxHp;
+  S.base.hp = Math.min(S.base.maxHp, S.base.hp + gain);   // 올린 만큼 채워줍니다
+  toast(S, `거점이 <b>${nx.name}</b>(이)가 되었습니다 — ${nx.desc}`);
+  sound(S, 'upgrade');
+  emit(S, 'baseUpgraded', { lv: S.baseLv });
+  return true;
+}
+
+/** 3단계 망루의 자동 공격 */
+function updateBaseTower(S, dt) {
+  if (S.baseLv < 3) return;
+  S.baseTowerCd -= dt;
+  if (S.baseTowerCd > 0) return;
+  let best = null, bd = C.BASE_TOWER_RANGE * C.BASE_TOWER_RANGE;
+  for (const m of S.monsters) {
+    const d = dist2(S.base.x, S.base.y, m.x, m.y);
+    if (d < bd) { bd = d; best = m; }
+  }
+  if (!best) return;
+  S.baseTowerCd = C.BASE_TOWER_CD;
+  emit(S, 'towerShot', { from:{ x:S.base.x, y:S.base.y }, to:{ x:best.x, y:best.y } });
+  damageMonster(S, best, C.BASE_TOWER_DMG, 'soldier', null);
+}
+
+/** 마우스 클릭 타격 — 쿨다운이 돌아왔으면 즉시 한 대 칩니다.
+    자동 공격도 그대로 돌아가므로, 클릭은 "직접 때리는 손맛"을 위한 것입니다. */
+export function clickAttack(S) {
+  const h = S.hero;
+  if (S.over || h.dead || h.cd > 0 || h.dodgeT > 0) return false;
+
+  const R = heroRange(S);
+  let best = null, bd = R * R;
+  for (const m of S.monsters) {
+    const d = dist2(h.x, h.y, m.x, m.y);
+    if (d < bd) { bd = d; best = m; }
+  }
+  h.cd = heroCd(S);
+  h.swing = 0.24; h.swingKind = 'attack';
+  sound(S, 'swing');
+
+  if (!best) {                       // 허공을 휘둘러도 동작은 나갑니다
+    emit(S, 'heroSwing', { x: h.x, y: h.y, weapon: S.heroDef.weapon, miss: true });
+    return true;
+  }
+  h.facing = Math.atan2(best.x - h.x, best.y - h.y);
+  knockback(best, h.x, h.y, C.KNOCKBACK);
+  const crit = Math.random() < (C.CRIT_CHANCE + (S.heroDef.critBonus || 0));
+  const dmg = heroDamage(S) * (crit ? C.CRIT_MUL : 1);
+  damageMonster(S, best, dmg, 'hero', null, false, crit);
+  if (S.heroDef.lifesteal) {
+    const heal = dmg * S.heroDef.lifesteal * (h.guard > 0 ? 2 : 1);
+    h.hp = Math.min(h.maxHp, h.hp + heal);
+    fx(S, h.x, h.y - 26, `+${Math.round(heal)}`, '#5FAE72');
+  }
+  if (S.heroDef.weapon === 'bow') emit(S, 'shot', { from:{x:h.x,y:h.y}, to:{x:best.x,y:best.y} });
+  emit(S, 'heroSwing', { x: h.x, y: h.y, target:{x:best.x,y:best.y}, weapon: S.heroDef.weapon });
   return true;
 }
 
@@ -449,6 +588,7 @@ function damageHero(S, amt, from) {
   const h = S.hero;
   if (h.invuln > 0) { fx(S, h.x, h.y - 20, '회피!', '#5FAE72'); emit(S, 'dodgeSuccess'); return false; }
   if (h.guard > 0) amt *= (1 - h.guardReduce);
+  if (S.gear.ironmail) amt *= 0.8;
   h.hp -= amt;
   fx(S, h.x, h.y - 16, `-${Math.round(amt)}`, '#E0554A');
   emit(S, 'heroHit', { x: h.x, y: h.y, dmg: amt });
@@ -569,6 +709,7 @@ export function update(S, dt) {
   updateHero(S, dt);
   updateSoldiers(S, dt);
   updateMonsters(S, dt);
+  updateBaseTower(S, dt);
   cleanupTraps(S);
 
   if (!S.lastStand && S.base.hp <= S.base.maxHp * 0.2 && S.base.hp > 0) {
@@ -673,7 +814,14 @@ function updateHero(S, dt) {
       h.cd = heroCd(S);
       h.swing = 0.24; h.swingKind = 'attack';
       knockback(best, h.x, h.y, C.KNOCKBACK);
-      damageMonster(S, best, heroDamage(S), 'hero', null);
+      const crit = Math.random() < (C.CRIT_CHANCE + (S.heroDef.critBonus || 0));
+      const dmg = heroDamage(S) * (crit ? C.CRIT_MUL : 1);
+      damageMonster(S, best, dmg, 'hero', null, false, crit);
+      if (S.heroDef.lifesteal) {
+        const heal = dmg * S.heroDef.lifesteal * (h.guard > 0 ? 2 : 1);
+        h.hp = Math.min(h.maxHp, h.hp + heal);
+        fx(S, h.x, h.y - 26, `+${Math.round(heal)}`, '#5FAE72');
+      }
       sound(S, 'swing');
       if (S.heroDef.weapon === 'bow') emit(S, 'shot', { from: { x: h.x, y: h.y }, to: { x: best.x, y: best.y } });
       emit(S, 'heroSwing', { x: h.x, y: h.y, target: { x: best.x, y: best.y }, weapon: S.heroDef.weapon });
@@ -692,7 +840,7 @@ function updateHero(S, dt) {
     if (d2 < nd2) { nd2 = d2; node = n; }
   }
   if (node) {
-    h.gp += C.GATHER_RATE[node.type] * dt;
+    h.gp += C.GATHER_RATE[node.type] * (S.gear.ironpick ? 1.6 : 1) * dt;
     while (h.gp >= 1 && node.amt > 0) {
       h.gp -= 1; node.amt--; S.res[node.type]++; S.got[node.type]++;
       if (node.amt <= 0) { node.regrow = S.t + C.NODE_REGROW_SEC; emit(S, 'nodeDepleted', { node }); }
@@ -872,6 +1020,12 @@ function updateMonsters(S, dt) {
       continue;
     }
 
+    // 관우의 위압 — 가까이 있는 적이 느려집니다
+    if (S.heroDef.slowAura && !S.hero.dead &&
+        dist2(m.x, m.y, S.hero.x, S.hero.y) < 220 * 220) {
+      slowMul *= (1 - S.heroDef.slowAura);
+    }
+
     // 이동 — 길이 있으면 흐름장, 막혔으면 목책 파괴
     const d = S.dist[k];
     if (d < 0) {
@@ -966,10 +1120,19 @@ function nearestWall(S, x, y) {
   return best;
 }
 
-export function damageMonster(S, m, amt, src, trap, heavy) {
+export function damageMonster(S, m, amt, src, trap, heavy, crit) {
   if (m.dead) return;
   m.hp -= amt;
   m.hitFlash = 0.12;
+
+  // 맞은 자리에 피해 숫자 — 타격감의 절반은 이 숫자에서 나옵니다
+  if (src !== 'trap' || Math.random() < 0.25) {
+    emit(S, 'hitNumber', {
+      x: m.x, y: m.y, amount: Math.max(1, Math.round(amt)),
+      crit: !!crit, src
+    });
+  }
+  if (src === 'hero') emit(S, 'hitSpark', { x: m.x, y: m.y, crit: !!crit });
 
   // 장수가 때렸을 때만 잠깐 얼립니다 (함정 지속 피해까지 얼면 어색합니다)
   if (src === 'hero') m.hitStop = C.HITSTOP;
@@ -990,6 +1153,11 @@ export function damageMonster(S, m, amt, src, trap, heavy) {
     } else if (src === 'soldier') st.bySoldier++;
     else st.byHero++;
   }
+  // 가죽 — 밤에 싸운 결과가 낮의 장비로 이어집니다
+  const hide = C.HIDE_PER_KILL * (S.gear.huntknife ? 2 : 1) * (m.boss ? 6 : 1);
+  S.res.hide += hide; S.got.hide += hide;
+  fx(S, m.x, m.y - 24, `가죽 +${hide}`, '#c99a6b');
+
   fx(S, m.x, m.y - 12, m.boss ? '두목 처치!' : '처치', m.boss ? '#E0B44A' : '#E0554A');
   emit(S, 'monsterDied', { x: m.x, y: m.y, boss: m.boss });
   sound(S, m.boss ? 'bossDie' : 'die');

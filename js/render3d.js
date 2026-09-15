@@ -462,6 +462,12 @@ function wrapModel(slot) {
   return g;
 }
 
+/** 성을 다시 짓습니다 (업그레이드 시 호출) */
+export function rebuildBase(S) {
+  if (R.baseGroup) { R.scene.remove(R.baseGroup); R.baseGroup = null; }
+  buildBase(S);
+}
+
 function buildBase(S) {
   if (Models.has('base')) {
     const g = wrapModel('base');
@@ -471,12 +477,15 @@ function buildBase(S) {
     return;
   }
   const g = new THREE.Group();
-  const r = C.TILE * 1.5 * S3;
-  const WALL_H = 3.0, WALL_T = 0.8;   // 사람(1.8)보다 확실히 높아야 성벽처럼 보입니다
+  const lv = S.baseLv || 1;
+  // 단계가 오르면 눈에 보이게 커집니다 — 자원을 쓴 보람이 있어야 합니다
+  const r = C.TILE * 1.5 * S3 * (1 + (lv - 1) * 0.12);
+  const WALL_H = 3.0 + (lv - 1) * 1.1, WALL_T = 0.8 + (lv - 1) * 0.15;
 
   // 돌로 된 부분을 전부 모아 한 번에 그립니다.
   // 성가퀴만 32개라 따로 그리면 거점 하나에 draw call 40번(그림자까지 80번)이 듭니다.
   const stoneParts = [];
+  const keepTop = 4.4 + (lv - 1) * 1.2;
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
   const sides = [
@@ -487,7 +496,7 @@ function buildBase(S) {
     stoneParts.push({ geo: new THREE.BoxGeometry(sx, WALL_H, sz), pos: V(ox, WALL_H / 2, oz) });
   }
   stoneParts.push({ geo: new THREE.BoxGeometry(r * 2, 0.25, r * 2), pos: V(0, 0.12, 0) });   // 안마당
-  stoneParts.push({ geo: new THREE.BoxGeometry(r * 0.9, 4.4, r * 0.9), pos: V(0, 2.2, 0) }); // 망루
+  stoneParts.push({ geo: new THREE.BoxGeometry(r * 0.9, keepTop, r * 0.9), pos: V(0, keepTop / 2, 0) }); // 망루
 
   const step = r * 2 / 7;
   const qRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
@@ -500,17 +509,32 @@ function buildBase(S) {
   }
   g.add(mergeParts(stoneParts, MAT.stone, R.quality.shadows, R.quality.shadows));
 
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(r * 0.78, 1.5, 4), MAT.wood);
-  roof.position.y = 5.1;
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(r * 0.78, 1.5 + (lv - 1) * 0.4, 4),
+                              lv >= 3 ? MAT.ironRock : MAT.wood);
+  roof.position.y = keepTop + 0.9;
   roof.rotation.y = Math.PI / 4;
   roof.castShadow = R.quality.shadows;
   g.add(roof);
+
+  // 3단계 — 망루에 화살대를 세워 "자동으로 쏜다"를 보여줍니다
+  if (lv >= 3) {
+    for (const [ox, oz] of [[-r*0.8, -r*0.8], [r*0.8, -r*0.8], [-r*0.8, r*0.8], [r*0.8, r*0.8]]) {
+      const t = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, WALL_H + 1.4, 6), MAT.stone);
+      t.position.set(ox, (WALL_H + 1.4) / 2, oz);
+      t.castShadow = R.quality.shadows;
+      g.add(t);
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.7, 6), MAT.ironRock);
+      cap.position.set(ox, WALL_H + 1.75, oz);
+      g.add(cap);
+    }
+  }
   // 깃대
+  const flagY = keepTop + 2.9;
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4, 5), MAT.trunk);
-  pole.position.set(0, 7.0, 0);
+  pole.position.set(0, flagY, 0);
   g.add(pole);
   const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.72), MAT.flag);
-  flag.position.set(0.62, 7.8, 0);
+  flag.position.set(0.62, flagY + 0.8, 0);
   g.add(flag);
   R.baseFlag = flag;
 
@@ -613,7 +637,10 @@ function buildHero(S) {
 
   // 무기 — 장수마다 다릅니다
   const wgrp = makeWeapon(d.weapon);
-  wgrp.position.set(d.weapon === 'bow' ? 0.34 : 0.42, 0.72, d.weapon === 'bow' ? 0.18 : 0.05);
+  // 무기를 크게 — 작으면 뭘 들었는지 안 보입니다
+  const wscale = (C.WEAPON[d.weapon] || C.WEAPON.sword).scale || 1.4;
+  wgrp.scale.setScalar(wscale);
+  wgrp.position.set(d.weapon === 'bow' ? 0.42 : 0.5, 0.72, d.weapon === 'bow' ? 0.22 : 0.05);
   wgrp.rotation.z = d.weapon === 'bow' ? 0 : -0.2;
   g.add(wgrp);
   g.userData.weapon = wgrp;
@@ -698,21 +725,53 @@ function ensureWallInstances() {
   R.scene.add(R.wallInst);
 }
 
+/* ★ 목책이 늘 같은 방향으로만 서 있으면 어색합니다.
+   이웃한 목책을 보고 결을 맞춥니다:
+     좌우로 이어지면  가로로 늘어서고
+     위아래로 이어지면 세로로 늘어서고
+     모서리·외톨이는   네 귀퉁이에 박습니다 */
+function wallLayout(tx, ty, tileSet) {
+  const E = tileSet.has(ty * C.MAPW + (tx + 1)) || tileSet.has(ty * C.MAPW + (tx - 1));
+  const N = tileSet.has((ty + 1) * C.MAPW + tx) || tileSet.has((ty - 1) * C.MAPW + tx);
+  if (E && N) return 'corner';
+  if (N) return 'vertical';
+  if (E) return 'horizontal';
+  return 'post';
+}
+
 function rebuildWalls() {
   ensureWallInstances();
   let i = 0;
   const half = C.TILE * S3 * 0.5;
+  const tileSet = new Set(wallTiles);
+
   for (const k of wallTiles) {
     const tx = k % C.MAPW, ty = (k / C.MAPW) | 0;
     const cx = gx(tx * C.TILE + C.TILE / 2), cz = gz(ty * C.TILE + C.TILE / 2);
+    const layout = wallLayout(tx, ty, tileSet);
+
     for (let j = 0; j < LOGS_PER_WALL; j++) {
       if (i >= MAX_WALLS * LOGS_PER_WALL) break;
-      // 통나무를 한 칸 폭에 나란히 세우고 조금씩 높이를 달리해 손으로 세운 느낌을 냅니다
       const t = (j + 0.5) / LOGS_PER_WALL;
+      // 손으로 세운 느낌 — 높이와 기울기를 조금씩 다르게
       const h = 0.92 + ((tx * 7 + ty * 13 + j * 5) % 5) * 0.06;
+      const lean = (((tx + ty + j) % 3) - 1) * 0.05;
+
+      let ox = 0, oz = 0;
+      if (layout === 'horizontal')      { ox = -half + t * half * 2; oz = 0; }
+      else if (layout === 'vertical')   { ox = 0; oz = -half + t * half * 2; }
+      else if (layout === 'corner')     {          // 모서리 — ㄱ 자로 꺾어 세웁니다
+        ox = (j < 2 ? -half + (j + 0.5) * half : 0);
+        oz = (j < 2 ? 0 : -half + (j - 1.5) * half);
+      } else {                                      // 외톨이 — 네 귀퉁이에 박은 말뚝
+        ox = (j % 2 ? 1 : -1) * half * 0.45;
+        oz = (j < 2 ? -1 : 1) * half * 0.45;
+      }
+
       _sc.set(1, h, 1);
-      _q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), (((tx + ty + j) % 3) - 1) * 0.05);
-      _v.set(cx - half + t * half * 2, 0.575 * h, cz);
+      _q.setFromEuler(new THREE.Euler(layout === 'vertical' ? lean : 0, 0,
+                                      layout === 'vertical' ? 0 : lean));
+      _v.set(cx + ox, 0.575 * h, cz + oz);
       R.wallInst.setMatrixAt(i++, _m4.compose(_v, _q, _sc));
     }
   }
@@ -1021,10 +1080,23 @@ function updateVfx(S, dt) {
     const p = v.t / v.life;
     if (p >= 1) { R.scene.remove(v.mesh); R.vfx.splice(i, 1); continue; }
     if (v.kind === 'wave') {
-      v.mesh.scale.setScalar(0.2 + p * v.radius);
-      v.mesh.material.opacity = 0.85 * (1 - p);
+      const ease = 1 - Math.pow(1 - p, 2);      // 처음에 빠르게 퍼지고 끝에서 잦아듭니다
+      v.mesh.scale.setScalar(0.3 + ease * v.radius);
+      v.mesh.material.opacity = 0.75 * (1 - p) * (1 - p);
     } else if (v.kind === 'beam') {
       v.mesh.material.opacity = 0.6 * (1 - p);
+    } else if (v.kind === 'spark') {
+      const g = 7.5;
+      for (let j = 0; j < v.n; j++) {
+        const q = v.parts[j];
+        q.vy -= g * dt;
+        q.px += q.vx * dt; q.py += q.vy * dt; q.pz += q.vz * dt;
+        _sc.setScalar(q.s * (1 - p));
+        _v.set(q.px, q.py, q.pz);
+        v.mesh.setMatrixAt(j, _m4.compose(_v, _q.identity(), _sc));
+      }
+      v.mesh.instanceMatrix.needsUpdate = true;
+      v.mesh.material.opacity = 1 - p * p;
     } else if (v.kind === 'aura') {
       v.mesh.position.set(gx(S.hero.x), 0.07, gz(S.hero.y));
       v.mesh.scale.setScalar(1 + Math.sin(v.t * 8) * 0.08);
@@ -1153,6 +1225,8 @@ function buildGhostShape(kind) {
       const log = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 1.05, 6), mat);
       log.position.set(-half + ((j + 0.5) / 4) * half * 2, 0.53, 0);
       g.add(log);
+      g.userData.logs = g.userData.logs || [];
+      g.userData.logs.push(log);
     }
   } else if (kind === 'trap') {
     for (let i = 0; i < 4; i++) {
@@ -1213,8 +1287,8 @@ export function spawnArrow(from, to) {
 /** 바닥에서 퍼져나가는 원 — 광역 스킬의 범위를 눈으로 알려줍니다 */
 export function spawnShockwave(x, y, radius, color, life = 0.45) {
   const m = new THREE.Mesh(
-    new THREE.RingGeometry(0.55, 0.72, 40),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85,
+    new THREE.RingGeometry(0.93, 1.0, 48),     // 얇은 테두리라야 적이 가려지지 않습니다
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7,
                                   side: THREE.DoubleSide, depthWrite: false }));
   m.rotation.x = -Math.PI / 2;
   m.position.set(gx(x), 0.08, gz(y));
@@ -1245,6 +1319,28 @@ export function spawnAura(color, dur) {
   m.rotation.x = -Math.PI / 2;
   R.scene.add(m);
   R.vfx.push({ mesh: m, t: 0, life: dur, kind: 'aura' });
+}
+
+/* 타격 순간 튀는 파편 — 숫자만으로는 "맞았다"가 약합니다 */
+const sparkGeo = new THREE.TetrahedronGeometry(0.075, 0);
+export function spawnHitSpark(x, y, crit) {
+  const n = crit ? 12 : 7;
+  const color = crit ? 0xFFD98A : 0xFFF0C8;
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
+  const im = new THREE.InstancedMesh(sparkGeo, mat, n);      // 파편 전부를 한 번에 그립니다
+  im.frustumCulled = false;
+  const parts = [];
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.283, up = 0.6 + Math.random() * 2.2;
+    parts.push({ px: 0, py: 0, pz: 0,
+                 vx: Math.cos(a) * (1.2 + Math.random() * 2.4),
+                 vy: up,
+                 vz: Math.sin(a) * (1.2 + Math.random() * 2.4),
+                 s: (crit ? 1.4 : 1) * (0.6 + Math.random() * 0.8) });
+  }
+  im.position.set(gx(x), 1.0, gz(y));
+  R.scene.add(im);
+  R.vfx.push({ mesh: im, t: 0, life: crit ? 0.5 : 0.35, kind: 'spark', parts, n });
 }
 
 export function shakeCamera(power) {

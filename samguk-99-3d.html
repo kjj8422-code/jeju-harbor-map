@@ -77,6 +77,40 @@ body{padding-bottom:20px;}
   padding:5px 13px;font-size:12px;font-weight:700;animation:tfade 2.6s ease forwards;}
 @keyframes tfade{0%{opacity:0;transform:translateY(8px);}12%{opacity:1;transform:none;}
   75%{opacity:1;}100%{opacity:0;transform:translateY(-8px);}}
+/* 피해 숫자 — 타격감의 절반은 이 숫자에서 나옵니다 */
+.dmgNum{position:absolute;font-size:15px;font-weight:900;color:#fff;
+  text-shadow:0 2px 4px #000,0 0 8px rgba(0,0,0,.9);transform:translate(-50%,-50%);
+  pointer-events:none;white-space:nowrap;}
+.dmgNum.crit{font-size:23px;color:#FFD98A;text-shadow:0 2px 6px #000,0 0 14px rgba(255,200,80,.9);}
+.dmgNum.trap{font-size:12px;color:#ff9e8e;}
+
+/* 자원 칩 — 필요한 자원과 보유량을 나란히 */
+.resChip{display:inline-flex;align-items:center;gap:4px;background:#2b261f;
+  border:1px solid var(--line);border-radius:14px;padding:3px 9px;margin:2px 4px 2px 0;
+  font-size:11.5px;font-weight:700;}
+.resChip.lack{border-color:var(--red);color:#ffb0a4;background:#361d19;}
+.resChip i{font-style:normal;font-size:10px;color:var(--dim);font-weight:600;}
+
+/* 안내·제작 행 */
+.gRow{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:9px 11px;margin-bottom:7px;}
+.gRow.done{border-color:var(--good);background:#1d2a20;}
+.gHead{display:flex;align-items:center;gap:7px;font-size:13.5px;margin-bottom:4px;flex-wrap:wrap;}
+.gIcon{font-size:17px;}
+.gHave{margin-left:auto;font-size:11px;color:var(--dim);font-weight:700;}
+.gLine{font-size:11.5px;color:#cfc6b8;line-height:1.7;display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;}
+.gTag{flex:0 0 auto;background:#2b261f;border-radius:4px;padding:1px 6px;font-size:10px;
+  color:var(--dim);font-weight:700;margin-top:2px;}
+.craftGroup{margin-bottom:12px;}
+.craftGroup h4{margin:0 0 6px;font-size:12px;color:var(--gold);}
+.craftItem{display:block;width:100%;text-align:left;background:var(--panel);
+  border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:7px;
+  color:var(--ink);font-family:inherit;cursor:pointer;}
+.craftItem:disabled{opacity:.5;cursor:not-allowed;}
+.craftItem.done{border-color:var(--good);background:#1d2a20;}
+.gcard.locked{opacity:.55;position:relative;}
+.gcard .lockTag{font-size:10.5px;color:var(--red);font-weight:800;margin-bottom:3px;}
+
 /* 체력 바 — 3D 위에 겹쳐 그립니다 (draw call 0) */
 .hpBar{position:absolute;width:44px;height:5px;background:rgba(0,0,0,.65);
   border:1px solid rgba(0,0,0,.8);border-radius:2px;transform:translate(-50%,-50%);
@@ -201,11 +235,14 @@ details.panel[open] summary::before{content:'▾ ';}
           <div class="bar"><div id="hHeroBar" style="width:100%;background:var(--red);"></div></div></div>
       </div>
       <div class="hudBox" style="text-align:right;">
-        <div class="res"><span><i>목재</i> <span id="hWood">0</span></span>
-          <span><i>석재</i> <span id="hStone">0</span></span>
-          <span><i>철</i> <span id="hIron">0</span></span></div>
-        <div style="color:var(--dim);margin-top:3px;">병사 <span id="hSol">0</span>/<span id="hSolMax">0</span>
-          · 옥새 <span id="hShard">0</span></div>
+        <div class="res"><span><i>🪵</i> <span id="hWood">0</span></span>
+          <span><i>🪨</i> <span id="hStone">0</span></span>
+          <span><i>⛓️</i> <span id="hIron">0</span></span>
+          <span><i>🌿</i> <span id="hHerb">0</span></span>
+          <span><i>🟤</i> <span id="hHide">0</span></span></div>
+        <div style="color:var(--dim);margin-top:3px;">🏯 <span id="hBaseLv">토성</span>
+          · 병사 <span id="hSol">0</span>/<span id="hSolMax">0</span>
+          · 🧪 <span id="hPotion">0</span> · 옥새 <span id="hShard">0</span></div>
         <div style="color:var(--red);font-weight:800;margin-top:3px;" id="hNext">다음 대란 D-10</div>
       </div>
     </div>
@@ -228,7 +265,8 @@ details.panel[open] summary::before{content:'▾ ';}
     <div class="ctrlRight">
       <span id="modeTag">🖱 드래그 = 카메라 회전 · 휠 = 확대</span>
       <button class="btn" id="btnCancel">✕ 건설 취소</button>
-      <button class="btn" id="btnCraft">🔨 제작소</button>
+      <button class="btn" id="btnGuide">📖 안내</button>
+      <button class="btn" id="btnCraft">🔨 제작·성</button>
       <button class="btn gold" id="btnShop">💎 가챠·확률표</button>
     </div>
   </div>
@@ -296,13 +334,61 @@ details.panel[open] summary::before{content:'▾ ';}
   </div>
 </div>
 
-<!-- 제작소 -->
+<!-- 제작소 · 성 -->
 <div class="screen" id="scCraft">
   <div class="sheet">
-    <h2>제작소</h2>
-    <p class="sub">도구 티어 게이팅 — 돌 곡괭이가 없으면 철광은 못 캡니다.</p>
-    <div class="gcards" id="craftList"></div>
+    <h2>제작소 · 성</h2>
+    <p class="sub">
+      장비는 순서가 있습니다 — 돌 곡괭이가 있어야 철을 캐고, 철이 있어야 철 곡괭이를 만듭니다.
+      가죽은 <b style="color:var(--gold)">밤에 몬스터를 잡아야</b> 나옵니다.
+    </p>
+    <p class="secTitle" style="margin-top:4px;">성 올리기</p>
+    <div id="baseUpgrade"></div>
+    <p class="secTitle">장비 제작 <span style="font-weight:600;color:var(--dim);font-size:11px;">— 대장간이 필요합니다</span></p>
+    <div id="craftList"></div>
     <button class="btn primary" id="btnCraftClose" style="margin-top:14px;padding:10px 20px;">닫기</button>
+  </div>
+</div>
+
+<!-- 안내 -->
+<div class="screen" id="scGuide">
+  <div class="sheet">
+    <h2>안내 — 무엇을 캐고 무엇을 지을까</h2>
+    <p class="sub">막히면 여기를 보세요. 게임 중 <b style="color:var(--gold)">📖 안내</b> 버튼으로 언제든 열립니다.</p>
+
+    <div class="panel" style="border-left:3px solid var(--gold);">
+      <h3>한 줄 요약</h3>
+      낮에는 <b>자원을 모으고 짓고</b>, 밤에는 <b>막습니다</b>.
+      11·22·33일 밤에 대란이 오니 그 전에 목책으로 길을 좁히고 함정을 까세요.<br>
+      <b>가죽</b>은 몬스터를 잡아야 나오므로, 밤의 전투가 낮의 장비로 이어집니다.
+    </div>
+
+    <p class="secTitle">자원 — 어디서 얻고 어디에 쓰나</p>
+    <div id="guideRes"></div>
+
+    <p class="secTitle">건설 — 무엇이 필요한가</p>
+    <div id="guideBuild"></div>
+
+    <p class="secTitle">장비 제작 — 순서와 효과</p>
+    <div id="guideCraft"></div>
+
+    <p class="secTitle">성 단계</p>
+    <div id="guideBase"></div>
+
+    <div class="panel">
+      <h3>조작 요약</h3>
+      <ul>
+        <li><b>이동</b> — W A S D (카메라가 보는 방향 기준) 또는 조이스틱</li>
+        <li><b>공격</b> — 자동. <b>마우스 좌클릭</b>으로 직접 때릴 수도 있습니다</li>
+        <li><b>회피</b> — Space. 적 발밑 <b style="color:#C6412F">붉은 원이 차오를 때</b> 구르면 빗나갑니다</li>
+        <li><b>스킬</b> — Q(기본) / E(고유). 스킬로 때리면 적의 공격이 끊깁니다</li>
+        <li><b>치유약</b> — H</li>
+        <li><b>카메라</b> — 드래그로 회전, 휠로 확대</li>
+        <li><b>건설</b> — 카드를 고르고 땅을 눌러 위치를 잡은 뒤 확인</li>
+      </ul>
+    </div>
+
+    <button class="btn primary" id="btnGuideClose" style="margin-top:14px;padding:10px 20px;">닫기</button>
   </div>
 </div>
 

@@ -28,9 +28,9 @@ export const HERO_ATK = 16;
 export const HERO_CD = 0.5;
 export const HERO_RANGE = 46;
 export const WEAPON = {
-  sword:   { range:1.0,  dmg:1.15, cd:1.0,  name:'검' },
-  bow:     { range:2.4,  dmg:0.85, cd:1.05, name:'활' },
-  halberd: { range:1.55, dmg:1.0,  cd:1.12, name:'방천화극' }
+  sword:   { range:1.0,  dmg:1.15, cd:1.0,  name:'검',        scale:1.55 },
+  bow:     { range:2.4,  dmg:0.85, cd:1.05, name:'활',        scale:1.45 },
+  halberd: { range:1.55, dmg:1.0,  cd:1.12, name:'방천화극',  scale:1.6 }
 };
 export const HERO_SPD = 152;
 export const HERO_HP = 100;
@@ -56,6 +56,10 @@ export const MONSTER_WINDUP = 0.45;
 export const MONSTER_WINDUP_BOSS = 0.7;
 
 /* ---------- 타격감 ---------- */
+/* ---------- 치명타 ---------- */
+export const CRIT_CHANCE = 0.12;
+export const CRIT_MUL = 1.9;
+
 export const KNOCKBACK = 90;            // 맞았을 때 밀려나는 세기
 export const KNOCKBACK_SKILL = 210;
 export const HITSTOP = 0.055;           // 맞는 순간 잠깐 멈추는 시간
@@ -75,7 +79,7 @@ export const OCC_WALL = 3, OCC_TRAP = 4, OCC_STRUCT = 5;
 
 /* ---------- 장수 3종 (명성 시스템) ---------- */
 export const GENERALS = [
-  { id:'yohwa', name:'요화', grade:'일반', color:'#9aa7b0', accent:'#c9d3da',
+  { id:'yohwa', name:'요화', grade:'일반', free:true, color:'#9aa7b0', accent:'#c9d3da',
     combat:1.00, startRes:1.30, waveMul:0.90, lateGrow:0.30,
     tag:'대기만성형 · 검',
     weapon:'sword',
@@ -87,7 +91,7 @@ export const GENERALS = [
       { key:'E', name:'철벽', cd:16, desc:'4초간 받는 피해가 60% 줄고 주변 적을 끌어당깁니다',
         type:'guard', dur:4, reduce:0.6 }
     ] },
-  { id:'taesaja', name:'태사자', grade:'희귀', color:'#5B8FC7', accent:'#8fb8e0',
+  { id:'taesaja', name:'태사자', grade:'희귀', free:true, color:'#5B8FC7', accent:'#8fb8e0',
     combat:1.10, startRes:1.15, waveMul:0.95, lateGrow:0.20,
     tag:'균형형 · 활',
     weapon:'bow',
@@ -99,7 +103,7 @@ export const GENERALS = [
       { key:'E', name:'관통사', cd:16, desc:'직선상의 모든 적을 꿰뚫는 강력한 일격',
         type:'pierce', range:4.2, width:0.55, dmg:3.4 }
     ] },
-  { id:'yeopo', name:'여포', grade:'전설', color:'#E08B3C', accent:'#f0b878',
+  { id:'yeopo', name:'여포', grade:'전설', free:true, color:'#E08B3C', accent:'#f0b878',
     combat:1.40, startRes:0.85, waveMul:1.15, lateGrow:0.00,
     tag:'초반 압도형 · 방천화극',
     weapon:'halberd',
@@ -110,8 +114,49 @@ export const GENERALS = [
         type:'spin', range:1.9, dmg:2.0, knock:1.2 },
       { key:'E', name:'무쌍난무', cd:16, desc:'4초간 공격 속도와 이동 속도가 크게 오릅니다',
         type:'frenzy', dur:4, atkSpd:0.45, moveSpd:1.35 }
+    ] },
+
+  /* ── 아래 셋은 가챠로 뽑아야 열립니다 (출전 후보 확장) ── */
+  { id:'hahudon', name:'하후돈', grade:'영웅', color:'#9B6FC9', accent:'#c3a3e8',
+    combat:1.18, startRes:1.05, waveMul:1.0, lateGrow:0.12,
+    tag:'흡혈형 · 검', weapon:'sword',
+    desc:'때릴 때마다 체력을 조금씩 되찾습니다. 오래 버티는 싸움에 강합니다.',
+    skill:'발형 — 타격 시 피해의 12%를 회복',
+    lifesteal: 0.12,
+    skills:[
+      { key:'Q', name:'혈전', cd:6, desc:'전방을 베며 회복량이 크게 늘어납니다',
+        type:'arc', range:1.6, arc:2.0, dmg:2.0, knock:0.8 },
+      { key:'E', name:'불굴', cd:16, desc:'5초간 받는 피해가 절반이 되고 회복이 두 배',
+        type:'guard', dur:5, reduce:0.5 }
+    ] },
+  { id:'hwangchung', name:'황충', grade:'영웅', color:'#5FAE72', accent:'#9fdcae',
+    combat:1.15, startRes:1.0, waveMul:1.0, lateGrow:0.18,
+    tag:'명중형 · 활', weapon:'bow',
+    desc:'노장의 활 솜씨. 치명타가 자주 터집니다.',
+    skill:'백발백중 — 치명타 확률 +18%',
+    critBonus: 0.18,
+    skills:[
+      { key:'Q', name:'속사', cd:6, desc:'화살 4발을 연달아 쏩니다',
+        type:'multi', shots:4, dmg:0.85, interval:0.1 },
+      { key:'E', name:'천지사', cd:16, desc:'직선상의 모든 적을 꿰뚫는 강력한 일격',
+        type:'pierce', range:4.6, width:0.6, dmg:3.8 }
+    ] },
+  { id:'gwanwoo', name:'관우', grade:'전설', color:'#C6412F', accent:'#f09a86',
+    combat:1.35, startRes:0.9, waveMul:1.1, lateGrow:0.05,
+    tag:'광역형 · 청룡언월도', weapon:'halberd',
+    desc:'청룡언월도를 든 무신. 한 번에 여러 적을 쓸어버립니다.',
+    skill:'위압 — 주변 적의 이동 속도 20% 감소',
+    slowAura: 0.2,
+    skills:[
+      { key:'Q', name:'월참', cd:6, desc:'반달 모양으로 크게 베어 넘깁니다',
+        type:'arc', range:2.1, arc:2.6, dmg:2.4, knock:1.1 },
+      { key:'E', name:'청룡강림', cd:16, desc:'제자리에서 두 바퀴 휘둘러 주변을 쓸어버립니다',
+        type:'spin', range:2.3, dmg:2.6, knock:1.4 }
     ] }
 ];
+
+/** 기본 제공 장수 (가챠 없이 바로 쓸 수 있는 장수) */
+export const FREE_HEROES = GENERALS.filter(g => g.free).map(g => g.id);
 
 /* ---------- 웨이브 (1막 3회) ---------- */
 export const WAVES = [
@@ -145,18 +190,74 @@ export const TRAP_WEAR = 7;             // 초당 내구도 감소
 export const WALL_DMG_MUL = 1.6;        // 몬스터가 목책을 때릴 때의 피해 배율
 
 /* ---------- 제작 ---------- */
+/* ---------- 장비 제작 ----------
+   need: 먼저 만들어야 하는 것. 순서가 있어야 "목표가 생기는" 느낌이 납니다. */
 export const CRAFTS = [
-  { id:'pickaxe', name:'돌 곡괭이', icon:'⛏️', cost:{ wood:10, stone:15 },
-    desc:'철광을 캘 수 있게 됩니다. 이게 없으면 지도 중앙의 철광은 그냥 돌덩이입니다.' },
-  { id:'weapon',  name:'무기 강화', icon:'⚔️', cost:{ iron:5 }, max:3,
-    desc:'공격력 +25%. 최대 3회까지 강화할 수 있습니다.' }
-];
+  { id:'pickaxe', name:'돌 곡괭이', icon:'⛏️', cost:{ wood:10, stone:15 }, group:'도구',
+    desc:'철광을 캘 수 있게 됩니다. 이게 없으면 지도 중앙의 철광은 그냥 돌덩이입니다.',
+    effect:'철 채굴 개방' },
+  { id:'ironpick', name:'철 곡괭이', icon:'⚒️', cost:{ iron:5, wood:10 }, group:'도구', need:'pickaxe',
+    desc:'모든 자원을 훨씬 빨리 캡니다.',
+    effect:'채집 속도 +60%' },
+  { id:'huntknife', name:'사냥용 칼', icon:'🔪', cost:{ iron:3, wood:5 }, group:'도구',
+    desc:'몬스터에게서 가죽을 두 배로 얻습니다.',
+    effect:'가죽 획득 2배' },
+  { id:'torch', name:'횃불', icon:'🔥', cost:{ wood:3, herb:2 }, group:'도구',
+    desc:'밤에 보이는 범위가 넓어집니다.',
+    effect:'야간 시야 +60%' },
 
-/* ---------- 자원 ---------- */
-export const NODE_MAX = { wood:26, stone:22, iron:16 };
-export const GATHER_RATE = { wood:4, stone:3, iron:2 };   // 장수 채집 속도(초당)
+  { id:'weapon',  name:'무기 강화', icon:'⚔️', cost:{ iron:5 }, max:3, group:'전투',
+    desc:'공격력이 오릅니다. 세 번까지 강화할 수 있습니다.',
+    effect:'공격력 +25% (누적)' },
+  { id:'leather', name:'가죽 갑옷', icon:'🦺', cost:{ hide:8, wood:5 }, group:'전투',
+    desc:'최대 체력이 늘어납니다.',
+    effect:'최대 체력 +40' },
+  { id:'ironmail', name:'철 갑옷', icon:'🛡️', cost:{ iron:10, hide:5 }, group:'전투', need:'leather',
+    desc:'받는 피해가 줄어듭니다.',
+    effect:'받는 피해 -20%' },
+  { id:'potion', name:'치유약', icon:'🧪', cost:{ herb:5 }, group:'소모품', stack:true,
+    desc:'즉시 체력을 회복합니다. 여러 개 만들어 둘 수 있습니다. (H 키)',
+    effect:'체력 50 회복' }
+];
+export const POTION_HEAL = 50;
+
+/* ---------- 성(거점) 업그레이드 ---------- */
+export const BASE_LEVELS = [
+  { lv:1, name:'토성',   maxHp:1300, cost:null,
+    desc:'흙과 돌로 쌓은 기본 거점입니다.' },
+  { lv:2, name:'석성',   maxHp:1900, cost:{ stone:60, wood:40 },
+    desc:'성벽이 높아지고 체력이 크게 늘어납니다.' },
+  { lv:3, name:'철옹성', maxHp:2700, cost:{ stone:120, iron:30 },
+    desc:'망루에서 다가오는 적을 자동으로 공격합니다.' }
+];
+export const BASE_TOWER_DMG = 14;       // 3단계 망루의 자동 공격
+export const BASE_TOWER_CD = 1.4;
+export const BASE_TOWER_RANGE = 8 * 28;
+
+/* ---------- 자원 ----------
+   채집형 4종 + 전리품 1종. "무엇을 캐야 하는가"가 분명해야 재미가 생깁니다. */
+export const RESOURCES = {
+  wood:  { name:'목재', icon:'🪵', color:'#a9773f',
+           from:'들판의 나무 옆에 서 있으면 자동으로 모입니다',
+           use:'모든 건설의 기본. 목책·병영·대장간' },
+  stone: { name:'석재', icon:'🪨', color:'#9e9c95',
+           from:'들판의 바위에서 캡니다',
+           use:'가시함정·대장간·성 업그레이드' },
+  iron:  { name:'철', icon:'⛓️', color:'#c98a4b',
+           from:'지도 한가운데 철광에서. 돌 곡괭이가 있어야 캘 수 있습니다',
+           use:'무기 강화·철 갑옷·성 3단계' },
+  herb:  { name:'약초', icon:'🌿', color:'#6fbf7a',
+           from:'들판 곳곳에 자랍니다. 도구 없이 캘 수 있습니다',
+           use:'치유약·횃불' },
+  hide:  { name:'가죽', icon:'🟤', color:'#8a5a3b',
+           from:'몬스터를 처치하면 나옵니다. 사냥용 칼이 있으면 두 배',
+           use:'가죽 갑옷·철 갑옷' }
+};
+export const NODE_MAX = { wood:26, stone:22, iron:16, herb:10 };
+export const GATHER_RATE = { wood:4, stone:3, iron:2, herb:5 };   // 장수 채집 속도(초당)
 export const SOLDIER_GATHER_RATE = 2.2;
 export const NODE_REGROW_SEC = 24;
+export const HIDE_PER_KILL = 1;         // 몬스터 처치 시 가죽
 
 /* ---------- 보상 ---------- */
 export const WAVE_SHARD = [15, 25, 40];
