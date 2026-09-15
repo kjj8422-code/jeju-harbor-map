@@ -1075,10 +1075,15 @@ function applyInput() {
   const stage = $('stage');
   let dragging = false, lastX = 0, lastY = 0;
 
-  /* 확인 버튼·HUD 같은 겹쳐진 UI에서 시작한 입력은 땅 조준으로 넘기지 않습니다.
-     이게 없으면 "설치" 버튼을 누르는 순간 그 버튼 밑의 땅을 다시 조준해버립니다. */
+  /* 화면 위에 겹쳐 놓은 UI에서 시작한 입력은 땅 조준으로 넘기지 않습니다.
+     이게 없으면 "설치" 버튼을 누르는 순간 그 버튼 밑의 땅을 다시 조준해버립니다.
+
+     ★ #buildDock 이 빠져 있어서 건설이 통째로 막혔던 적이 있습니다.
+       건설 바가 #stage 안에 있으니, 버튼을 누르면 pointerdown 이 stage 까지 올라와
+       setPointerCapture 가 걸리고 → 버튼의 click 이 아예 발생하지 않았습니다.
+       화면 안에 UI를 새로 얹을 때는 반드시 이 목록에 넣어야 합니다. */
   const fromUI = e => !!(e.target && e.target.closest &&
-    e.target.closest('#buildConfirm, #hud, #minimapWrap, #objective, #buildHint'));
+    e.target.closest('#buildDock, #buildConfirm, #hud, #minimapWrap, #objective, #buildHint'));
 
   /* ★ 마우스 오른쪽 버튼 = 취소.
      건설 중이면 배치를 물리고, 아무것도 안 하고 있으면 건설 카드 선택 자체를 풉니다.
