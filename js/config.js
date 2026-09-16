@@ -98,10 +98,30 @@ export const SOLDIER_COST = { wood: 10, stone: 5 };
    용병은 '옥새 조각'으로 고용하고 한도가 없는 대신 계약 일수가 지나면 떠납니다.
    → 급할 때 즉시 머릿수를 늘리는 수단이자, 옥새 조각을 쓰는 곳이 됩니다. */
 export const MERC_CONTRACT_DAYS = 18;   // 계약 기간(일)
+/* ★ 용병 정원 (2026-09 버그 수정)
+   ------------------------------------------------------------------
+   팀장님: "채집 용병은 병영을 안 지어도 많이 만들어지는 버그가 있는 것 같아."
+   버그 맞습니다 — canHireMerc 가 **옥새 조각만** 보고 있었고 상한이 아예 없었습니다.
+   재보니 병영 0채로 **채집 용병 105명**까지 뽑혔고, 초당 채집량이 장수의 **220배**였습니다.
+   채집 속도를 애써 낮춰도 이 구멍 하나로 다 무의미해집니다.
+
+   고치는 방향:
+     · 용병의 정체성인 "병영 한도와 무관" 은 지킵니다 (병영은 병사의 자리입니다)
+     · 대신 **거점 단계**가 용병 정원을 정합니다 — 성이 커야 더 많이 거둘 수 있습니다
+     · 토성 2명 → 석성 3명 → 철옹성 4명
+   소수 정예로 두면 "어떤 용병을 뽑을까" 가 고민이 됩니다.
+   무제한이면 고민이 아니라 그냥 전부 뽑는 게 정답이 됩니다. */
+export const MERC_CAP_BY_BASE = [2, 3, 4];     // 토성 · 석성 · 철옹성
+export const mercCap = baseLv => MERC_CAP_BY_BASE[Math.min(MERC_CAP_BY_BASE.length, Math.max(1, baseLv)) - 1];
+
 export const MERCS = [
+  /* ★ gather 4.2 → 2.5.
+     장수 채집을 3.4 → 2.0 으로 낮추면서 **여기를 같이 안 낮췄습니다.**
+     그 바람에 용병 한 명이 장수보다 2.1배 빨리 캐는 상태였습니다.
+     지금은 장수 2.0 · 용병 2.5 · 병사 1.4 — 용병이 가장 빠르되(값을 하되) 터무니없진 않습니다. */
   { id:'gatherer', name:'채집 용병', icon:'🧺', cost:6,
-    hp:90, atk:5, gather:4.2, carry:14, role:'wood',
-    desc:'싸우지 않고 자원만 캡니다. 병사보다 두 배 빠르고 한 번에 더 많이 나릅니다.',
+    hp:90, atk:5, gather:2.5, carry:14, role:'wood',
+    desc:'싸우지 않고 자원만 캡니다. 병사보다 빠르고 한 번에 더 많이 나릅니다.',
     tip:'낮이 짧게 느껴진다면 이 용병부터 뽑으세요.' },
   { id:'archer', name:'궁수 용병', icon:'🏹', cost:10,
     hp:95, atk:16, range:120, cd:1.0, gather:1.6, carry:8, role:'def',
@@ -484,7 +504,9 @@ export const NODE_MAX = { wood:22, stone:30, iron:18, herb:10 };
    그래서 목책을 아무 데나 도배해도 자원이 남았고, 어디에 지을지 고민할 이유가 없었습니다.
    중급 기준으로 약 60% 로 낮추고, 난이도로 다시 곱합니다(아래 DIFFS). */
 export const GATHER_RATE = { wood:2.0, stone:2.5, iron:1.5, herb:3.0 };   // 장수 채집 속도(초당)
-export const SOLDIER_GATHER_RATE = 2.2;
+/* 장수 채집을 낮출 때 같이 내렸습니다 (2.2 → 1.4).
+   안 내리면 병사가 장수보다 빨리 캐는 이상한 상태가 됩니다. */
+export const SOLDIER_GATHER_RATE = 1.4;
 export const NODE_REGROW_SEC = 24;
 export const HIDE_PER_KILL = 1;         // 몬스터 처치 시 가죽
 

@@ -493,7 +493,14 @@ export function tryBuild(S, tx, ty, buildId) {
   /* 자원지를 밀어내고 짓는 경우 — 남은 자원의 절반을 챙깁니다 */
   const node = nodeAt(S, tx, ty);
   if (node) {
-    const got = clearYield(node);
+    /* ★ 자원지를 밀고 지으면 남은 양의 절반을 챙깁니다.
+       그런데 **철광도 그냥 챙겨졌습니다** — 곡괭이가 철의 관문인데,
+       철광 위에 목책 하나를 지으면 곡괭이 없이 철 9가 들어왔습니다.
+       (무기 강화 ★1 이 철 8입니다 — 관문을 통째로 건너뛰는 셈이었습니다)
+       캘 수 없는 자원은 밀어도 못 가져갑니다. */
+    const got = (node.type === 'iron' && !S.pickaxe) ? null : clearYield(node);
+    if (node.type === 'iron' && !S.pickaxe)
+      toast(S, '철광을 밀어냈지만 <b>곡괭이가 없어</b> 철은 챙기지 못했습니다');
     if (got) {
       S.res[got.type] += got.amt; S.got[got.type] += got.amt;
       fx(S, node.x, node.y - 14, `${C.RESOURCES[got.type].icon} +${got.amt}`, '#C7D9A8');
@@ -640,18 +647,33 @@ export function hireSoldier(S) {
    대신 계약 일수가 지나면 떠납니다. 옥새 조각을 쓸 곳이 생기고,
    "지금 당장 손이 모자란다"는 문제를 돈으로 푸는 길이 열립니다.
    ================================================================== */
+/** 지금 거느릴 수 있는 용병 수 (거점 단계가 정합니다) */
+export const mercCap = S => C.mercCap(S.baseLv);
+/** 지금 거느리고 있는 용병 수 */
+export const mercCount = S => S.soldiers.filter(x => x.merc).length;
+
 export function canHireMerc(S, id) {
   const def = C.MERCS.find(m => m.id === id);
   if (!def) return { ok: false, why: 'none' };
+  /* ★ 예전에는 옥새 조각만 봤습니다 — 상한이 아예 없어서
+     병영 0채로 채집 용병 105명까지 뽑혔습니다 (장수 채집량의 220배).
+     정원은 거점 단계가 정합니다: 토성 2 · 석성 3 · 철옹성 4. */
+  const cap = mercCap(S);
+  if (mercCount(S) >= cap)
+    return { ok: false, why: 'cap', cap,
+             need: `용병은 ${cap}명까지입니다 — 성을 올리면 늘어납니다` };
   if (S.shard < def.cost) return { ok: false, why: 'shard', need: def.cost };
-  return { ok: true, def };
+  return { ok: true, def, cap };
 }
 
 export function hireMerc(S, id) {
   if (S.over) return false;
   const chk = canHireMerc(S, id);
   if (!chk.ok) {
-    toast(S, `옥새 조각이 부족합니다 — <b>${chk.need}</b> 필요`);
+    toast(S, chk.why === 'cap'
+      ? `<b>용병 정원이 찼습니다</b> — ${chk.cap}명까지입니다. `
+        + `<b>성을 올리면</b> 정원이 늘어납니다 (토성 2 · 석성 3 · 철옹성 4)`
+      : `옥새 조각이 부족합니다 — <b>${chk.need}</b> 필요`);
     sound(S, 'deny');
     return false;
   }
@@ -1184,6 +1206,9 @@ export function closeReport(S) {
 
 function endGame(S, win) {
   S.over = true; S.win = win; S.phase = 'over';
+  /* 예약된 진격을 비웁니다 — 끝난 판에 "2차례 남음" 이 매달려 있으면
+     전황 게이지와 리포트가 없는 적을 세게 됩니다 */
+  S.surges = []; S.surgeT = 0; S.waveLeft = 0;
   S.shard += win ? C.WIN_SHARD : C.LOSE_SHARD;
   emit(S, 'end', { win, day: S.day, waveIdx: S.waveIdx, shard: S.shard,
                    walls: S.cnt.wall, traps: S.cnt.trap, hero: S.heroDef.name, grade: S.heroDef.grade });
@@ -1619,7 +1644,9 @@ function updateMonsters(S, dt) {
         damageMonster(S, m, dps * steel * dt, 'trap', tr);
         tr.dur -= C.TRAP_WEAR / (S.gear.steelspike ? C.TRAP_DUR_STEEL : 1) * dt;
         if (tr.dur <= 0) {
+          // 목책과 같은 문제 — 닳아 없어진 함정도 집계에서 빼야 합니다
           S.trapAt[k] = 0; S.occ[k] = C.OCC_EMPTY;
+          S.cnt.trap = Math.max(0, S.cnt.trap - 1);
           fx(S, tr.x, tr.y, '함정 파손', '#9E9384');
           emit(S, 'trapBroken', { tx: tr.tx, ty: tr.ty });
         }
@@ -1692,7 +1719,12 @@ function updateMonsters(S, dt) {
           S.wallHp[w.k] -= m.dmg * C.WALL_DMG_MUL;
           fx(S, w.x, w.y - 8, '쿵', '#C89B62');
           if (S.wallHp[w.k] <= 0) {
+            /* ★ 여기서 S.cnt.wall 을 안 깎고 있었습니다.
+               지은 목책은 세고 **부서진 목책은 안 뺐으므로**, 밤마다 집계가 부풀었습니다.
+               "목책 21개" 라고 적혀 있는데 실제로는 20개인 식입니다.
+               (불변식 감시가 66일차에 집계 21 ≠ 실제 20 으로 잡았습니다) */
             S.occ[w.k] = C.OCC_EMPTY; S.wallHp[w.k] = 0;
+            S.cnt.wall = Math.max(0, S.cnt.wall - 1);
             computeFlow(S);
             fx(S, w.x, w.y, '목책 파괴', '#E0554A');
             emit(S, 'wallBroken', { tx: w.k % C.MAPW, ty: (w.k / C.MAPW) | 0 });
@@ -1831,6 +1863,7 @@ function cleanupTraps(S) {
     if (t.dur <= 0 && S.trapAt[tkey(t.tx, t.ty)] === i + 1) {
       S.trapAt[tkey(t.tx, t.ty)] = 0;
       S.occ[tkey(t.tx, t.ty)] = C.OCC_EMPTY;
+      S.cnt.trap = Math.max(0, S.cnt.trap - 1);
     }
   }
 }

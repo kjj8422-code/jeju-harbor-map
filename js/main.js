@@ -656,20 +656,27 @@ function refreshTroop() {
                               : (S.camps === 0 ? '먼저 병영을 지으세요' : `정원이 찼습니다 (${reg}/${S.camps})`)}</span>
     </button>`);
 
+  /* ★ 용병에도 정원이 있습니다 (거점 단계가 정합니다).
+     예전에는 상한이 없어서 옥새만 있으면 무한정 뽑혔습니다 —
+     화면에 정원이 안 보이면 그 사실 자체를 알 수가 없습니다. */
+  const cap = Sim.mercCap(S);
+  const roomM = mercN < cap;
   for (const m of C.MERCS) {
     const enough = totalShard() >= m.cost;
-    rows.push(`<button class="tpBtn" data-hire="${m.id}" ${enough ? '' : 'disabled'}>
+    rows.push(`<button class="tpBtn" data-hire="${m.id}" ${enough && roomM ? '' : 'disabled'}>
       <b class="n">${m.icon} ${m.name}</b>
       <span class="c">🔶 <b>${m.cost}</b>${enough ? '' : ` (보유 ${totalShard()})`}</span>
-      <span class="d">${m.desc.split('.')[0]}.</span>
+      <span class="d">${!roomM ? `정원이 찼습니다 (${mercN}/${cap}) — 성을 올리면 늘어납니다`
+                                : m.desc.split('.')[0] + '.'}</span>
     </button>`);
   }
 
   box.innerHTML = `<div class="tpRow">${rows.join('')}</div>`
     + `<div class="tpNow">지금 — 병사 <b>${reg}/${S.camps}</b>`
-    + (mercN ? ` · 용병 <b>${mercN}</b>명` : '')
+    + ` · 용병 <b${roomM ? '' : ' style="color:#e39184"'}>${mercN}/${cap}</b>`
     + ` · 옥새 조각 <b>${totalShard()}</b>`
-    + `<br><span style="opacity:.8">병사는 아래 목록에서 눌러 역할(목재·석재·약초·철·방어)을 바꿉니다.</span></div>`;
+    + `<br><span style="opacity:.8">병사 정원은 <b>병영</b>이, 용병 정원은 <b>성 단계</b>가 정합니다 `
+    + `(토성 2 · 석성 3 · 철옹성 4). 병사는 아래 목록에서 눌러 역할을 바꿉니다.</span></div>`;
 
   box.querySelectorAll('[data-hire]').forEach(b => {
     b.onclick = () => {
@@ -755,23 +762,33 @@ function refreshMercs() {
   const row = $('mercRow');
   if (!row) return;
   row.innerHTML = '';
+  const cap = S ? Sim.mercCap(S) : 0;
+  const now = S ? Sim.mercCount(S) : 0;
+  const roomM = S ? now < cap : false;
   C.MERCS.forEach(m => {
     const have = totalShard();
     const el = document.createElement('button');
     el.className = 'mercCard';
-    el.disabled = !S || S.over || have < m.cost;
+    el.disabled = !S || S.over || have < m.cost || !roomM;
     el.innerHTML = `<div class="mh"><span class="mn">${m.icon} ${m.name}</span>
         <span class="mc">🔶 ${m.cost}</span></div>
       <div class="md">${m.desc}</div>
-      <div class="mt">💡 ${m.tip}</div>`;
+      <div class="mt">${roomM ? `💡 ${m.tip}`
+        : `<span style="color:#e39184">정원이 찼습니다 (${now}/${cap}) — 성을 올리면 늘어납니다</span>`}</div>`;
     el.onclick = () => {
       if (!S) return;
       if (!pullShardIntoRun(m.cost)) { toast(`옥새 조각이 부족합니다 — <b>${m.cost}</b> 필요`); Audio.play('deny'); return; }
       Sim.hireMerc(S, m.id);
-      handleEvents(); refreshSoldiers(); refreshHUD();
+      handleEvents(); refreshSoldiers(); refreshHUD(); refreshMercs();
     };
     row.appendChild(el);
   });
+  const cnt = document.createElement('div');
+  cnt.style.cssText = 'width:100%;font-size:11.5px;color:var(--dim);margin-top:4px;';
+  cnt.innerHTML = `용병 <b style="color:${roomM ? 'var(--gold)' : '#e39184'}">${now}/${cap}</b>명 `
+    + `— 정원은 <b>성 단계</b>가 정합니다 (토성 2 · 석성 3 · 철옹성 4). `
+    + `병영은 <b>병사</b>의 자리라서 용병 수와는 무관합니다.`;
+  row.appendChild(cnt);
 }
 
 /* ==================================================================
@@ -984,7 +1001,7 @@ function refreshGuide() {
     <div class="gRow">
       <div class="gHead"><span class="gIcon">${m.icon}</span><b>${m.name}</b>
         <span class="gHave">옥새 조각 ${m.cost}</span></div>
-      <div class="gLine"><span class="gTag">조건</span>병영 한도와 무관 · ${C.MERC_CONTRACT_DAYS}일 계약</div>
+      <div class="gLine"><span class="gTag">조건</span>병영과 무관 · 용병 정원은 <b>성 단계</b>가 정합니다(토성 2 · 석성 3 · 철옹성 4) · ${C.MERC_CONTRACT_DAYS}일 계약</div>
       <div class="gLine"><span class="gTag">특징</span>${m.desc}</div>
       <div class="gLine"><span class="gTag">추천</span>${m.tip}</div>
     </div>`).join('');

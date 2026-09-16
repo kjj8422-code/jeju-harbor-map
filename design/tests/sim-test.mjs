@@ -447,6 +447,54 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   ok('용병 고용에 옥새 조각이 실제로 빠진다', S.shard === 100 - C.MERCS.find(m => m.id === 'archer').cost,
      `남은 ${S.shard}`);
   ok('용병은 병영 한도와 무관하다 (병영 0인데 고용됨)', S.camps === 0 && S.soldiers.length === 1);
+
+  /* ★ 팀장님이 찾으신 버그 (2026-09):
+     "채집 용병은 병영을 안 지어도 많이 만들어지는 버그가 있는 것 같아."
+     canHireMerc 가 옥새 조각만 보고 **상한이 아예 없었습니다.**
+     웨이브 보상만으로도 병영 0채에서 채집 용병 105명이 뽑혔고,
+     초당 채집량이 장수의 220배였습니다 — 채집 속도를 아무리 낮춰도 무의미해집니다.
+     정원은 거점 단계가 정합니다: 토성 2 · 석성 3 · 철옹성 4. */
+  {
+    const M = Sim.createSim('taesaja');
+    M.shard = 99999;
+    /* 상한이 없으면 이 루프가 끝나지 않으므로 200 에서 끊습니다 —
+       검수는 멈추지 않고 '실패' 로 끝나야 합니다 */
+    let n = 0; while (n < 200 && Sim.hireMerc(M, 'gatherer')) n++;
+    ok('옥새가 아무리 많아도 용병은 무한정 뽑히지 않는다', n === C.mercCap(1),
+       n >= 200 ? '상한 없음 — 200명까지 뽑힘' : `${n}명`);
+    ok('토성에서는 용병 2명까지다', Sim.mercCap(M) === 2 && Sim.mercCount(M) === 2,
+       `${Sim.mercCount(M)}/${Sim.mercCap(M)}`);
+    ok('정원이 차면 이유를 알려준다', Sim.canHireMerc(M, 'archer').why === 'cap',
+       Sim.canHireMerc(M, 'archer').need);
+
+    M.baseLv = 2;
+    ok('석성으로 올리면 정원이 3명이 된다', Sim.mercCap(M) === 3);
+    ok('정원이 늘면 한 명 더 뽑힌다', Sim.hireMerc(M, 'archer') === true && Sim.mercCount(M) === 3);
+    M.baseLv = 3;
+    ok('철옹성이면 4명까지다', Sim.mercCap(M) === 4);
+    let more = 0; while (more < 200 && Sim.hireMerc(M, 'shield')) more++;
+    ok('철옹성에서도 4명을 넘지 않는다', Sim.mercCount(M) === 4, `${Sim.mercCount(M)}명`);
+
+    /* 정원은 용병만 셉니다 — 병영으로 뽑은 병사는 따로입니다 */
+    const N = Sim.createSim('taesaja');
+    N.camps = 3; N.res.wood = 999; N.res.stone = 999; N.shard = 999;
+    Sim.hireSoldier(N); Sim.hireSoldier(N);
+    ok('병사는 용병 정원에 안 들어간다', Sim.mercCount(N) === 0 && N.soldiers.length === 2);
+    ok('병사가 있어도 용병은 정원만큼 뽑힌다',
+       Sim.hireMerc(N, 'gatherer') && Sim.hireMerc(N, 'archer') && !Sim.hireMerc(N, 'shield'),
+       `용병 ${Sim.mercCount(N)}/${Sim.mercCap(N)} · 총 ${N.soldiers.length}명`);
+  }
+
+  /* 채집 속도 — 장수를 낮출 때 같이 안 낮춰서 용병이 장수보다 2배 빨랐습니다 */
+  ok('채집 용병이 장수보다 터무니없이 빠르지 않다',
+     C.MERCS.find(m => m.id === 'gatherer').gather < C.GATHER_RATE.wood * 1.5,
+     `용병 ${C.MERCS.find(m => m.id === 'gatherer').gather}/초 · 장수 ${C.GATHER_RATE.wood}/초`);
+  ok('채집 용병이 병사보다는 빠르다 (값을 한다)',
+     C.MERCS.find(m => m.id === 'gatherer').gather > C.SOLDIER_GATHER_RATE,
+     `용병 ${C.MERCS.find(m => m.id === 'gatherer').gather} > 병사 ${C.SOLDIER_GATHER_RATE}`);
+  ok('병사가 장수보다 빨리 캐지는 않는다',
+     C.SOLDIER_GATHER_RATE < C.GATHER_RATE.wood,
+     `병사 ${C.SOLDIER_GATHER_RATE} < 장수 ${C.GATHER_RATE.wood}`);
   ok('궁수 용병은 병사보다 사거리가 길다', S.soldiers[0].range > C.SOLDIER_RANGE,
      `${S.soldiers[0].range} vs ${C.SOLDIER_RANGE}`);
 
