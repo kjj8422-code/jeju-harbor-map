@@ -244,7 +244,11 @@ function handleEvents() {
       case 'build':
         if (e.kind === 'wall') R3.addWall(e.tx, e.ty);
         else if (e.kind === 'trap') R3.addTrap(e.tx, e.ty);
-        else R3.addStruct(S.structs[S.structs.length - 1]);
+        /* ★ 예전에는 structs 의 '마지막' 것을 그렸습니다.
+              한 프레임에 시설이 둘 이상 생기면 같은 것을 두 번 그리고 나머지는
+              structMeshes 에 등록되지 않아, 화면에는 서 있는데 지울 방법이 없는
+              유령 건물이 됐습니다. 이벤트가 tx·ty 를 들고 오니 그걸로 찾습니다. */
+        else R3.addStruct(S.structs.find(st => st.tx === e.tx && st.ty === e.ty));
         if (e.kind === 'wall') R3.markPathDirty();   // 목책이 길을 바꿉니다
         refreshBuildCards();
         break;

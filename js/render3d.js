@@ -266,9 +266,14 @@ function buildRings() {
 /* ---------------- 세계 만들기 ---------------- */
 export function buildWorld(S) {
   R.path.dirty = true; R.path.sig = '';
-  // 이전 판의 물체 정리
+  /* 이전 판의 물체 정리.
+     ★ structMeshes(병영·대장간)를 Map 에서 비우기만 하고 scene 에서는 안 빼서,
+       "다시 한 판" 을 눌러도 지난 판의 병영이 그대로 서 있었습니다.
+       Map 을 비우면 지울 방법조차 사라지므로 영영 남습니다.
+       지우는 목록과 비우는 목록이 어긋나면 이런 일이 생깁니다 — 한 줄에 같이 둡니다. */
   for (const m of [...R.monsterMeshes.values(), ...R.soldierMeshes.values(),
-                   ...R.wallMeshes.values(), ...R.trapMeshes.values()]) R.scene.remove(m);
+                   ...R.wallMeshes.values(), ...R.trapMeshes.values(),
+                   ...R.structMeshes.values()]) R.scene.remove(m);
   R.monsterMeshes.clear(); R.soldierMeshes.clear(); R.structMeshes.clear();
   R.wallMeshes.clear(); R.trapMeshes.clear();
   wallTiles.length = 0;
@@ -880,6 +885,7 @@ function buildStructs(S) {
   for (const st of S.structs) addStruct(st);
 }
 export function addStruct(st) {
+  if (!st) return null;                  // 못 찾은 시설을 그리려다 죽지 않게
   if (Models.has(st.type)) {
     const g = wrapModel(st.type);
     g.position.set(gx(st.x), 0, gz(st.y));
