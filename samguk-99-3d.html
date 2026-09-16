@@ -437,6 +437,70 @@ details.panel[open] summary::before{content:'▾ ';}
 .cDone .cEff{display:inline;margin:0;font-size:11px;color:var(--dim);}
 .cOk{margin-left:auto;font-size:11px;color:var(--good);font-weight:800;}
 /* 만들 수 있는 줄에만 붙는 딱지 — 성 올리기의 '올리기' 버튼과 같은 자리·같은 모양입니다 */
+/* ── 진격 배너 (「적 본대가 밀려온다!!」) ── */
+#surgeBanner{position:absolute;left:50%;top:26%;transform:translate(-50%,-50%) scale(.8);
+  pointer-events:none;z-index:8;opacity:0;text-align:center;}
+#surgeBanner.on{animation:surgeIn 1.9s cubic-bezier(.2,1.5,.4,1) forwards;}
+#surgeBanner .sgT{font-family:var(--serif);font-weight:700;font-size:38px;color:#fff;
+  text-shadow:0 0 6px #C6412F,0 0 22px #C6412F,0 3px 10px #000;letter-spacing:-.5px;}
+#surgeBanner .sgS{font-size:13px;font-weight:800;color:#FFD98A;margin-top:4px;
+  text-shadow:0 2px 8px #000;}
+@keyframes surgeIn{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.72);}
+  12%{opacity:1;transform:translate(-50%,-50%) scale(1.08);}
+  22%{transform:translate(-50%,-50%) scale(1);}
+  78%{opacity:1;transform:translate(-50%,-50%) scale(1);}
+  100%{opacity:0;transform:translate(-50%,-56%) scale(1.02);}
+}
+/* 붉은 섬광(비네트) — 진격 순간 화면 가장자리가 붉게 번집니다 */
+#flash{position:absolute;inset:0;pointer-events:none;z-index:7;opacity:0;
+  background:radial-gradient(ellipse at center,rgba(198,65,47,0) 42%,rgba(198,65,47,.55) 100%);}
+#flash.on{animation:flashIn .55s ease-out forwards;}
+@keyframes flashIn{0%{opacity:0;}18%{opacity:1;}100%{opacity:0;}}
+
+/* ── 전황 게이지 ── */
+#warBar{position:absolute;left:50%;top:6px;transform:translateX(-50%);
+  width:min(420px,62%);pointer-events:none;z-index:5;display:none;}
+#warBar.on{display:block;}
+.wbTop{display:flex;justify-content:space-between;font-size:10.5px;font-weight:800;
+  text-shadow:0 1px 3px #000;margin-bottom:2px;}
+.wbTop .ally{color:#8FD6A2;} .wbTop .foe{color:#FF9E8E;}
+.wbTrack{height:9px;border:1px solid var(--line);border-radius:5px;overflow:hidden;
+  background:#0c0b09;display:flex;}
+.wbTrack .ally{background:linear-gradient(180deg,#6FC486,#3E7F52);transition:width .25s ease;}
+.wbTrack .foe{background:linear-gradient(180deg,#E0554A,#8C2B1F);transition:width .25s ease;}
+.wbNote{text-align:center;font-size:10px;color:#e7d9bd;margin-top:2px;text-shadow:0 1px 3px #000;}
+.wbNote b{color:#FFD98A;}
+
+/* ── 날이 밝아오는 연출 ── */
+#dawn{position:absolute;inset:0;pointer-events:none;z-index:9;opacity:0;
+  background:linear-gradient(to top,rgba(255,206,130,.85),rgba(255,238,200,.55) 45%,rgba(180,214,255,.25));}
+#dawn.on{animation:dawnSweep 2.8s ease-in-out forwards;}
+@keyframes dawnSweep{0%{opacity:0;}30%{opacity:.92;}62%{opacity:.7;}100%{opacity:0;}}
+#dawnWord{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);
+  z-index:10;pointer-events:none;opacity:0;text-align:center;}
+#dawnWord.on{animation:dawnWord 2.8s ease forwards;}
+#dawnWord .dwT{font-family:var(--serif);font-size:30px;font-weight:700;color:#3a2b16;
+  text-shadow:0 2px 12px rgba(255,255,255,.8);}
+#dawnWord .dwS{font-size:12.5px;font-weight:800;color:#6b4f24;margin-top:3px;}
+@keyframes dawnWord{0%{opacity:0;transform:translate(-50%,-44%);}
+  25%{opacity:1;transform:translate(-50%,-50%);}
+  70%{opacity:1;}100%{opacity:0;transform:translate(-50%,-54%);}}
+
+/* ── 난이도 고르기 ── */
+.diffRow{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;margin:6px 0 4px;}
+.diffCard{background:var(--panel);border:1px solid var(--line);border-top-width:3px;
+  border-radius:10px;padding:11px 12px;cursor:pointer;text-align:left;color:var(--ink);
+  font-family:inherit;transition:border-color .12s,transform .12s;}
+.diffCard:hover{transform:translateY(-1px);}
+.diffCard.on{box-shadow:0 0 0 2px var(--gold) inset;background:#2c2519;}
+.diffCard .dh{display:flex;align-items:baseline;gap:6px;}
+.diffCard .di{font-size:18px;}
+.diffCard .dn{font-size:16px;font-weight:700;font-family:var(--serif);}
+.diffCard .dt{font-size:10.5px;color:var(--dim);margin-left:auto;font-weight:700;}
+.diffCard .dd{font-size:11.5px;color:#cfc6b8;line-height:1.55;margin-top:4px;}
+.diffCard .dx{font-size:10px;color:var(--dim);line-height:1.5;margin-top:4px;}
+
 .cGo{flex:0 0 auto;align-self:center;background:var(--gold);color:#241d12;
   border-radius:7px;padding:7px 14px;font-size:12px;font-weight:800;white-space:nowrap;}
 .cItem:hover:not(:disabled) .cGo{filter:brightness(1.12);}
@@ -484,6 +548,16 @@ details.panel[open] summary::before{content:'▾ ';}
       </div>
     </div>
     <div id="fxLayer"></div>
+    <div id="flash"></div>
+    <div id="dawn"></div>
+    <div id="dawnWord"><div class="dwT">날이 밝았습니다</div><div class="dwS" id="dawnSub"></div></div>
+    <div id="surgeBanner"><div class="sgT" id="sgTitle"></div><div class="sgS" id="sgSub"></div></div>
+    <div id="warBar">
+      <div class="wbTop"><span class="ally" id="wbAlly">방어선</span><span class="foe" id="wbFoe">적</span></div>
+      <div class="wbTrack"><div class="ally" id="wbAllyBar" style="width:50%"></div>
+        <div class="foe" id="wbFoeBar" style="width:50%"></div></div>
+      <div class="wbNote" id="wbNote"></div>
+    </div>
     <div id="toast"></div>
     <div id="waveAlert"><div class="t" id="waTitle"></div><div class="s" id="waSub"></div></div>
     <!-- 지금 할 수 있는 일 — "뭘 해야 하지" 를 없애는 장치 -->
@@ -609,13 +683,19 @@ details.panel[open] summary::before{content:'▾ ';}
       적의 구성이 바뀝니다.<br>
       출전할 장수를 고르세요. 등급이 높을수록 초반이 강한 대신 몬스터도 강하게 몰려옵니다.
     </p>
+    <p class="secTitle" style="margin-top:0;">난이도 — 먼저 고르세요</p>
+    <div class="diffRow" id="diffRow"></div>
+
+    <p class="secTitle">출전 장수</p>
     <div class="gcards" id="heroCards"></div>
     <div class="panel" style="border-left:3px solid var(--gold);">
       <h3>적의 종류 — 한 가지 방어로는 막히지 않습니다</h3>
-      <div class="repRow"><span><b style="color:#E0554A">졸개</b> — 기본</span><b>1막부터</b></div>
-      <div class="repRow"><span><b style="color:#E08B3C">기병</b> — 1.5배 빠름, 함정을 빨리 빠져나감</span><b>44일~</b></div>
-      <div class="repRow"><span><b style="color:#7D8A96">방패병</b> — 체력 2.3배, 받는 피해 30% 감소</span><b>55일~</b></div>
-      <div class="repRow" style="border-bottom:none;"><span><b style="color:#9B6FC9">정예</b> — 체력 3.2배, 피해 1.6배</span><b>77일~</b></div>
+      <div style="font-size:11.5px;color:var(--dim);margin-bottom:6px;">
+        사람 병사만 오는 게 아닙니다 — <b style="color:#6E6355">들개</b>는 떼로 달려들고,
+        <b style="color:#6F8A5C">역병 시체</b>는 느리지만 질기고,
+        <b style="color:#D9873A">맹호</b>는 빠르고 아픕니다. 다가올 때 우는 소리가 다릅니다.
+      </div>
+      <div id="titleMonList"></div>
     </div>
     <div class="panel">
       <h3>명성(名聲) 시스템 — 페이투윈 완화 장치</h3>

@@ -22,7 +22,7 @@ const gz = y => y * S3;                 // 세로(게임의 y가 3D의 z)
 
 export const R = {
   scene: null, camera: null, renderer: null, container: null,
-  sun: null, hemi: null, baseLight: null, heroLight: null,
+  sun: null, hemi: null, baseLight: null, baseLight2: null, heroLight: null,
   hero: null, ground: null, gravel: null,
   monsterMeshes: new Map(), soldierMeshes: new Map(),
   wallMeshes: new Map(), trapMeshes: new Map(), structMeshes: new Map(),
@@ -134,11 +134,21 @@ export function initRenderer(container) {
   R.scene.add(R.sun.target);
 
   // 밤 조명 — 거점 화톳불과 장수 횃불
-  R.baseLight = new THREE.PointLight(0xffb163, 0, 26, 1.8);
-  R.baseLight.position.set(gx(C.BASE_TX * C.TILE), 3.2, gz(C.BASE_TY * C.TILE));
+  /* 거점 화톳불 — 밤에 "성 근처는 적어도 잘 보이게" 하는 주역입니다.
+     예전에는 사거리 26·감쇠 1.8 이라 성에서 조금만 벗어나도 새까맸습니다.
+     사거리를 46 으로 늘리고 감쇠를 1.1 로 낮춰, 성을 중심으로 넓게 퍼지게 합니다.
+     (감쇠가 낮을수록 멀리까지 고르게 닿습니다) */
+  R.baseLight = new THREE.PointLight(0xffc27a, 0, 46, 1.1);
+  R.baseLight.position.set(gx(C.BASE_TX * C.TILE), 4.2, gz(C.BASE_TY * C.TILE));
   R.scene.add(R.baseLight);
 
-  R.heroLight = new THREE.PointLight(0xffd0a0, 0, 22, 1.6);
+  /* 성벽 위 등불 — 화톳불 하나로는 성 바로 아래가 그늘집니다.
+     낮은 높이에 하나 더 두면 성벽과 그 앞 땅이 드러납니다. */
+  R.baseLight2 = new THREE.PointLight(0xffd9a8, 0, 24, 1.5);
+  R.baseLight2.position.set(gx(C.BASE_TX * C.TILE), 1.4, gz(C.BASE_TY * C.TILE));
+  R.scene.add(R.baseLight2);
+
+  R.heroLight = new THREE.PointLight(0xffd0a0, 0, 26, 1.4);
   R.scene.add(R.heroLight);
 
   // 후처리 — 빛이 번지면 밤의 횃불과 대장간 화로가 살아납니다.
@@ -1058,10 +1068,97 @@ function kindColor(m) {
 }
 const monScale = m => (m.boss ? 1.7 : 0.95 * (m.scale || 1));
 
+/* ── 네발짐승 (들개·맹호) ───────────────────────────────────
+   사람 몸통을 눕히고 다리를 넷 답니다. 실루엣만으로 "짐승" 인 게 보여야
+   플레이어가 소리를 듣기 전에도 대응을 바꿉니다. */
+function makeBeast(color, scale, opt = {}) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.85 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x241c17, roughness: 0.9 });
+
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.26 * scale, 0.52 * scale, 4, 8), mat);
+  body.rotation.z = Math.PI / 2;              // 눕혀서 네발짐승 몸통으로
+  body.position.y = 0.52 * scale;
+  body.castShadow = R.quality.shadows;
+  g.add(body);
+
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.3 * scale, 0.26 * scale, 0.34 * scale), mat);
+  head.position.set(0, 0.62 * scale, 0.46 * scale);
+  g.add(head);
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(0.16 * scale, 0.14 * scale, 0.2 * scale), mat);
+  snout.position.set(0, 0.56 * scale, 0.66 * scale);
+  g.add(snout);
+  for (const sx of [-1, 1]) {                 // 귀
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.07 * scale, 0.16 * scale, 4), mat);
+    ear.position.set(sx * 0.11 * scale, 0.79 * scale, 0.42 * scale);
+    g.add(ear);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035 * scale, 6, 5),
+      new THREE.MeshStandardMaterial({ color: 0xffd257, emissive: 0xffa22a, emissiveIntensity: 1.4 }));
+    eye.position.set(sx * 0.09 * scale, 0.65 * scale, 0.61 * scale);
+    g.add(eye);                               // 밤에 빛나는 눈 — 어둠 속에서 먼저 보입니다
+  }
+  const legs = [];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06 * scale, 0.05 * scale, 0.46 * scale, 5), dark);
+    leg.position.set(sx * 0.17 * scale, 0.23 * scale, sz * 0.26 * scale);
+    g.add(leg); legs.push(leg);
+  }
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * scale, 0.02 * scale, 0.46 * scale, 5), mat);
+  tail.position.set(0, 0.6 * scale, -0.5 * scale);
+  tail.rotation.x = 0.9;
+  g.add(tail);
+
+  if (opt.stripes) {                          // 맹호 — 검은 줄무늬
+    for (let i = 0; i < 4; i++) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(0.54 * scale, 0.06 * scale, 0.07 * scale), dark);
+      st.position.set(0, 0.74 * scale, (i - 1.5) * 0.17 * scale);
+      g.add(st);
+    }
+  }
+  /* ★ 몬스터 갱신 루프는 userData.body 를 반드시 씁니다 (체력에 따른 색, 예비 동작 기울임).
+     네발짐승도 같은 약속을 지켜야 합니다 — 안 그러면 그 자리에서 TypeError 가 납니다.
+     bodyBaseY 는 "이 몸통이 원래 서 있는 높이" 입니다. 사람은 0.82, 짐승은 낮습니다. */
+  g.userData.body = body;
+  g.userData.bodyBaseY = 0.52;
+  g.userData.legs = legs;                     // 달릴 때 흔듭니다
+  g.userData.beast = true;
+  return g;
+}
+
+/* ── 역병 시체 — 사람이되 기울어지고 팔이 늘어진 실루엣 ── */
+function makeUndead(color, scale) {
+  const g = makeHumanoid(color, 0x4a5a3c, scale, false);
+  g.rotation.x = 0.16;                        // 앞으로 기울어진 자세
+  for (const c of g.children) {               // 팔을 축 늘어뜨립니다
+    if (c.userData && c.userData.arm) c.rotation.x = 0.9;
+  }
+  const rib = new THREE.Mesh(
+    new THREE.TorusGeometry(0.19 * scale, 0.035 * scale, 5, 10),
+    new THREE.MeshStandardMaterial({ color: 0xd8d2bd, roughness: 0.9 }));
+  rib.rotation.x = Math.PI / 2;
+  rib.position.y = 0.82 * scale;
+  g.add(rib);                                 // 드러난 갈비뼈
+  for (const sx of [-1, 1]) {                 // 흐린 초록 눈
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035 * scale, 6, 5),
+      new THREE.MeshStandardMaterial({ color: 0xbaf5a0, emissive: 0x6fdc52, emissiveIntensity: 1.2 }));
+    eye.position.set(sx * 0.08 * scale, 1.18 * scale, 0.17 * scale);
+    g.add(eye);
+  }
+  return g;
+}
+
 function makeMonsterMesh(m) {
   const scale = monScale(m);
   const slot = m.boss ? 'boss' : 'monster';
   if (Models.has(slot)) return wrapModel(slot);
+
+  /* 짐승·시체는 사람과 다른 몸을 씁니다 — 실루엣으로 구분돼야 합니다 */
+  const K = C.MONSTER_KINDS[m.kind];
+  if (!m.boss && K && K.body === 'beast')
+    return makeBeast(kindColor(m), scale, { stripes: m.kind === 'tiger' });
+  if (!m.boss && K && K.body === 'undead')
+    return makeUndead(kindColor(m), scale);
+
   const g = makeHumanoid(kindColor(m), 0xD9B84A, scale, false);
   // 황건 — 노란 두건
   const band = new THREE.Mesh(
@@ -1294,10 +1391,19 @@ export function sync(S, dt) {
     mesh.position.set(gx(m.x), 0, gz(m.y));
     mesh.rotation.y = m.facing || 0;
     const scale = monScale(m);
-    if (!mesh.userData.isModel)
-      mesh.userData.body.position.y = (0.82 + Math.sin(S.t * 10 + m.x) * 0.05) * scale;
+    if (!mesh.userData.isModel && mesh.userData.body) {
+      const baseY = mesh.userData.bodyBaseY != null ? mesh.userData.bodyBaseY : 0.82;
+      mesh.userData.body.position.y = (baseY + Math.sin(S.t * 10 + m.x) * 0.05) * scale;
+      /* 네발짐승은 다리를 엇갈려 흔듭니다 — 뛰는 것처럼 보여야 "짐승" 입니다 */
+      if (mesh.userData.legs) {
+        const ph = S.t * 13 + m.x * 0.1;
+        mesh.userData.legs.forEach((leg, li) => {
+          leg.rotation.x = Math.sin(ph + (li % 2 ? Math.PI : 0) + (li < 2 ? 0 : 0.5)) * 0.5;
+        });
+      }
+    }
     // 체력이 닳을수록 어두워지고, 맞는 순간 하얗게 번쩍입니다
-    if (!mesh.userData.isModel) {
+    if (!mesh.userData.isModel && mesh.userData.body) {
       const ratio = Math.max(0, m.hp / m.maxHp);
       const base = new THREE.Color(kindColor(m));
       base.multiplyScalar(0.45 + ratio * 0.55);
@@ -1324,11 +1430,11 @@ export function sync(S, dt) {
       tg.scale.setScalar((m.boss ? 1.9 : 1.15) * (0.35 + p * 0.65));
       tg.material.opacity = 0.35 + p * 0.5;
       // 몸을 뒤로 젖혀 "때리려 한다"를 보여줍니다
-      mesh.userData.body.rotation.x = -p * 0.5;
+      if (mesh.userData.body) mesh.userData.body.rotation.x = -p * 0.5;
     } else {
       const tg = R.telegraphs.get(m);
       if (tg) tg.visible = false;
-      mesh.userData.body.rotation.x = 0;
+      if (mesh.userData.body) mesh.userData.body.rotation.x = 0;
     }
   }
   for (const [m, mesh] of R.monsterMeshes) {
@@ -1488,21 +1594,27 @@ function updateDayNight(S, dt) {
     u.bottom.value.setHex(0xd8c9a8).lerp(new THREE.Color(0x16203a), nightMix);
   }
   if (R.bloom) R.bloom.strength = 0.32 + nightMix * 0.6;   // 밤에 불빛이 더 번집니다
-  R.scene.fog.near = 22 - nightMix * 14;
-  R.scene.fog.far = 68 - nightMix * 32;
+  /* 밤 안개 — 너무 가까이서 덮으면 성 앞도 안 보입니다. 조금 물러나게 했습니다. */
+  R.scene.fog.near = 22 - nightMix * 8;
+  R.scene.fog.far = 68 - nightMix * 22;
 
-  R.sun.intensity = 2.6 * (1 - nightMix) + 0.06;
+  /* ★ "밤이 되면 너무너무 어두워" — 밤의 바닥 밝기를 올렸습니다.
+     달빛(sun)을 0.06 → 0.45, 하늘빛(hemi)을 0.14 → 0.42 로.
+     완전히 밝히면 밤의 긴장이 사라지므로, 형체는 보이되 어둑한 정도로 맞췄습니다. */
+  R.sun.intensity = 2.6 * (1 - nightMix) + 0.45 * nightMix + 0.06;
   R.sun.color.setHex(nightMix > 0.5 ? 0x9fb6e0 : 0xfff2d8);
-  R.hemi.intensity = 1.05 * (1 - nightMix) + 0.14;
+  R.hemi.intensity = 1.05 * (1 - nightMix) + 0.42 * nightMix + 0.06;
 
-  R.baseLight.intensity = nightMix * 34;
-  R.heroLight.intensity = nightMix * 22;
+  R.baseLight.intensity = nightMix * 70;
+  R.baseLight2.intensity = nightMix * 26;
+  R.heroLight.intensity = nightMix * 30;
   if (!S.hero.dead) R.heroLight.position.set(gx(S.hero.x), 2.2, gz(S.hero.y));
 
   // 최후의 저항 — 거점 불빛이 붉게 타오릅니다
   if (S.lastStand) {
     R.baseLight.color.setHex(0xff5a3c);
-    R.baseLight.intensity = (nightMix * 30 + 10) * (1 + Math.sin(S.t * 6) * 0.2);
+    R.baseLight2.color.setHex(0xff7a4c);
+    R.baseLight.intensity = (nightMix * 60 + 20) * (1 + Math.sin(S.t * 6) * 0.2);
   }
 
   // 그림자 카메라를 장수 주변으로 따라가게 해서 해상도를 아낍니다
@@ -1724,9 +1836,11 @@ export function spawnHitSpark(x, y, crit) {
   R.vfx.push({ mesh: im, t: 0, life: crit ? 0.5 : 0.35, kind: 'spark', parts, n });
 }
 
-export function shakeCamera(power) {
+/* 화면 흔들림. dur 을 주면 더 오래 흔듭니다 —
+   진격처럼 "덩어리가 몰려오는" 순간은 짧게 톡 치는 것보다 길게 울리는 쪽이 맞습니다. */
+export function shakeCamera(power, dur = 0.22) {
   R.shake.power = Math.max(R.shake.power, power);
-  R.shake.t = 0.22;
+  R.shake.t = Math.max(R.shake.t, dur);
 }
 
 /* ---------------- 미니맵 ---------------- */

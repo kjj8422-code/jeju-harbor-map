@@ -91,12 +91,14 @@ export const OBJECTIVES = [
 /* ==================================================================
    생성
    ================================================================== */
-export function createSim(heroId, awaken = 0) {
+export function createSim(heroId, awaken = 0, diffId = C.DEFAULT_DIFF) {
   const heroDef = C.GENERALS.find(g => g.id === heroId) || C.GENERALS[1];
+  const D = C.diffOf(diffId);
   const mul = heroDef.startRes;
 
   const S = {
     heroDef,
+    diff: D,                 // 초급 · 중급 · 상급
     awaken: Math.max(0, Math.min(C.AWAKEN_MAX, awaken)),   // 각성 ★ 단계
     phase: 'day',            // day | warn | night | report | over
     day: 1, dayT: 0, warnT: 0, t: 0,
@@ -124,7 +126,8 @@ export function createSim(heroId, awaken = 0) {
     base: {
       x: C.BASE_TX * C.TILE + C.TILE / 2,
       y: C.BASE_TY * C.TILE + C.TILE / 2,
-      hp: C.BASE_LEVELS[0].maxHp, maxHp: C.BASE_LEVELS[0].maxHp
+      hp: Math.round(C.BASE_LEVELS[0].maxHp * D.baseHpMul),
+      maxHp: Math.round(C.BASE_LEVELS[0].maxHp * D.baseHpMul)
     },
 
     occ: new Uint8Array(C.MAPW * C.MAPH),
@@ -143,6 +146,10 @@ export function createSim(heroId, awaken = 0) {
     plannedDirs: [],
     mercHired: 0,
     waveIdx: 0, waveStats: null,
+    /* 서지 — 밤을 여러 번의 진격으로 나눕니다 (config.SURGE 참고) */
+    surges: [], surgeT: 0, surgeNo: 0, surgeTotal: 0, groupSeq: 0,
+    waveTotal: 0, waveLeft: 0,      // 전황 게이지에 쓰는 값
+    lastVoice: {},                  // 울음소리가 겹치지 않게
     objIdx: 0,
     pickaxe: false, weaponLv: 0, forge: false, camps: 0,
     // 장비 — 만든 것만 true 가 됩니다
@@ -209,7 +216,7 @@ function addNode(S, tx, ty, type) {
   // 거점 앞 5x5는 건설 공간으로 비워둡니다 (배치 교착 방지)
   if (Math.abs(tx - C.BASE_TX) <= 2 && Math.abs(ty - C.BASE_TY) <= 2) return;
   S.occ[k] = C.OCC_NODE;
-  const max = C.NODE_MAX[type];
+  const max = Math.max(4, Math.round(C.NODE_MAX[type] * S.diff.nodeMul));
   S.nodes.push({ tx, ty, x: tx * C.TILE + C.TILE / 2, y: ty * C.TILE + C.TILE / 2,
                  type, amt: max, max, regrow: 0 });
 }
@@ -443,7 +450,15 @@ export function canBuildAt(S, tx, ty, buildId) {
      하필 나무가 걸리면 그 자리에 구멍이 났습니다.
      이제 **밀어내고 지을 수 있습니다** — 남은 자원의 절반을 챙기고 자원지는 사라집니다.
      "이 나무를 벨까, 자원으로 남길까" 라는 선택이 생깁니다. */
-  if (occ !== C.OCC_EMPTY && occ !== C.OCC_NODE) return { ok: false, why: 'occupied' };
+  /* ★ 예전에는 전부 'occupied' 하나로 뭉뚱그려 "이미 무언가 있습니다" 라고만 했습니다.
+     거점은 3x3 이라 **성 바로 옆 여덟 칸이 전부 막힙니다.** 성 옆에 병영을 놓으려던
+     사람은 "왜 병영이 안 지어지지?" 하게 됩니다 — 무엇이 막는지를 말해줘야 합니다. */
+  if (occ !== C.OCC_EMPTY && occ !== C.OCC_NODE) {
+    const why = occ === C.OCC_BASE ? 'base'
+              : occ === C.OCC_WALL ? 'wall'
+              : occ === C.OCC_TRAP ? 'trapHere' : 'struct';
+    return { ok: false, why };
+  }
   const cx = tx * C.TILE + C.TILE / 2, cy = ty * C.TILE + C.TILE / 2;
   if (Math.hypot(cx - S.hero.x, cy - S.hero.y) > C.BUILD_RANGE) return { ok: false, why: 'far' };
   const def = C.BUILDS.find(b => b.id === buildId);
@@ -454,8 +469,13 @@ export function canBuildAt(S, tx, ty, buildId) {
   return { ok: true, why: '', essence: aff.essence };
 }
 
-const BUILD_DENY = {
-  out: '지도 밖입니다', occupied: '이미 무언가 있습니다',
+export const BUILD_DENY = {
+  out: '지도 밖입니다',
+  base: '거점입니다 — 성은 3칸x3칸이라 바로 옆까지 자리를 차지합니다. 한 칸 더 떨어뜨리세요',
+  wall: '목책이 있습니다 — 철거(5번)로 부수면 절반을 돌려받습니다',
+  trapHere: '함정이 있습니다 — 철거(5번)로 부수면 절반을 돌려받습니다',
+  struct: '이미 시설이 있습니다 — 철거(5번)로 부수면 절반을 돌려받습니다',
+  occupied: '이미 무언가 있습니다',
   far: '너무 멉니다 — 가까이 가세요', owned: '이미 보유한 시설입니다', cost: '자원이 부족합니다'
 };
 
@@ -972,7 +992,7 @@ function damageHero(S, amt, from) {
   emit(S, 'heroHit', { x: h.x, y: h.y, dmg: amt });
   if (h.hp <= 0 && !h.dead) {
     h.dead = true;
-    h.respawn = C.RESPAWN_BASE + S.day * 0.2;
+    h.respawn = (C.RESPAWN_BASE + S.day * 0.2) * S.diff.respawnMul;
     h.volley = 0; h.guard = 0; h.frenzy = 0; h.frenzyAtk = 1; h.frenzyMove = 1;
     toast(S, `<b>${S.heroDef.name}</b> 쓰러짐 — ${Math.round(h.respawn)}초 후 부활 (탈락은 없습니다)`);
     sound(S, 'heroDown');
@@ -1028,24 +1048,99 @@ function kindList(w, count) {
   return list;
 }
 
+/* 한 덩어리를 실제로 내보냅니다.
+   같은 무리는 같은 groupId 를 갖고, 같은 방향에서, 대열을 이뤄 들어옵니다. */
+function releaseGroup(S, w, kinds, side, isFirst) {
+  const mul = S.heroDef.waveMul * S.diff.waveMul;
+  const hpMulD = S.diff.hpMul;
+  const gid = ++S.groupSeq;
+  const p0 = edgePoint(side);
+  let slowest = Infinity;
+  const made = [];
+  kinds.forEach((kind, i) => {
+    const K = C.MONSTER_KINDS[kind] || C.MONSTER_KINDS.normal;
+    /* 대열 — 줄(row)과 칸(col)으로 벌려 세웁니다. 한 점에 겹쳐 나오면 뭉개져 보입니다. */
+    const col = i % C.FORMATION.rows, row = Math.floor(i / C.FORMATION.rows);
+    const ox = (col - (C.FORMATION.rows - 1) / 2) * C.FORMATION.spread;
+    const oy = -row * C.FORMATION.spread * 0.8;
+    const m = makeMonster(
+      clamp(p0.x + ox, 8, C.WORLD_W - 8), clamp(p0.y + oy, 8, C.WORLD_H - 8),
+      w.hp * mul * K.hpMul * hpMulD, w.spd * K.spdMul, w.dmg * K.dmgMul, false, kind);
+    m.group = gid; m.formation = true;
+    slowest = Math.min(slowest, m.spd);
+    S.monsters.push(m); made.push(m);
+  });
+  for (const m of made) m.groupSpd = slowest * C.FORMATION.keep;   // 가장 느린 놈에 맞춰 뭉쳐 갑니다
+
+  /* 무리에 섞인 짐승이 웁니다 — 무엇이 오는지 소리로 먼저 압니다 */
+  const voices = [...new Set(made.map(m => (C.MONSTER_KINDS[m.kind] || {}).voice).filter(Boolean))];
+  for (const v of voices) sound(S, v);
+
+  if (!isFirst) {
+    S.surgeNo++;
+    const label = C.SURGE.names[Math.min(C.SURGE.names.length - 1, S.surgeNo - 1)];
+    emit(S, 'surge', { no: S.surgeNo, total: S.surgeTotal, label,
+                       count: made.length, side, shake: C.SURGE.shake });
+    sound(S, 'surge');
+  }
+  return made.length;
+}
+
 function spawnWave(S, w) {
   S.phase = 'night';
   S.waveStats = { killed: 0, byTrap: 0, bySoldier: 0, byHero: 0, baseDmg: 0, trapKills: {} };
-  const mul = S.heroDef.waveMul;
-  const count = Math.round(w.count * mul);
+  const mul = S.heroDef.waveMul * S.diff.waveMul;
+  const count = Math.max(1, Math.round(w.count * mul));
   const kinds = kindList(w, count);
-  for (let i = 0; i < count; i++) {
-    const p = edgePoint(S.spawnDirs[i % S.spawnDirs.length]);
-    const K = C.MONSTER_KINDS[kinds[i]] || C.MONSTER_KINDS.normal;
-    S.monsters.push(makeMonster(p.x, p.y,
-      w.hp * mul * K.hpMul, w.spd * K.spdMul, w.dmg * K.dmgMul, false, kinds[i]));
+
+  /* ★ 예전에는 여기서 count 마리를 **전부** 한 번에 만들었습니다.
+     그래서 밤이 시작되는 순간 지도에 적이 흩어져 있을 뿐, "몰려온다" 는 순간이 없었습니다.
+     이제 선발대만 내보내고 나머지는 진격(서지)으로 나눠 보냅니다. */
+  const first = Math.max(1, Math.round(count * C.SURGE.firstPct));
+  /* 선발대도 속도가 비슷한 놈들로 — 대열이 한 마리 때문에 기어가지 않게 */
+  const firstKinds = kinds.slice(0, first)
+    .sort((a, b) => (C.MONSTER_KINDS[b] || {}).spdMul - (C.MONSTER_KINDS[a] || {}).spdMul);
+  releaseGroup(S, w, firstKinds, S.spawnDirs[0], true);
+
+  /* ★ 진격 무리는 **비슷한 속도끼리** 묶습니다.
+     처음엔 아무렇게나 잘랐더니, 발 느린 역병 시체 한 마리가 낀 무리 전체가
+     대열을 맞추느라 기어왔습니다. 그러면 들개의 빠르기가 사라지고, 무리가
+     너무 느려 장수가 함정에 닿기도 전에 다 잡아버립니다 —
+     실제로 자동 플레이에서 좀비가 낀 44·77일의 함정 처치 비율이 0~2% 로 주저앉았습니다.
+     속도순으로 정렬해 자르면 「들개떼가 달려든다」 「시체 무리가 기어온다」처럼
+     무리마다 성격이 생기고, 대열 속도도 자연스러워집니다. 느린 무리를 먼저 내보내
+     늦게 출발한 빠른 무리와 비슷한 때에 도착하게 합니다. */
+  const spdOf = k => (C.MONSTER_KINDS[k] || C.MONSTER_KINDS.normal).spdMul;
+  const rest = kinds.slice(first).sort((a, b) => spdOf(a) - spdOf(b));
+  S.surges = []; S.surgeNo = 0; S.surgeT = 0;
+  const groups = Math.min(C.SURGE.maxGroups, Math.max(C.SURGE.minGroups, C.SURGE.groupsFor(S.waveIdx)));
+  const per = Math.ceil(rest.length / groups);
+  for (let i = 0; i < rest.length; i += per) {
+    S.surges.push({ kinds: rest.slice(i, i + per),
+                    side: S.spawnDirs[(S.surges.length + 1) % S.spawnDirs.length],
+                    at: (S.surges.length + 1) * C.SURGE.gapFor(S.waveIdx) });
   }
+  S.surgeTotal = S.surges.length;
+  S.waveW = w;
+
   if (w.boss) {
     const bp = edgePoint(S.spawnDirs[0]);
     S.monsters.push(makeMonster(bp.x, bp.y, w.boss.hp * mul, w.boss.spd, w.boss.dmg, true));
   }
-  emit(S, 'nightStart', { name: w.name, count: S.monsters.length });
+  /* 전황 게이지 기준값 — 이번 밤에 올 적의 전체 수 */
+  S.waveTotal = count + (w.boss ? 1 : 0);
+  emit(S, 'nightStart', { name: w.name, count: S.waveTotal, surges: S.surgeTotal });
   sound(S, 'nightStart');
+}
+
+/** 밤 동안 예약된 진격을 시간에 맞춰 내보냅니다 */
+function updateSurges(S, dt) {
+  if (!S.surges.length) return;
+  S.surgeT += dt;
+  while (S.surges.length && S.surgeT >= S.surges[0].at) {
+    const g = S.surges.shift();
+    releaseGroup(S, S.waveW, g.kinds, g.side, false);
+  }
 }
 
 function endWave(S) {
@@ -1057,7 +1152,7 @@ function endWave(S) {
   S.waveIdx++;
   // 통계가 없는 상태로 들어올 수 있습니다(검수 코드가 phase 를 직접 바꾸는 경우 등).
   const st = S.waveStats || { killed: 0, byTrap: 0, bySoldier: 0, byHero: 0, baseDmg: 0, trapKills: {} };
-  const reward = C.WAVE_SHARD[S.waveIdx - 1] || 15;
+  const reward = Math.round((C.WAVE_SHARD[S.waveIdx - 1] || 15) * S.diff.shardMul);
   S.shard += reward;
 
   let mvp = '없음 (함정이 한 마리도 못 잡았습니다)', mvpKills = 0;
@@ -1127,7 +1222,11 @@ export function update(S, dt) {
     S.warnT += dt;
     if (S.warnT >= C.WARN_SEC) spawnWave(S, waveForDay(S.day));
   } else if (S.phase === 'night') {
-    if (S.monsters.length === 0) { endWave(S); return; }
+    updateSurges(S, dt);
+    /* ★ 남은 진격이 있으면 화면에 적이 없어도 밤이 끝나지 않습니다.
+       (안 그러면 선발대를 빨리 정리했을 때 나머지가 오기도 전에 밤이 끝납니다) */
+    if (S.monsters.length === 0 && S.surges.length === 0) { endWave(S); return; }
+    S.waveLeft = S.monsters.length + S.surges.reduce((a, g) => a + g.kinds.length, 0);
   }
 
   updateHero(S, dt);
@@ -1365,7 +1464,7 @@ function updateHero(S, dt) {
     if (d2 < nd2) { nd2 = d2; node = n; }
   }
   if (node) {
-    h.gp += C.GATHER_RATE[node.type] * (S.pickaxe ? C.PICK_GATHER : 1) * dt;
+    h.gp += C.GATHER_RATE[node.type] * (S.pickaxe ? C.PICK_GATHER : 1) * S.diff.gather * dt;
     while (h.gp >= 1 && node.amt > 0) {
       h.gp -= 1; node.amt--; S.res[node.type]++; S.got[node.type]++;
       // 정수 — 무엇을 캐든 낮은 확률로 함께 나옵니다
@@ -1451,7 +1550,7 @@ function updateSoldiers(S, dt) {
     } else if (s.node) {
       moveToward(s, s.node.x, s.node.y, 90, dt, 22);
       if (dist2(s.x, s.y, s.node.x, s.node.y) < 26 * 26) {
-        s.gp += (s.gather || C.SOLDIER_GATHER_RATE) * dt;
+        s.gp += (s.gather || C.SOLDIER_GATHER_RATE) * S.diff.gather * dt;
         while (s.gp >= 1 && s.node.amt > 0) {
           s.gp -= 1; s.node.amt--; s.carry++;
           if (Math.random() < (C.ESSENCE_CHANCE[s.node.type] || 0) * 0.6) {
@@ -1569,11 +1668,24 @@ function updateMonsters(S, dt) {
       slowMul *= (1 - S.heroDef.slowAura);
     }
 
+    /* ── 진형 전진 ─────────────────────────────────────────
+       한 진격으로 온 무리는 **가장 느린 놈에 속도를 맞춰** 뭉쳐서 옵니다.
+       그래야 "부대가 밀고 들어온다" 로 보입니다 — 각자 최고 속도로 가면
+       빠른 놈부터 줄줄이 도착해서 그냥 행렬입니다.
+       거점에 가까워지거나(breakDist) 피해를 입으면 대열이 풀리고 각자 싸웁니다. */
+    let spd = m.spd;
+    if (m.formation) {
+      const toBase = Math.hypot(m.x - S.base.x, m.y - S.base.y);
+      if (toBase <= C.FORMATION.breakDist) m.formation = false;
+      else spd = m.groupSpd || m.spd;
+    }
+
     // 이동 — 길이 있으면 흐름장, 막혔으면 목책 파괴
     const d = S.dist[k];
     if (d < 0) {
       const w = nearestWall(S, m.x, m.y);
       if (w) {
+        m.formation = false;                    // 목책을 두드리기 시작하면 대열이 풀립니다
         moveToward(m, w.x, w.y, m.spd * slowMul, dt, 24);
         if (dist2(m.x, m.y, w.x, w.y) < 30 * 30 && m.cd <= 0) {
           m.cd = 1.1;
@@ -1588,15 +1700,15 @@ function updateMonsters(S, dt) {
           }
         }
       } else {
-        moveToward(m, S.base.x, S.base.y, m.spd * slowMul, dt, 10);
+        moveToward(m, S.base.x, S.base.y, spd * slowMul, dt, 10);
       }
     } else {
       const fxv = S.flowX[k], fyv = S.flowY[k];
       if (fxv === 0 && fyv === 0) {
-        moveToward(m, S.base.x, S.base.y, m.spd * slowMul, dt, 10);
+        moveToward(m, S.base.x, S.base.y, spd * slowMul, dt, 10);
       } else {
-        m.x = clamp(m.x + fxv * m.spd * slowMul * dt, 6, C.WORLD_W - 6);
-        m.y = clamp(m.y + fyv * m.spd * slowMul * dt, 6, C.WORLD_H - 6);
+        m.x = clamp(m.x + fxv * spd * slowMul * dt, 6, C.WORLD_W - 6);
+        m.y = clamp(m.y + fyv * spd * slowMul * dt, 6, C.WORLD_H - 6);
         m.facing = Math.atan2(fxv, fyv);
       }
     }
@@ -1668,6 +1780,7 @@ export function damageMonster(S, m, amt, src, trap, heavy, crit) {
   if (m.armor) amt *= 1 - m.armor;      // 방패병·정예는 피해를 덜 받습니다
   m.hp -= amt;
   m.hitFlash = 0.12;
+  if (src !== 'trap') m.formation = false;   // 맞으면 대열이 풀리고 각자 싸웁니다
 
   // 맞은 자리에 피해 숫자 — 타격감의 절반은 이 숫자에서 나옵니다
   if (src !== 'trap' || Math.random() < 0.25) {
@@ -1678,8 +1791,11 @@ export function damageMonster(S, m, amt, src, trap, heavy, crit) {
   }
   if (src === 'hero') emit(S, 'hitSpark', { x: m.x, y: m.y, crit: !!crit });
 
-  // 장수가 때렸을 때만 잠깐 얼립니다 (함정 지속 피해까지 얼면 어색합니다)
-  if (src === 'hero') m.hitStop = C.HITSTOP;
+  /* 장수가 때렸을 때만 잠깐 얼립니다 (함정 지속 피해까지 얼면 어색합니다).
+     치명타·궁극기는 더 오래 얼려서 "묵직하게 박혔다" 를 만듭니다. */
+  if (src === 'hero')
+    m.hitStop = Math.max(m.hitStop,
+      heavy ? C.HITSTOP_ULT : crit ? C.HITSTOP_CRIT : C.HITSTOP);
 
   /* ★ 평타로는 적의 공격이 끊기지 않습니다.
      끊기게 하면 가만히 서서 때리기만 해도 안 맞아서 물러날 이유가 없어집니다.

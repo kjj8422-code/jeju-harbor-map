@@ -7,6 +7,22 @@
    실행: node design/tests/audit-longplay.mjs
 */
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
+
+/* 서지(진격) 도입 후 — 남은 진격까지 전부 흘려보내야 밤이 끝납니다 */
+async function clearNight(p, maxSec = 40) {
+  for (let i = 0; i < maxSec * 5; i++) {
+    const done = await p.evaluate(() => {
+      const S = window.__sg.S, Sim = window.__sg.Sim;
+      if (!S) return true;
+      while (S.monsters.length) Sim.damageMonster(S, S.monsters[0], 99999, 'trap', S.traps[0] || null);
+      if (S.surges && S.surges.length) { S.surgeT += 3; return false; }
+      return S.phase !== 'night';
+    });
+    if (done) break;
+    await p.waitForTimeout(150);
+  }
+  await p.waitForTimeout(700);
+}
 const URL = process.env.SG_URL || 'http://localhost:8899/samguk-99-3d.html';
 
 const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
@@ -51,9 +67,7 @@ for (let wave = 1; wave <= 9; wave++) {
     const n = Math.floor(S.monsters.length * 0.5);
     for (let i = 0; i < n; i++) Sim.damageMonster(S, S.monsters[0], 99999, 'hero'); });
   await p.waitForTimeout(600);
-  await p.evaluate(() => { const S = window.__sg.S, Sim = window.__sg.Sim;
-    while (S.monsters.length) Sim.damageMonster(S, S.monsters[0], 99999, 'trap', S.traps[0] || null); });
-  await p.waitForTimeout(1100);
+  await clearNight(p);
 
   const st = await p.evaluate(() => { const S = window.__sg.S; return {
     phase: S.phase, t: S.t, day: S.day, waveIdx: S.waveIdx,

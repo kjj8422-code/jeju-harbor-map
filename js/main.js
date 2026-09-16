@@ -217,10 +217,34 @@ function updateRespawnBox() {
 }
 
 /* ---------------- 시작 ---------------- */
-function startGame() {
+/* 난이도 — 고른 값은 다음 판에도 이어집니다 */
+let selDiff = localStorage.getItem('sg3d_diff') || C.DEFAULT_DIFF;
+if (!C.DIFFS.some(d => d.id === selDiff)) selDiff = C.DEFAULT_DIFF;
+
+function renderDiffCards() {
+  const row = $('diffRow');
+  if (!row) return;
+  row.innerHTML = C.DIFFS.map(d => `
+    <button class="diffCard${d.id === selDiff ? ' on' : ''}" data-diff="${d.id}"
+            style="border-top-color:${d.color}">
+      <span class="dh"><span class="di">${d.icon}</span>
+        <span class="dn" style="color:${d.color}">${d.name}</span>
+        <span class="dt">${d.tag}</span></span>
+      <span class="dd">${d.desc}</span>
+      <span class="dx">${d.detail}</span>
+    </button>`).join('');
+  row.querySelectorAll('[data-diff]').forEach(b => {
+    b.onclick = () => { selDiff = b.dataset.diff;
+      localStorage.setItem('sg3d_diff', selDiff);
+      renderDiffCards(); Audio.play('objective'); };
+  });
+}
+
+function startGame(heroId) {
   for (const [, b] of hpBars) b.el.remove();
   hpBars.clear();
-  S = Sim.createSim(C.GENERALS[selHero].id, awakenOf(C.GENERALS[selHero].id));
+  const hid = heroId || C.GENERALS[selHero].id;
+  S = Sim.createSim(hid, awakenOf(hid), selDiff);
   R3.buildWorld(S);
   buildSel = null; paused = false;
   closeAll();
@@ -229,7 +253,8 @@ function startGame() {
   refreshSkillBar();
   refreshMercs();
   Audio.ensure(); if (soundOnMusic) Audio.startMusic();
-  toast('<b>1일차</b> — 99일을 버티면 승리합니다');
+  toast(`<b>1일차</b> — 99일을 버티면 승리합니다 `
+      + `(<b style="color:${S.diff.color}">${S.diff.icon} ${S.diff.name}</b>)`);
   const d0 = Sim.upcomingDirs(S).map(Sim.dirName).join(' · ');
   toast(`첫 대란은 <b>11일</b> · <b style="color:#E0554A">${d0}</b>에서 옵니다 — 바닥의 붉은 화살표가 그 길입니다`);
 }
@@ -267,8 +292,14 @@ function handleEvents() {
         break;
       case 'nightStart':
         $('waveAlert').style.display = 'none';
-        toast(`<b style="color:#C6412F">${e.name}</b> — 몬스터 ${e.count}마리`);
+        toast(`<b style="color:#C6412F">${e.name}</b> — 몬스터 ${e.count}마리`
+            + (e.surges ? ` · <b>${e.surges}차례</b>에 나눠 밀려옵니다` : ''));
+        $('warBar').classList.add('on');
         break;
+      /* ── 진격 — "적 본대가 밀려온다" ────────────────────────
+         같은 수의 적이라도 **한꺼번에 밀려오는 순간**이 있어야 밤이 사건이 됩니다.
+         배너 + 화면 흔들림 + 붉은 섬광 + 징·함성을 한 번에 터뜨립니다. */
+      case 'surge': surgeBanner(e); break;
       case 'shot': R3.spawnArrow(e.from, e.to); Audio.play('shoot'); break;
       case 'towerShot': R3.spawnArrow(e.from, e.to); break;
       case 'hitNumber':
@@ -900,19 +931,20 @@ function refreshGuide() {
     }).join('')
   ).join('');
 
-  // 4-b) 적의 종류
-  const MONDAY = { normal:'1막부터', fast:'44일~', tank:'55일~', elite:'77일~' };
+  /* 4-b) 적의 종류 — 목록도 설명도 config 에서 그대로 끌어옵니다.
+     예전에는 여기 4종이 손으로 박혀 있어서, 적을 늘려도 안내에는 안 나왔습니다. */
+  const ICON = { man:'👹', beast:'🐺', undead:'🧟' };
+  const firstDay = k => {           // 이 적이 처음 나오는 일차를 웨이브에서 직접 찾습니다
+    const w = C.WAVES.find(w => w.mix.some(([kk]) => kk === k));
+    return w ? `${w.day}일~` : '';
+  };
   $('guideMon').innerHTML = Object.entries(C.MONSTER_KINDS).map(([k, m]) => `
     <div class="gRow">
-      <div class="gHead"><span class="gIcon">👹</span>
+      <div class="gHead"><span class="gIcon">${ICON[m.body] || '👹'}</span>
         <b style="color:#${m.color.toString(16).padStart(6, '0')}">${m.name}</b>
-        <span class="gHave">${MONDAY[k] || ''}</span></div>
-      <div class="gLine"><span class="gTag">특징</span>체력 ×${m.hpMul} · 속도 ×${m.spdMul} · 공격 ×${m.dmgMul}${m.armor ? ` · 받는 피해 -${Math.round(m.armor * 100)}%` : ''}</div>
-      <div class="gLine"><span class="gTag">대응</span>${
-        k === 'fast' ? '함정 한 칸으로는 못 잡습니다. 함정을 두세 칸 이어 까세요.'
-        : k === 'tank' ? '목책이 오래 버텨야 합니다. 성을 올리고 방패 용병을 세우세요.'
-        : k === 'elite' ? '붉은 원이 차오르면 걸어서 물러나 흘리고, 스킬로 끊으세요. 정면으로 맞으면 아픕니다.'
-        : '기본 몬스터입니다. 함정과 병사로 충분히 정리됩니다.'}</div>
+        <span class="gHave">${firstDay(k)}</span></div>
+      <div class="gLine"><span class="gTag">특징</span>체력 ×${m.hpMul} · 속도 ×${m.spdMul} · 공격 ×${m.dmgMul}${m.armor ? ` · 받는 피해 -${Math.round(m.armor * 100)}%` : ''}${m.voice ? ' · 다가올 때 웁니다' : ''}</div>
+      <div class="gLine"><span class="gTag">대응</span>${m.tip || ''}</div>
     </div>`).join('');
 
   // 4-c) 병사와 용병
@@ -964,6 +996,75 @@ function closeAll() {
 }
 
 let lastReport = null;
+/* ---------------- 진격 연출 ---------------- */
+function surgeBanner(e) {
+  const box = $('surgeBanner'), fl = $('flash');
+  if (box) {
+    $('sgTitle').textContent = e.label;
+    $('sgSub').innerHTML = `${Sim.dirName(e.side)} 방향 · <b>${e.count}마리</b>`
+      + `  <span style="opacity:.75">(${e.no}/${e.total}차)</span>`;
+    box.classList.remove('on'); void box.offsetWidth;   // 애니메이션 재시작
+    box.classList.add('on');
+  }
+  if (fl) { fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on'); }
+  R3.shakeCamera(e.shake || 0.9, 0.85);   // 길게 울립니다 — 땅이 흔들리는 느낌
+}
+
+/* ---------------- 전황 게이지 ----------------
+   몹 하나하나의 체력이 아니라 "이번 밤이 얼마나 남았나" 를 보여줍니다.
+   왼쪽은 우리 방어선(거점 체력 + 병력), 오른쪽은 남은 적. */
+function refreshWarBar() {
+  const bar = $('warBar');
+  if (!bar) return;
+  if (!S || !Sim.isNight(S) || S.over) { bar.classList.remove('on'); return; }
+  bar.classList.add('on');
+
+  /* ★ S.waveLeft 는 0 으로 시작하므로 그대로 믿으면 안 됩니다 —
+     밤이 막 열린 순간 "남은 적 0" 이 떴습니다. 화면에서 직접 셉니다. */
+  const pending = S.surges ? S.surges.reduce((a, g) => a + g.kinds.length, 0) : 0;
+  const left = S.monsters.length + pending;
+  const total = Math.max(1, S.waveTotal || left || 1);
+  const foePct = Math.max(0, Math.min(100, Math.round(left * 100 / total)));
+
+  const basePct = Math.max(0, S.base.hp / S.base.maxHp);
+  const troops = S.soldiers.filter(x => !x.down).length;
+  const allyPct = Math.round(basePct * 100);
+
+  $('wbAlly').textContent = `방어선 ${Math.round(S.base.hp)} · 병력 ${troops}`;
+  $('wbFoe').textContent = `남은 적 ${left}`;
+  /* 두 막대가 가운데서 만나게 — 어느 쪽이 밀리는지 한눈에 보입니다 */
+  const a = allyPct, b = foePct, sum = Math.max(1, a + b);
+  $('wbAllyBar').style.width = `${a * 100 / sum}%`;
+  $('wbFoeBar').style.width = `${b * 100 / sum}%`;
+  const waiting = S.surges ? S.surges.length : 0;
+  $('wbNote').innerHTML = waiting
+    ? `<b>${waiting}차례</b>의 진격이 더 남았습니다`
+    : (left ? '마지막 무리입니다 — 끝까지 밀어내세요' : '');
+}
+
+/* ---------------- 날이 밝아옵니다 ----------------
+   팀장님: "다음날 눌러서 넘어가는 게 아니라 자연스럽게 날이 밝아오는 장면으로 충분할 것 같아."
+   리포트를 없애지는 않았습니다 — 함정이 몇 마리를 잡았는지가 이 게임의 핵심 지표라서요.
+   대신 **누르지 않아도 저절로 닫히게** 하고, 닫히는 순간 일출을 깔았습니다.
+   먼저 읽고 싶으면 버튼으로 바로 넘어갈 수 있습니다. */
+let dawnTimer = null;
+function playDawn(day) {
+  const d = $('dawn'), w = $('dawnWord');
+  if (d) { d.classList.remove('on'); void d.offsetWidth; d.classList.add('on'); }
+  if (w) {
+    $('dawnSub').textContent = `${day}일차 — 다시 낮입니다`;
+    w.classList.remove('on'); void w.offsetWidth; w.classList.add('on');
+  }
+  Audio.play('respawn');
+}
+function closeReportNow() {
+  if (dawnTimer) { clearTimeout(dawnTimer); dawnTimer = null; }
+  if (!S || S.phase !== 'report') return;
+  const day = S.day;
+  Sim.closeReport(S); handleEvents();
+  if (!S.over) { closeAll(); playDawn(day); }
+}
+
 function showReport(e) {
   lastReport = e;
   $('repTitle').textContent = `Day ${e.day} — ${e.name} 리포트`;
@@ -1018,6 +1119,18 @@ function showReport(e) {
   }
   $('repAdvice').innerHTML = adv;
   openScreen('scReport');
+
+  /* 자동으로 날이 밝습니다 — 남은 시간을 버튼에 적어 "곧 넘어간다" 를 보이게 합니다 */
+  if (dawnTimer) clearTimeout(dawnTimer);
+  const btn = $('btnRepClose');
+  let left = C.REPORT_AUTO_SEC;
+  const tick = () => {
+    if (!S || S.phase !== 'report') return;
+    if (btn) btn.textContent = `▶ 날이 밝습니다 — ${left}초 (눌러서 바로)`;
+    if (left-- <= 0) { closeReportNow(); return; }
+    dawnTimer = setTimeout(tick, 1000);
+  };
+  tick();
 }
 
 function showEnd(e) {
@@ -1050,6 +1163,23 @@ function showEnd(e) {
 }
 
 /* ---------------- 시작 화면 ---------------- */
+/* 시작 화면의 적 목록 — 안내 화면과 같은 자료에서 만듭니다 */
+function renderTitleMonList() {
+  const box = $('titleMonList');
+  if (!box) return;
+  const firstDay = k => {
+    const w = C.WAVES.find(w => w.mix.some(([kk]) => kk === k));
+    return w ? `${w.day}일~` : '';
+  };
+  const keys = Object.keys(C.MONSTER_KINDS);
+  box.innerHTML = keys.map((k, i) => {
+    const m = C.MONSTER_KINDS[k];
+    return `<div class="repRow"${i === keys.length - 1 ? ' style="border-bottom:none;"' : ''}>`
+      + `<span><b style="color:#${m.color.toString(16).padStart(6, '0')}">${m.name}</b> — ${m.tip}</span>`
+      + `<b>${firstDay(k)}</b></div>`;
+  }).join('');
+}
+
 function renderHeroCards() {
   const box = $('heroCards');
   const open = unlockedHeroes();
@@ -1627,10 +1757,21 @@ function refreshGhost() {
   R3.showGhost(aim.tx, aim.ty, chk.ok, buildSel, pending);
   const hint = $('buildHint');
   if (hint) {
-    const why = { occupied: '이미 무언가 있습니다', far: '너무 멉니다 — 가까이 가세요',
-                  cost: '자원이 부족합니다', owned: '이미 지었습니다', out: '지도 밖입니다' };
     if (!chk.ok) {
-      hint.textContent = why[chk.why] || '';
+      /* 막힌 이유를 그 자리에 구체적으로 적습니다.
+         "이미 무언가 있습니다" 로는 **무엇이** 막는지 몰라서 버그처럼 느껴집니다.
+         자원 부족이면 무엇이 몇 개 모자란지까지 적습니다. */
+      let msg = Sim.BUILD_DENY[chk.why] || '여기에는 지을 수 없습니다';
+      if (chk.why === 'cost') {
+        const def = C.BUILDS.find(x => x.id === buildSel);
+        const lack = Object.entries(def.cost)
+          .map(([k, v]) => [k, v - Math.floor(S.res[k])])
+          .filter(([, d]) => d > 0)
+          .map(([k, d]) => `${C.RESOURCES[k].icon} ${C.RESOURCES[k].name} ${d}`)
+          .join(' · ');
+        if (lack) msg = `자원이 모자랍니다 — ${lack} 더 필요`;
+      }
+      hint.textContent = msg;
       hint.style.background = 'rgba(140,30,20,.9)';
       hint.style.display = '';
     } else if (buildSel === 'trap') {
@@ -1682,8 +1823,8 @@ function cancelBuild() {
 
 /* ---------------- 버튼 ---------------- */
 $('btnStart').onclick = () => startGame();
-$('btnAgain').onclick = () => { renderHeroCards(); openScreen('scTitle'); };
-$('btnRepClose').onclick = () => { Sim.closeReport(S); handleEvents(); if (!S.over) closeAll(); };
+$('btnAgain').onclick = () => { renderDiffCards(); renderHeroCards(); openScreen('scTitle'); };
+$('btnRepClose').onclick = closeReportNow;
 $('btnCancel').onclick = () => { buildSel = null; refreshBuildCards(); R3.setBuildMode(false); cancelBuild(); };
 if ($('btnConfirmBuild')) $('btnConfirmBuild').onclick = confirmBuild;
 if ($('btnCancelBuild')) $('btnCancelBuild').onclick = cancelBuild;
@@ -1760,7 +1901,7 @@ function frame(ts) {
       updateRespawnBox();
       updateGuideArrow();
       hudTimer += raw;
-      if (hudTimer > 0.12) { hudTimer = 0; refreshHUD(); refreshSkillBar(); }
+      if (hudTimer > 0.12) { hudTimer = 0; refreshHUD(); refreshSkillBar(); refreshWarBar(); }
     }
   } catch (err) {
     frameErrs++;
@@ -1800,6 +1941,8 @@ Models.load().then(m => {
   $('btnStart').disabled = false;
   if (m.size) toast(`3D 모델 ${m.size}종을 불러왔습니다`);
 }).catch(() => { $('btnStart').disabled = false; });
+renderDiffCards();
+renderTitleMonList();
 renderHeroCards();
 refreshBuildCards();
 refreshSoldiers();

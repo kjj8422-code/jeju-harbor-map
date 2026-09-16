@@ -178,12 +178,33 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   ok('예고가 끝나면 몬스터가 스폰된다', S.monsters.length > 0, `${S.monsters.length}마리`);
   ok('밤 단계로 바뀐다', S.phase === 'night');
 
-  const spawned = S.monsters.length;
+  /* ★ 2026-09 서지(진격) 도입 후: 밤은 선발대만 먼저 옵니다.
+     남은 진격이 예약돼 있으면 화면을 비워도 밤이 끝나면 안 됩니다 — 그것부터 확인합니다. */
+  const waveTotal = S.waveTotal;
+  ok('밤이 열리면 선발대만 먼저 온다', S.monsters.length < S.waveTotal,
+     `${S.monsters.length}/${S.waveTotal}마리`);
+  ok('나머지는 진격으로 예약돼 있다', S.surges.length > 0, `${S.surges.length}번 남음`);
   while (S.monsters.length) Sim.damageMonster(S, S.monsters[0], 99999, 'trap', S.traps[0] || null);
   Sim.update(S, 0.033);
+  ok('선발대를 다 잡아도 진격이 남아 있으면 밤이 끝나지 않는다',
+     S.phase === 'night', S.phase);
+  const surgeSeen = [];
+  /* 예약된 진격을 전부 흘려보내면서, 올 때마다 무리로 오는지 봅니다 */
+  for (let guard = 0; guard < 4000 && (S.surges.length || S.monsters.length); guard++) {
+    for (const e of drain(S)) if (e.type === 'surge') surgeSeen.push(e);
+    while (S.monsters.length) Sim.damageMonster(S, S.monsters[0], 99999, 'trap', S.traps[0] || null);
+    Sim.update(S, 0.033);
+    if (S.phase !== 'night') break;
+  }
+  ok('진격이 배너와 함께 들어온다', surgeSeen.length > 0, `${surgeSeen.length}번`);
+  ok('진격 배너에 문구가 붙는다', surgeSeen.every(e => !!e.label),
+     surgeSeen.map(e => e.label).join(' / '));
+  ok('진격은 한 마리가 아니라 무리로 온다', surgeSeen.every(e => e.count >= 1),
+     surgeSeen.map(e => e.count + '마리').join(','));
   const rep = drain(S).find(e => e.type === 'report');
   ok('전멸시키면 웨이브 리포트가 나온다', !!rep);
-  ok('리포트에 처치 수가 집계된다', rep && rep.killed === spawned, rep ? `${rep.killed}/${spawned}` : '');
+  ok('리포트에 처치 수가 집계된다', rep && rep.killed === waveTotal,
+     rep ? `${rep.killed}/${waveTotal}` : '');
   ok('리포트에 함정 처치 비율이 계산된다', rep && typeof rep.trapPct === 'number', rep ? `${rep.trapPct}%` : '');
   Sim.closeReport(S);
   ok('리포트를 닫으면 낮으로 돌아간다', S.phase === 'day');
@@ -275,9 +296,16 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   S.monsters.push({ x: 620, y: 600, hp: 9999, maxHp: 9999, spd: 0, dmg: 40, cd: 0,
                     boss: false, hitFlash: 0, dead: false, windup: 0, windupTgt: null,
                     vx: 0, vy: 0, hitStop: 0, armor: 0 });
-  run(S, 0.1);
+  /* 0.1초만 돌리던 것을 0.4초로 늘렸습니다.
+     타격감을 올리면서 히트스톱을 0.055 → 0.075 초로 키웠는데,
+     장수가 먼저 한 대 때리면 몬스터가 그만큼 얼어 있어서 예비 동작이 조금 늦게 시작됩니다.
+     (실제로 재보니 150ms 시점에 시작합니다) 동작은 정상인데 검수 창이 좁았던 것입니다. */
+  run(S, 0.4);
   ok('몬스터는 곧바로 때리지 않고 예비 동작을 한다', S.monsters[0].windup > 0,
      `windup=${S.monsters[0].windup.toFixed(2)}`);
+  ok('장수가 때리면 몬스터가 잠깐 얼어붙는다 (히트스톱)',
+     C.HITSTOP > 0 && C.HITSTOP_CRIT > C.HITSTOP && C.HITSTOP_ULT > C.HITSTOP_CRIT,
+     `평타 ${C.HITSTOP} · 치명타 ${C.HITSTOP_CRIT} · 궁극기 ${C.HITSTOP_ULT}`);
   const hpBefore = S.hero.hp;
   run(S, C.MONSTER_WINDUP + 0.1);
   ok('가만히 있으면 맞는다', S.hero.hp < hpBefore, `${Math.round(hpBefore)} → ${Math.round(hpBefore)}→${Math.round(S.hero.hp)}`);
@@ -289,7 +317,7 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   T.monsters.push({ x: 620, y: 600, hp: 9999, maxHp: 9999, spd: 0, dmg: 40, cd: 0,
                     boss: false, hitFlash: 0, dead: false, windup: 0, windupTgt: null,
                     vx: 0, vy: 0, hitStop: 0, armor: 0 });
-  run(T, 0.1);
+  run(T, 0.4);
   T.input.x = -1; T.input.y = 0;              // 반대 방향으로 걸어서 물러납니다
   const hp0 = T.hero.hp;
   run(T, C.MONSTER_WINDUP + 0.3);
@@ -883,8 +911,18 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   ok('사라진 자원지는 다시 자라지 않는다',
      !S.nodes.some(x => x.tx === n.tx && x.ty === n.ty));
 
-  // 이미 건물이 있는 칸은 여전히 막힙니다
-  ok('이미 지은 칸에는 못 짓는다', Sim.canBuildAt(S, n.tx, n.ty, 'wall').why === 'occupied');
+  /* 이미 건물이 있는 칸은 여전히 막힙니다.
+     ★ 다만 이제 "무엇이" 막는지까지 알려줍니다 — 예전에는 전부 'occupied' 한 덩어리였고,
+        그래서 성 옆에 병영을 놓으려던 사람이 "왜 안 지어지지?" 하게 됐습니다. */
+  ok('이미 지은 칸에는 못 짓는다', Sim.canBuildAt(S, n.tx, n.ty, 'wall').ok === false);
+  ok('목책이 막고 있으면 목책이라고 알려준다',
+     Sim.canBuildAt(S, n.tx, n.ty, 'wall').why === 'wall',
+     Sim.canBuildAt(S, n.tx, n.ty, 'wall').why);
+  ok('거점이 막고 있으면 거점이라고 알려준다',
+     Sim.canBuildAt(S, C.BASE_TX, C.BASE_TY, 'wall').why === 'base',
+     Sim.canBuildAt(S, C.BASE_TX, C.BASE_TY, 'wall').why);
+  ok('막힌 이유마다 설명 문구가 있다',
+     ['base','wall','trapHere','struct','far','cost','out'].every(k => !!Sim.BUILD_DENY[k]));
 }
 
 /* ── 33. 정수 — 모자란 자원을 대신한다 ────────────────── */

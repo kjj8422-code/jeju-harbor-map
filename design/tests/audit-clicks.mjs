@@ -225,8 +225,16 @@ await p.click('#btnStart'); await p.waitForTimeout(2200);
     S.monsters.push({ x:S.hero.x, y:S.hero.y, hp:9999, maxHp:9999, spd:0, dmg:999, cd:0,
       boss:false, hitFlash:0, dead:false, windup:0, windupTgt:null, vx:0, vy:0, hitStop:0,
       armor:0, kind:'normal', scale:1 }); });
-  await p.waitForTimeout(1500);
-  const dead = await p.evaluate(() => window.__sg.S.hero.dead);
+  /* ★ 고정 시간(1.5초)을 기다리던 것을 "쓰러질 때까지 기다리기" 로 바꿨습니다.
+     브라우저 검수는 소프트웨어 렌더링이라 초당 프레임이 들쭉날쭉합니다.
+     고정 대기는 앞 검수들이 무거워질수록 아슬아슬해지고, 결국 **없는 버그로 실패** 합니다.
+     실제로 히트스톱을 0.055 → 0.075 초로 올리자 예비 동작이 조금 밀리면서 여기서 걸렸습니다.
+     조건을 기다리면 기계가 느리든 빠르든 같은 것을 잽니다. */
+  let dead = false;
+  for (let i = 0; i < 60 && !dead; i++) {
+    await p.waitForTimeout(150);
+    dead = await p.evaluate(() => window.__sg.S.hero.dead);
+  }
   for (const id of ['btnHire','btnCraft','btnGuide','btnCancel','btnPause']) {
     await p.click('#' + id, { force:true }).catch(()=>{});
     await p.waitForTimeout(120);

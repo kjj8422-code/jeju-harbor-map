@@ -13,6 +13,25 @@
    실행: node design/tests/ui-wave-test.mjs   (먼저 localhost:8899 로 서버를 띄울 것)
 */
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
+
+/* ★ 2026-09 서지(진격) 도입 후:
+   밤은 선발대만 먼저 오고, 나머지는 시간차로 밀려옵니다.
+   그래서 "한 번 전멸시키면 리포트" 가 더는 성립하지 않습니다 —
+   남은 진격까지 전부 흘려보내야 밤이 끝납니다. */
+async function clearNight(p, maxSec = 40) {
+  for (let i = 0; i < maxSec * 5; i++) {
+    const done = await p.evaluate(() => {
+      const S = window.__sg.S, Sim = window.__sg.Sim;
+      if (!S) return true;
+      while (S.monsters.length) Sim.damageMonster(S, S.monsters[0], 99999, 'hero');
+      if (S.surges && S.surges.length) { S.surgeT += 3; return false; }   // 다음 진격을 앞당깁니다
+      return S.phase !== 'night';
+    });
+    if (done) break;
+    await p.waitForTimeout(200);
+  }
+  await p.waitForTimeout(800);
+}
 const URL = process.env.SG_URL || 'http://localhost:8899/samguk-99-3d.html';
 
 const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
@@ -46,9 +65,7 @@ for (let wave = 1; wave <= 3; wave++) {
   ok(`${day}일 — 예고를 지나 밤이 되고 몬스터가 나온다`, st.phase === 'night' && st.mon > 0,
      `phase=${st.phase} 적=${st.mon}`);
 
-  await p.evaluate(() => { const S = window.__sg.S, Sim = window.__sg.Sim;
-    while (S.monsters.length) Sim.damageMonster(S, S.monsters[0], 99999, 'hero'); });
-  await p.waitForTimeout(1000);
+  await clearNight(p);
 
   st = await state();
   ok(`${day}일 — 전멸시키면 리포트 화면이 뜬다`, st.phase === 'report' && st.report !== 'none',
@@ -79,9 +96,7 @@ await p.evaluate(() => { const S = window.__sg.S, C = window.__sg.C;
 await p.waitForTimeout(900);
 await p.evaluate(() => { window.__sg.S.warnT = window.__sg.C.WARN_SEC; });
 await p.waitForTimeout(900);
-await p.evaluate(() => { const S = window.__sg.S, Sim = window.__sg.Sim;
-  while (S.monsters.length) Sim.damageMonster(S, S.monsters[0], 99999, 'hero'); });
-await p.waitForTimeout(900);
+await clearNight(p);
 await p.evaluate(() => {           // 화면을 강제로 닫아 "갇힌 상태" 를 만듭니다
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
 });
