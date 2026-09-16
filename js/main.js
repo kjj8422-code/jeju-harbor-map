@@ -328,24 +328,33 @@ function refreshHUD() {
 
   /* ★ 다음 날까지 얼마나 남았는지.
      이게 없으면 "지금 캐도 되나, 지어도 되나" 를 판단할 수 없습니다. */
-  const dt = $('dayTimer');
+  /* ★ 여기서 게임이 통째로 죽은 적이 있습니다.
+     예전 코드는 낮 분기에서 `$('hDayLeft')` 를 먼저 건드린 뒤,
+     .dt 의 innerHTML 을 `<b id="hDayLeft">…</b>` 로 다시 썼습니다.
+     그런데 밤·해질녘 분기는 .dt 를 통째로 갈아엎어 그 <b> 를 지웁니다.
+     → 밤이 끝나고 다시 낮이 되는 첫 프레임에 $('hDayLeft') 가 null 이 되어
+       TypeError 가 나고, frame() 마지막 줄의 requestAnimationFrame 까지
+       도달하지 못해 **루프가 영구 정지**했습니다(11일에서 멈춤).
+     이제 innerHTML 한 번만 쓰고, 사라질 수 있는 id 는 참조하지 않습니다. */
+  const dt = $('dayTimer'), dtText = dt.querySelector('.dt');
   if (S.phase === 'day') {
     dt.classList.remove('night');
     const left = Math.max(0, C.DAY_SEC - S.dayT);
-    $('hDayLeft').textContent = left.toFixed(1);
     $('hDayBar').style.width = (S.dayT / C.DAY_SEC * 100) + '%';
-    dt.querySelector('.dt').innerHTML = `다음 날까지 <b id="hDayLeft">${left.toFixed(1)}</b>초`;
+    dtText.innerHTML = `다음 날까지 <b>${left.toFixed(1)}</b>초`;
   } else if (S.phase === 'warn') {
     dt.classList.add('night');
     const left = Math.max(0, C.WARN_SEC - S.warnT);
     $('hDayBar').style.width = (S.warnT / C.WARN_SEC * 100) + '%';
-    dt.querySelector('.dt').innerHTML =
-      `<b style="color:#E0554A">몰려오기까지 ${left.toFixed(1)}초</b>`;
+    dtText.innerHTML = `<b style="color:#E0554A">몰려오기까지 ${left.toFixed(1)}초</b>`;
+  } else if (S.phase === 'report') {
+    dt.classList.add('night');
+    $('hDayBar').style.width = '100%';
+    dtText.innerHTML = '<b style="color:#E0B44A">웨이브 리포트</b>';
   } else {
     dt.classList.add('night');
     $('hDayBar').style.width = '100%';
-    dt.querySelector('.dt').innerHTML =
-      `<b style="color:#E0554A">전투 중</b> — 남은 적 ${S.monsters.length}`;
+    dtText.innerHTML = `<b style="color:#E0554A">전투 중</b> — 남은 적 ${S.monsters.length}`;
   }
   $('hBaseHp').textContent = Math.max(0, Math.round(S.base.hp));
   $('hBaseBar').style.width = Math.max(0, S.base.hp / S.base.maxHp) * 100 + '%';
@@ -721,7 +730,9 @@ function closeAll() {
   uiOpen = false;
 }
 
+let lastReport = null;
 function showReport(e) {
+  lastReport = e;
   $('repTitle').textContent = `Day ${e.day} — ${e.name} 리포트`;
   $('repSub').innerHTML = `${e.note} · 막아냈습니다.`;
   $('repKill').textContent = `${e.killed}마리`;
@@ -1478,28 +1489,61 @@ $('btnMusic').onclick = () => {
 const STEP = 1 / 60;
 let acc = 0, last = 0;
 
-function frame(ts) {
-  const raw = last ? Math.min((ts - last) / 1000, 0.25) : 0;
-  last = ts;
+/* ★ 루프는 절대로 죽으면 안 됩니다.
+   예전에는 requestAnimationFrame(frame) 이 함수의 **마지막 줄**에 있었습니다.
+   그래서 화면 갱신 중에 오류가 하나 나면 그 줄에 도달하지 못하고
+   **다음 프레임이 예약되지 않아 게임이 통째로 얼어붙었습니다.**
+   (실제로 HUD 의 null 참조 하나 때문에 11일에서 게임이 멈췄습니다.)
 
-  if (S) {
-    if (!uiOpen && !paused && !S.over) {
-      applyInput();
-      acc += raw;
-      let guard = 0;
-      while (acc >= STEP && guard++ < 8) { Sim.update(S, STEP); acc -= STEP; }
-      handleEvents();
+   이제 다음 프레임 예약을 finally 에 두어, 무슨 일이 있어도 루프는 계속 돕니다.
+   오류는 삼키지 않고 화면에 띄웁니다 — 조용히 이상해지는 것이 제일 나쁩니다. */
+let frameErrs = 0;
+function frame(ts) {
+  try {
+    const raw = last ? Math.min((ts - last) / 1000, 0.25) : 0;
+    last = ts;
+
+    if (S) {
+      if (!uiOpen && !paused && !S.over) {
+        applyInput();
+        acc += raw;
+        let guard = 0;
+        while (acc >= STEP && guard++ < 8) { Sim.update(S, STEP); acc -= STEP; }
+        handleEvents();
+      }
+      R3.sync(S, raw);
+      updateFloaters(raw);
+      updateHpBars();
+      updateRespawnBox();
+      hudTimer += raw;
+      if (hudTimer > 0.12) { hudTimer = 0; refreshHUD(); refreshSkillBar(); }
     }
-    R3.sync(S, raw);
-    updateFloaters(raw);
-    updateHpBars();
-    updateRespawnBox();
-    hudTimer += raw;
-    if (hudTimer > 0.12) { hudTimer = 0; refreshHUD(); refreshSkillBar(); }
+  } catch (err) {
+    frameErrs++;
+    if (frameErrs <= 3) {
+      console.error('[프레임 오류]', err);
+      toast(`<b style="color:#E0554A">화면 오류</b> — 게임은 계속됩니다 (${err && err.message ? err.message : err})`);
+    }
+  } finally {
+    requestAnimationFrame(frame);        // ← 무슨 일이 있어도 다음 프레임은 돕니다
   }
-  requestAnimationFrame(frame);
 }
 let hudTimer = 0;
+
+/* ★ 리포트 단계인데 리포트 화면이 안 보이면 게임이 영구 정지합니다
+   (update() 가 phase==='report' 에서 곧바로 빠져나오기 때문입니다).
+   화면을 여는 쪽에서 무슨 문제가 생겨도 플레이어가 갇히지 않도록 되살립니다. */
+setInterval(() => {
+  if (!S || S.over) return;
+  if (S.phase !== 'report') return;
+  const rep = $('scReport');
+  if (rep && getComputedStyle(rep).display !== 'none') return;
+  if ($('scGuide').classList.contains('on') || $('scCraft').classList.contains('on')
+      || $('scShop').classList.contains('on')) return;   // 다른 화면을 보는 중이면 그대로 둡니다
+  console.warn('[복구] 리포트 단계인데 화면이 없어 다시 엽니다');
+  if (lastReport) showReport(lastReport);
+  else { Sim.closeReport(S); handleEvents(); closeAll(); }
+}, 1500);
 
 /* ---------------- 부팅 ---------------- */
 R3.initRenderer($('stage'));
