@@ -31,8 +31,9 @@ run "⑤ 웨이브 진행 검수 (밤 → 낮 복귀)"    node design/tests/ui-w
 run "⑥ 전수 클릭 점검 (모든 버튼)"         node design/tests/audit-clicks.mjs
 run "⑦ 제작소 점검 (제작 화면 전수)"      node design/tests/audit-craft.mjs
 run "⑧ 밤 연출 점검 (진격·게이지·난이도)"   node design/tests/audit-night.mjs
-run "⑨ 다시 시작 점검 (판 사이 정리)"       node design/tests/audit-restart.mjs
-run "⑩ 긴 플레이 점검 (99일 완주)"         node design/tests/audit-longplay.mjs
+run "⑨ 상점·가챠 점검 (확률·천장·재화)"     node design/tests/audit-shop.mjs
+run "⑩ 다시 시작 점검 (판 사이 정리)"       node design/tests/audit-restart.mjs
+run "⑪ 긴 플레이 점검 (99일 완주)"         node design/tests/audit-longplay.mjs
 
 [ -n "${SERVER:-}" ] && kill $SERVER 2>/dev/null
 

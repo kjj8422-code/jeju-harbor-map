@@ -12,7 +12,15 @@ import * as Audio from './audio.js';
 const $ = id => document.getElementById(id);
 let S = null, selHero = 1, paused = false, uiOpen = true;
 let buildSel = null, soundOn = true;
-let wallet = Number(localStorage.getItem('sg3d_shard') || 0);
+/* ★ 저장값을 안전하게 읽습니다.
+   Number('abc') 는 NaN 이고, NaN 은 어떤 계산을 해도 NaN 으로 번집니다.
+   실제로 저장값이 망가진 상태에서 상점을 열었더니 화면에 **NaN 이 세 군데** 찍혔습니다.
+   (브라우저 저장소는 다른 탭·확장·사용자가 건드릴 수 있으니 늘 의심해야 합니다) */
+function numStore(key, dflt = 0, min = 0) {
+  const v = Number(localStorage.getItem(key));
+  return Number.isFinite(v) ? Math.max(min, v) : dflt;
+}
+let wallet = numStore('sg3d_shard');
 
 /* 뽑아서 열린 장수들 — 기본 3명은 항상 열려 있습니다 */
 function unlockedHeroes() {
@@ -1217,9 +1225,9 @@ function showReport(e) {
 function showEnd(e) {
   wallet += S.shard;
   localStorage.setItem('sg3d_shard', String(wallet));
-  const best = Math.max(Number(localStorage.getItem('sg3d_best') || 0), e.day);
+  const best = Math.max(numStore('sg3d_best'), e.day);
   localStorage.setItem('sg3d_best', String(best));
-  if (e.win) localStorage.setItem('sg3d_wins', String(Number(localStorage.getItem('sg3d_wins') || 0) + 1));
+  if (e.win) localStorage.setItem('sg3d_wins', String(numStore('sg3d_wins') + 1));
 
   const act = C.actOf(Math.min(e.day, C.TOTAL_DAYS));
   $('endTitle').innerHTML = e.win
@@ -1292,8 +1300,8 @@ function renderHeroCards() {
     };
     box.appendChild(el);
   });
-  const best = Number(localStorage.getItem('sg3d_best') || 0);
-  const wins = Number(localStorage.getItem('sg3d_wins') || 0);
+  const best = numStore('sg3d_best');
+  const wins = numStore('sg3d_wins');
   $('bestRec').innerHTML = best ? `최고 기록 <b style="color:#E0B44A">Day ${best}</b> · 완주 ${wins}회` : '';
 }
 
@@ -1327,13 +1335,17 @@ function getDex() {
 }
 const saveDex = d => localStorage.setItem('sg3d_dex', JSON.stringify(d));
 
-let souls = Number(localStorage.getItem('sg3d_souls') || 0);
+let souls = numStore('sg3d_souls');
 const saveSouls = () => localStorage.setItem('sg3d_souls', String(souls));
 
 function getAwaken() {
   try { return JSON.parse(localStorage.getItem('sg3d_awaken') || '{}') || {}; } catch { return {}; }
 }
-function awakenOf(id) { return Number(getAwaken()[id] || 0); }
+function awakenOf(id) {
+  const v = Number(getAwaken()[id]);
+  // 저장값이 망가져 있어도 ★0~★5 사이의 멀쩡한 숫자만 돌려줍니다
+  return Number.isFinite(v) ? Math.max(0, Math.min(C.AWAKEN_MAX, Math.floor(v))) : 0;
+}
 function doAwaken(id) {
   const lv = awakenOf(id);
   if (lv >= C.AWAKEN_MAX) { toast('이미 <b>★5</b> 입니다'); Audio.play('deny'); return; }
@@ -1348,21 +1360,36 @@ function doAwaken(id) {
   refreshShop(); renderHeroCards();
 }
 
-let gems = Number(localStorage.getItem('sg3d_gem') || 0);
+let gems = numStore('sg3d_gem');
 const saveGems = () => localStorage.setItem('sg3d_gem', String(gems));
 
 /** 한 번 뽑습니다. 천장은 뽑기 전체에 걸쳐 누적됩니다. */
+/* ★ 천장은 **두 개**여야 합니다 (2026-09 수정).
+   예전에는 카운터가 하나뿐이었고, 90회 천장이 **전설·신화 둘 다** 그 카운터를 0으로
+   되돌렸습니다. 그래서 180회 하드 천장에 **영원히 도달할 수 없었습니다** —
+   200만 회를 돌려보니 하드 천장은 한 번도 발동하지 않았고, 도달한 최대치가 89 였습니다.
+   그런데 확률표에는 "180회 이내 신화 확정" 이라고 적혀 있었습니다.
+   확률형 아이템의 천장 고지는 **법적 의무**입니다(게임산업법 제33조).
+   지킬 수 없는 약속을 적어두면 그냥 버그가 아니라 허위 고지입니다.
+
+   이제 카운터를 나눕니다.
+     · pity     — 전설 이상이 나오면 0 (90회 천장)
+     · mythPity — **신화가 나와야만** 0 (180회 천장)
+   실측으로 신화 없이 2,469회까지 간 구간이 있었습니다. 그게 이제 180에서 끊깁니다. */
 function rollOnce() {
-  let pity = Number(localStorage.getItem('sg3d_pity') || 0) + 1;
+  let pity = numStore('sg3d_pity') + 1;
+  let mythPity = numStore('sg3d_pity_myth') + 1;
   let pick;
-  if (pity >= C.GACHA_PITY_HARD) pick = GACHA[4];
+  if (mythPity >= C.GACHA_PITY_HARD) pick = GACHA[4];
   else if (pity >= C.GACHA_PITY) pick = GACHA[Math.random() < .1 ? 4 : 3];
   else {
     const r = Math.random(); let acc = 0;
     pick = GACHA.find(g => (acc += g.p) >= r) || GACHA[0];
   }
   if (pick.g === '전설' || pick.g === '신화') pity = 0;
+  if (pick.g === '신화') mythPity = 0;
   localStorage.setItem('sg3d_pity', String(pity));
+  localStorage.setItem('sg3d_pity_myth', String(mythPity));
 
   const name = pick.pool[Math.floor(Math.random() * pick.pool.length)];
   const dex = getDex(), key = `${pick.g} ${name}`;
@@ -1453,7 +1480,17 @@ function claimFreeGem() {
 function refreshShop() {
   $('shopShard').textContent = totalShard();
   $('shopGem').textContent = gems;
-  $('pityLeft').textContent = Math.max(0, C.GACHA_PITY - Number(localStorage.getItem('sg3d_pity') || 0));
+  $('pityLeft').textContent = Math.max(0, C.GACHA_PITY - numStore('sg3d_pity'));
+  const pm = $('pityMythLeft');
+  if (pm) pm.textContent = Math.max(0, C.GACHA_PITY_HARD - numStore('sg3d_pity_myth'));
+
+  /* ★ 확률표를 코드에서 만들어 냅니다.
+     예전에는 HTML 에 55.000% … 가 손으로 박혀 있어서, 확률을 바꾸면
+     표시와 실제가 어긋날 수 있었습니다. 확률 공개는 법적 의무라 어긋나면 안 됩니다. */
+  const rt = $('rateTable');
+  if (rt) rt.innerHTML = GACHA.map((g, i) => `
+    <div class="repRow"${i === GACHA.length - 1 ? ' style="border-bottom:none;"' : ''}>
+      <span style="color:${g.c};">${g.g}</span><b>${(g.p * 100).toFixed(3)}%</b></div>`).join('');
 
   const packs = $('packRow');
   if (packs && !packs.dataset.built) {

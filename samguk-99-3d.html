@@ -873,7 +873,8 @@ details.panel[open] summary::before{content:'▾ ';}
       <span class="w"><i>🔶</i> 옥새 조각 <b id="shopShard">0</b></span>
       <span class="w"><i>💎</i> 보석 <b id="shopGem">0</b></span>
       <span class="w"><i>🔮</i> 혼백 <b id="shopSoul">0</b></span>
-      <span class="w dim">천장까지 <b id="pityLeft">90</b>회</span>
+      <span class="w dim">전설 천장까지 <b id="pityLeft">90</b>회</span>
+      <span class="w dim">신화 천장까지 <b id="pityMythLeft">180</b>회</span>
       <button class="btn" id="btnFreeGem">🎁 오늘의 무료 보석</button>
     </div>
 
@@ -894,13 +895,14 @@ details.panel[open] summary::before{content:'▾ ';}
 
     <div class="panel">
       <h3>확률표 (확률형 아이템 정보공개 대상)</h3>
-      <div class="repRow"><span style="color:#9aa7b0;">일반</span><b>55.000%</b></div>
-      <div class="repRow"><span style="color:var(--blue);">희귀</span><b>30.000%</b></div>
-      <div class="repRow"><span style="color:#9B6FC9;">영웅</span><b>12.000%</b></div>
-      <div class="repRow"><span style="color:var(--orange);">전설</span><b>2.700%</b></div>
-      <div class="repRow" style="border-bottom:none;"><span style="color:var(--gold);">신화</span><b>0.300%</b></div>
+      <div id="rateTable"></div>
+      <div style="font-size:11px;color:var(--dim);margin-top:6px;line-height:1.6;">
+        위 값은 <b>천장을 뺀 기본 확률</b>입니다. 천장이 있어서 실제로 오래 뽑으면
+        전설·신화가 이 값보다 조금 더 자주 나옵니다.
+      </div>
       <ul style="margin-top:8px;">
-        <li><b>천장</b> — 90회 이내 전설 이상, 180회 이내 신화 확정</li>
+        <li><b>천장</b> — <b>90회</b> 이내 전설 이상 확정(전설이 나오면 0으로 초기화),
+            <b>180회</b> 이내 신화 확정(<b>신화가 나와야</b> 0으로 초기화)</li>
         <li><b>중복 보상</b> — 보유 장수 중복 시 각성 재료로 전환</li>
         <li><b>랭크전 정규화</b> — 랭크에서는 스탯이 정규화되어 과금 우위가 사라집니다</li>
         <li>한국에서 확률형 아이템은 <b>확률 전체 공개가 법적 의무</b>입니다(게임산업법 제33조).
