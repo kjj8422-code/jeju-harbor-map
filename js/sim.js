@@ -41,7 +41,7 @@ export const OBJECTIVES = [
     ok: S => S.soldiers.length >= 1 },
   { t: '<b>대장간</b>을 지으세요. (목재 30 · 석재 25)',
     ok: S => S.forge },
-  { t: '제작소에서 <b>돌 곡괭이</b>를 만드세요. 철광을 캐려면 필요합니다.',
+  { t: '제작소에서 <b>곡괭이</b>를 만드세요. 철광을 캐려면 필요합니다.',
     ok: S => S.pickaxe },
   { t: '지도 <b>중앙의 철광</b>에서 철 5를 캐세요. 중앙은 양 팀이 만나는 곳입니다.',
     ok: S => S.got.iron >= 5 },
@@ -49,7 +49,7 @@ export const OBJECTIVES = [
     ok: S => S.cnt.trap >= 2 },
   { t: '11일 <b>황건적의 습격</b>을 막아내세요.',
     ok: S => S.waveIdx >= 1 },
-  { t: '제작소에서 <b>무기 강화</b>를 1회 하세요. (철 5)',
+  { t: '제작소에서 <b>무기 강화 ★1</b>을 하세요. (철 8)',
     ok: S => S.weaponLv >= 1 },
   /* ※ 예전 문구는 "함정 처치 비율 40% 이상" 이었습니다.
      자동 플레이로 재보니 22일에는 최선을 다해도 1% 였습니다 —
@@ -68,7 +68,7 @@ export const OBJECTIVES = [
     ok: S => S.mercHired >= 1 },
   { t: '44일 <b>오환 기병대</b>를 막아내세요. 기병은 함정을 빨리 빠져나갑니다.',
     ok: S => S.waveIdx >= 4 },
-  { t: '<b>가죽 갑옷</b>을 만드세요. (가죽 8 · 목재 5) 최대 체력이 늘어납니다.',
+  { t: '<b>갑옷</b>을 만드세요. (가죽 8 · 목재 5) 최대 체력이 늘어납니다.',
     ok: S => S.gear.leather },
   { t: '55일 <b>남만 상군</b>을 막아내세요. 방패병은 목책을 오래 두드립니다.',
     ok: S => S.waveIdx >= 5 },
@@ -113,8 +113,7 @@ export function createSim(heroId, awaken = 0) {
       hp: C.HERO_HP, maxHp: C.HERO_HP,
       cd: 0, dead: false, respawn: 0, gp: 0,
       facing: 0, moving: false, swing: 0, swingKind: 'attack',
-      // 회피
-      invuln: 0,
+      invuln: 0,               // 무적 시간 — 부활 직후와 궁극기 중에만 켜집니다
       // 스킬
       skillCd: [0, 0, 0],
       guard: 0, guardReduce: 0,          // 철벽
@@ -147,8 +146,7 @@ export function createSim(heroId, awaken = 0) {
     objIdx: 0,
     pickaxe: false, weaponLv: 0, forge: false, camps: 0,
     // 장비 — 만든 것만 true 가 됩니다
-    gear: { ironpick:false, huntknife:false, torch:false, leather:false, ironmail:false,
-            steelspike:false, towerup:false, banner:false },
+    gear: { huntknife:false, leather:false, ironmail:false, steelspike:false, banner:false },
     potions: 0,
     baseLv: 1, baseTowerCd: 0,
     lastStand: false,
@@ -352,7 +350,7 @@ export function computeFlow(S) {
 export function combatMul(S) {
   let m = S.heroDef.combat;
   if (S.day >= 22) m *= 1 + S.heroDef.lateGrow;
-  m *= 1 + 0.25 * S.weaponLv;
+  m *= 1 + C.WEAPON_STEP * S.weaponLv;
   m *= 1 + C.AWAKEN_BONUS * (S.awaken || 0);   // 각성 — 뽑기 중복이 실력으로 쌓입니다
   if (S.lastStand) m *= 1.5;
   return m;
@@ -510,7 +508,7 @@ export function tryBuild(S, tx, ty, buildId) {
     }
     if (def.id === 'forge') {
       S.forge = true;
-      toast(S, '대장간 완성 — <b>🔨 제작·성</b> 버튼에서 <b>돌 곡괭이</b>부터 만드세요');
+      toast(S, '대장간 완성 — <b>🔨 제작·성</b> 버튼에서 <b>곡괭이</b>부터 만드세요');
     }
     emit(S, 'build', { kind: def.id, tx, ty });
   }
@@ -678,7 +676,7 @@ function tickContracts(S) {
 }
 
 /** 맡길 수 있는 역할 목록.
-    철은 돌 곡괭이가 있어야 나옵니다 — 장수만 중앙까지 오가는 부담을 병사가 나눠 집니다.
+    철은 곡괭이가 있어야 나옵니다 — 장수만 중앙까지 오가는 부담을 병사가 나눠 집니다.
     채집 용병은 싸우지 않으므로 '방어'가 없습니다. */
 export function roleList(S, s) {
   const r = ['wood', 'stone', 'herb'];
@@ -700,19 +698,18 @@ export function cycleRole(S, i) {
 /** 이미 만들었는가 */
 export function hasCraft(S, id) {
   if (id === 'pickaxe') return S.pickaxe;
-  if (id === 'weapon') return S.weaponLv >= (C.CRAFTS.find(x => x.id === 'weapon').max || 3);
+  if (id === 'weapon') return S.weaponLv >= C.WEAPON_COST.length;
   if (id === 'potion') return false;            // 소모품은 계속 만들 수 있습니다
   return !!S.gear[id];
 }
 
 /** 만들 수 있는지와 그 이유 — 화면이 "왜 안 되는지"를 보여줄 수 있게 */
-/** 무기 강화는 단계가 오를수록 비쌉니다 — 후반 성장에 값을 매겨야 합니다 */
+/** 무기 강화는 단계가 오를수록 비쌉니다 — 표 하나로 읽히게 config 에 적어뒀습니다 */
 export function craftCost(S, id) {
   const c = C.CRAFTS.find(x => x.id === id);
   if (!c) return {};
   if (id !== 'weapon') return c.cost;
-  const lv = S.weaponLv;                    // 0 → 1단계를 만들 때
-  return lv < 3 ? { iron: 5 } : { iron: 8 + (lv - 3) * 6, hide: 4 + (lv - 3) * 3 };
+  return C.WEAPON_COST[Math.min(S.weaponLv, C.WEAPON_COST.length - 1)];
 }
 
 export function canCraft(S, id) {
@@ -720,7 +717,11 @@ export function canCraft(S, id) {
   if (!c) return { ok:false, why:'없는 항목' };
   if (!S.forge) return { ok:false, why:'대장간이 필요합니다' };
   if (hasCraft(S, id)) return { ok:false, why:'이미 보유' };
-  if (id === 'towerup' && S.baseLv < 3) return { ok:false, why:'철옹성이 필요합니다' };
+  /* 긴 선행 사슬 대신 **성 단계**로 엽니다 — 한눈에 보이는 조건입니다 */
+  if (c.baseLv && S.baseLv < c.baseLv) {
+    const need = C.BASE_LEVELS.find(b => b.lv === c.baseLv);
+    return { ok:false, why:`${need ? need.name : c.baseLv + '단계'}이 필요합니다` };
+  }
   if (c.need && !hasCraft(S, c.need)) {
     const pre = C.CRAFTS.find(x => x.id === c.need);
     return { ok:false, why:`먼저 ${pre ? pre.name : c.need} 필요` };
@@ -739,11 +740,11 @@ export function doCraft(S, id) {
   switch (id) {
     case 'pickaxe':
       S.pickaxe = true;
-      toast(S, '돌 곡괭이 완성 — 지도 <b>중앙의 철광</b>을 캘 수 있습니다');
+      toast(S, '곡괭이 완성 — 지도 <b>중앙의 철광</b>을 캘 수 있고 채집이 빨라집니다');
       break;
     case 'weapon':
       S.weaponLv++;
-      toast(S, `무기 강화 ${S.weaponLv}단계 — 공격력 +${25 * S.weaponLv}%`);
+      toast(S, `무기 강화 <b>★${S.weaponLv}</b> — 공격력 +${Math.round(C.WEAPON_STEP * S.weaponLv * 100)}%`);
       break;
     case 'banner':
       S.gear.banner = true;
@@ -762,7 +763,7 @@ export function doCraft(S, id) {
     case 'leather':
       S.gear.leather = true;
       S.hero.maxHp += 40; S.hero.hp += 40;
-      toast(S, '가죽 갑옷 — 최대 체력 +40');
+      toast(S, '갑옷 — 최대 체력 +40');
       break;
     default:
       S.gear[id] = true;
@@ -824,9 +825,11 @@ function updateBaseTower(S, dt) {
     if (d < bd) { bd = d; best = m; }
   }
   if (!best) return;
-  S.baseTowerCd = C.BASE_TOWER_CD * (S.gear.towerup ? C.TOWER_UP_CD : 1);
+  /* 망루 강화는 따로 만들지 않습니다 — 철옹성을 올리면 그 자체로 강한 망루입니다.
+     (제작 목록이 길어지는 것보다 "성을 올리면 좋아진다" 가 이해하기 쉽습니다) */
+  S.baseTowerCd = C.BASE_TOWER_CD * C.TOWER_UP_CD;
   emit(S, 'towerShot', { from:{ x:S.base.x, y:S.base.y }, to:{ x:best.x, y:best.y } });
-  damageMonster(S, best, C.BASE_TOWER_DMG * (S.gear.towerup ? C.TOWER_UP_DMG : 1), 'soldier', null);
+  damageMonster(S, best, C.BASE_TOWER_DMG * C.TOWER_UP_DMG, 'soldier', null);
 }
 
 /** 마우스 클릭 타격 — 쿨다운이 돌아왔으면 즉시 한 대 칩니다.
@@ -1203,7 +1206,7 @@ export function todoList(S, max = 3) {
   /* ② 막혀 있는 진입 장벽부터 */
   if (!S.forge) add('forge', '🔨', '대장간을 지으세요', 'build:forge',
                     C.BUILDS.find(b => b.id === 'forge').cost, '장비 제작이 열립니다');
-  else if (!S.pickaxe) add('pickaxe', '⛏️', '돌 곡괭이를 만드세요', 'craft:pickaxe',
+  else if (!S.pickaxe) add('pickaxe', '⛏️', '곡괭이를 만드세요', 'craft:pickaxe',
                     craftCost(S, 'pickaxe'), '철을 캘 수 있게 됩니다');
 
   /* ③ 대란이 가까우면 방어 준비 */
@@ -1226,7 +1229,7 @@ export function todoList(S, max = 3) {
   const nx = nextBaseLevel(S);
   if (nx && S.day >= 18) add('upgrade', '🏯', `성을 ${nx.name}(으)로 올리세요`, 'upgrade',
                     nx.cost, `거점 체력 ${S.base.maxHp} → ${nx.maxHp}`);
-  for (const id of ['weapon', 'leather', 'ironmail', 'steelspike', 'towerup', 'banner', 'ironpick']) {
+  for (const id of ['weapon', 'leather', 'ironmail', 'huntknife', 'steelspike', 'banner']) {
     const c = C.CRAFTS.find(x => x.id === id);
     if (!c || hasCraft(S, id) || !S.forge) continue;
     if (c.need && !hasCraft(S, c.need)) continue;
@@ -1293,9 +1296,6 @@ function updateHero(S, dt) {
   if (h.frenzy > 0 && (h.frenzy -= dt) <= 0) { h.frenzy = 0; h.frenzyAtk = 1; h.frenzyMove = 1; }
 
   const spd = C.HERO_SPD * (S.lastStand ? 1.2 : 1) * h.frenzyMove;
-
-  // ── 회피 중에는 구르는 방향으로만 움직입니다 (입력 무시) ──
-
 
   const iv = S.input;
   h.moving = !!(iv.x || iv.y);
@@ -1365,7 +1365,7 @@ function updateHero(S, dt) {
     if (d2 < nd2) { nd2 = d2; node = n; }
   }
   if (node) {
-    h.gp += C.GATHER_RATE[node.type] * (S.gear.ironpick ? 1.6 : 1) * dt;
+    h.gp += C.GATHER_RATE[node.type] * (S.pickaxe ? C.PICK_GATHER : 1) * dt;
     while (h.gp >= 1 && node.amt > 0) {
       h.gp -= 1; node.amt--; S.res[node.type]++; S.got[node.type]++;
       // 정수 — 무엇을 캐든 낮은 확률로 함께 나옵니다
@@ -1637,7 +1637,7 @@ function resolveMonsterAttack(S, m) {
     return;
   }
 
-  // 사거리를 벗어났으면 헛스윙 — 회피로 피한 경우입니다
+  // 사거리를 벗어났으면 헛스윙 — 걸어서 물러나 피한 경우입니다
   if (dist2(m.x, m.y, tgt.x, tgt.y) > 52 * 52) {
     fx(S, m.x, m.y - 14, '빗나감', '#9E9384');
     emit(S, 'monsterMiss', { x: m.x, y: m.y });
@@ -1682,7 +1682,7 @@ export function damageMonster(S, m, amt, src, trap, heavy, crit) {
   if (src === 'hero') m.hitStop = C.HITSTOP;
 
   /* ★ 평타로는 적의 공격이 끊기지 않습니다.
-     끊기게 하면 가만히 서서 때리기만 해도 안 맞아서 회피가 필요 없어집니다.
+     끊기게 하면 가만히 서서 때리기만 해도 안 맞아서 물러날 이유가 없어집니다.
      스킬(무거운 일격)로만 끊을 수 있고, 보스는 아예 안 끊깁니다(슈퍼아머). */
   if (heavy && !m.boss) { m.windup = 0; m.windupTgt = null; }
   if (m.hp > 0) return;

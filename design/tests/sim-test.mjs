@@ -64,11 +64,11 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   const iron = S.nodes.find(n => n.type === 'iron');
   S.hero.x = iron.x; S.hero.y = iron.y;
   run(S, 3);
-  ok('돌 곡괭이가 없으면 철광 옆에 서 있어도 철이 안 늘어난다', S.res.iron === 0, `철 ${S.res.iron}`);
+  ok('곡괭이가 없으면 철광 옆에 서 있어도 철이 안 늘어난다', S.res.iron === 0, `철 ${S.res.iron}`);
 
   S.forge = true; S.res.wood = 99; S.res.stone = 99;
   Sim.doCraft(S, 'pickaxe');
-  ok('대장간이 있으면 돌 곡괭이를 만들 수 있다', S.pickaxe === true);
+  ok('대장간이 있으면 곡괭이를 만들 수 있다', S.pickaxe === true);
   S.hero.x = iron.x; S.hero.y = iron.y;
   run(S, 3);
   ok('곡괭이를 만든 뒤에는 철이 늘어난다', S.res.iron > 0, `철 ${S.res.iron}`);
@@ -501,13 +501,20 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
 {
   const S = Sim.createSim('taesaja');
   S.forge = true; S.res.iron = 999; S.res.hide = 999; S.res.stone = 999; S.res.wood = 999;
+  /* 2026-09 정리: 무기 강화는 6단계 → 3단계(★1~★3)로 줄였습니다.
+     6번 눌러도 3단계에서 멈추는지, 즉 초과 호출이 그냥 무시되는지까지 확인합니다. */
   for (let i = 0; i < 6; i++) Sim.doCraft(S, 'weapon');
-  ok('무기는 6단계까지 강화된다', S.weaponLv === 6, `${S.weaponLv}단계`);
-  ok('6단계까지 올리면 더는 강화할 수 없다', Sim.canCraft(S, 'weapon').ok === false);
+  ok('무기는 ★3까지만 강화된다', S.weaponLv === 3, `${S.weaponLv}단계`);
+  ok('★3까지 올리면 더는 강화할 수 없다', Sim.canCraft(S, 'weapon').ok === false);
   ok('무기 강화는 뒤로 갈수록 비싸다',
      (() => { const a = Sim.createSim('taesaja'); a.weaponLv = 0;
-              const b = Sim.createSim('taesaja'); b.weaponLv = 5;
+              const b = Sim.createSim('taesaja'); b.weaponLv = 2;
               return Sim.craftCost(b, 'weapon').iron > Sim.craftCost(a, 'weapon').iron; })());
+  ok('★3 무기는 공격력이 +150% 다',
+     (() => { const bare = Sim.createSim('taesaja');   // 같은 장수, 강화만 0단계
+              const r = Sim.combatMul(S) / Sim.combatMul(bare);
+              return Math.abs(r - (1 + C.WEAPON_STEP * 3)) < 1e-6; })(),
+     `x${(Sim.combatMul(S) / Sim.combatMul(Sim.createSim('taesaja'))).toFixed(2)}`);
 
   // 강철 가시
   const T = Sim.createSim('taesaja');
@@ -528,20 +535,26 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
   ok('강철 가시를 만들면 함정 피해가 오른다', steel > plain * 1.4,
      `${plain.toFixed(0)} → ${steel.toFixed(0)}`);
 
-  // 망루 강화
-  const W = Sim.createSim('taesaja');
-  W.baseLv = 3;
-  const noCastle = Sim.createSim('taesaja'); noCastle.forge = true;
-  ok('망루 강화는 철옹성이 있어야 만들 수 있다',
-     Sim.canCraft(noCastle, 'towerup').why === '철옹성이 필요합니다',
-     Sim.canCraft(noCastle, 'towerup').why);
+  /* 강철 가시·군기는 예전에 '가죽 갑옷 → 철 갑옷 → 강철 가시 → 망루 강화 → 군기'
+     5단 사슬로 잠겨 있었습니다. 지금은 사슬 대신 거점 등급(baseLv)으로만 잠급니다.
+     망루 강화는 아예 없앴습니다 — 철옹성을 올리면 그 값이 기본으로 들어갑니다. */
+  const noWall = Sim.createSim('taesaja'); noWall.forge = true;
+  ok('강철 가시는 석성(2단계)이 있어야 만들 수 있다',
+     Sim.canCraft(noWall, 'steelspike').why === '석성이 필요합니다',
+     Sim.canCraft(noWall, 'steelspike').why);
+  ok('군기는 철옹성(3단계)이 있어야 만들 수 있다',
+     Sim.canCraft(noWall, 'banner').why === '철옹성이 필요합니다',
+     Sim.canCraft(noWall, 'banner').why);
+  const W = Sim.createSim('taesaja'); W.forge = true; W.baseLv = 3;
+  W.res.iron = 999; W.res.stone = 999; W.res.hide = 999;
+  ok('철옹성이면 강철 가시·군기가 둘 다 풀린다',
+     Sim.canCraft(W, 'steelspike').ok && Sim.canCraft(W, 'banner').ok);
 
   // 군기
   const B = Sim.createSim('taesaja');
   B.shard = 100; Sim.hireMerc(B, 'archer');
   const atk0 = B.soldiers[0].atk;
-  B.forge = true; B.res.hide = 99; B.res.iron = 99;
-  B.gear.ironmail = true; B.gear.steelspike = true; B.gear.towerup = true;
+  B.forge = true; B.baseLv = 3; B.res.hide = 99; B.res.iron = 99;
   Sim.doCraft(B, 'banner');
   ok('군기는 이미 고용한 용병에게도 적용된다', B.soldiers[0].atk > atk0,
      `${atk0} → ${B.soldiers[0].atk}`);

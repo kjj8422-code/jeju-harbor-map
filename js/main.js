@@ -727,45 +727,110 @@ function refreshMercs() {
   });
 }
 
+/* ==================================================================
+   제작 화면
+   ------------------------------------------------------------------
+   "무기 업글 제작 너무 정신없다" 는 지적을 받고 다시 짰습니다.
+   달라진 점:
+     · 만들 수 있는 것을 **맨 위로** 올립니다 (잠긴 것은 아래로)
+     · 이미 만든 것은 **한 줄로 접습니다** (자리를 차지하지 않게)
+     · 무기 강화는 별(★★☆)로 진행도를 보여줍니다
+     · 못 만드는 이유를 **그 자리에** 적습니다 (무엇이 몇 개 모자란지까지)
+   ================================================================== */
+function craftRow(c) {
+  const owned = Sim.hasCraft(S, c.id);
+  const chk = Sim.canCraft(S, c.id);
+  const cost = Sim.craftCost(S, c.id);
+  const aff = Sim.canAffordWithEssence(S, cost);
+
+  /* 이미 가진 것은 한 줄로 */
+  if (owned) {
+    return `<div class="cDone"><span>${c.icon}</span><b>${c.name}</b>
+      <span class="cEff">${c.effect}</span><span class="cOk">보유</span></div>`;
+  }
+
+  const stars = c.id === 'weapon'
+    ? `<span class="cStar">${'★'.repeat(S.weaponLv)}${'☆'.repeat(c.max - S.weaponLv)}</span>` : '';
+  const count = c.id === 'potion' ? `<span class="cCount">보유 ${S.potions}</span>` : '';
+
+  /* 무기 강화만은 "지금 누르면 어떻게 되는지"를 적습니다.
+     '단계마다 +50%' 라고만 써두면 ★1 인 사람은 자기가 얼마가 되는지 암산해야 합니다. */
+  const effect = c.id === 'weapon'
+    ? `공격력 +${Math.round(C.WEAPON_STEP * S.weaponLv * 100)}% → `
+      + `<b style="color:var(--gold)">+${Math.round(C.WEAPON_STEP * (S.weaponLv + 1) * 100)}%</b>`
+    : c.effect;
+
+  /* 자원 칩 — 모자란 것은 빨갛게, 정수로 메울 수 있으면 알려줍니다 */
+  const chips = Object.entries(cost).map(([k, v]) => {
+    const have = Math.floor(S.res[k]), R = C.RESOURCES[k];
+    return `<span class="cChip${have >= v ? ' ok' : ''}">${R.icon} ${have}/${v}</span>`;
+  }).join('');
+  const essHint = (!aff.ok || aff.essence > 0) && aff.essence > 0 && aff.essence <= S.res.essence
+    ? `<span class="cChip ess">⭐ ${aff.essence}로 가능</span>` : '';
+
+  const locked = !chk.ok;
+  const why = locked
+    ? (chk.why === '자원 부족' || /자원 부족/.test(chk.why)
+        ? (aff.essence > 0 && aff.essence <= S.res.essence ? '' : '자원이 모자랍니다')
+        : chk.why)
+    : '';
+
+  /* 줄 전체가 버튼이지만, 성 올리기 줄에는 '올리기' 버튼이 따로 보입니다.
+     여기에도 같은 모양의 딱지를 붙여야 "눌러도 되는 줄" 인 게 보입니다. */
+  const go = chk.ok ? `<span class="cGo">만들기</span>` : '';
+
+  return `<button class="cItem${locked ? ' locked' : ''}"
+      data-craft="${c.id}" ${chk.ok ? '' : 'disabled'}>
+    <span class="cIcon">${c.icon}</span>
+    <span class="cBody">
+      <span class="cTop"><b class="cName">${c.name}</b>${stars}${count}
+        ${why ? `<span class="cWhy">🔒 ${why}</span>` : ''}</span>
+      <span class="cEff">${effect}</span>
+      <span class="cCost">${chips}${essHint}</span>
+    </span>
+    ${go}
+  </button>`;
+}
+
 function refreshCraft() {
   if (!S) return;
-  // 성 업그레이드
+
+  /* ── 성 ── */
   const nx = Sim.nextBaseLevel(S);
   const upChk = Sim.canUpgradeBase(S);
+  const cur = C.BASE_LEVELS.find(b => b.lv === S.baseLv);
   $('baseUpgrade').innerHTML = nx
-    ? `<div class="gRow">
-         <div class="gHead"><span class="gIcon">🏯</span>
-           <b>${S.baseLv}단계 → ${nx.lv}단계 ${nx.name}</b>
-           <span class="gHave">체력 ${S.base.maxHp} → ${nx.maxHp}</span></div>
-         <div class="gLine"><span class="gTag">필요</span>${costChips(nx.cost)}</div>
-         <div class="gLine"><span class="gTag">효과</span>${nx.desc}</div>
+    ? `<div class="cItem asRow">
+         <span class="cIcon">🏯</span>
+         <span class="cBody">
+           <span class="cTop"><b class="cName">${cur.name} → ${nx.name}</b>
+             <span class="cCount">체력 ${S.base.maxHp} → ${nx.maxHp}</span></span>
+           <span class="cEff">${nx.desc}</span>
+           <span class="cCost">${Object.entries(nx.cost).map(([k, v]) => {
+             const have = Math.floor(S.res[k]), R = C.RESOURCES[k];
+             return `<span class="cChip${have >= v ? ' ok' : ''}">${R.icon} ${have}/${v}</span>`;
+           }).join('')}</span>
+         </span>
          <button class="btn ${upChk.ok ? 'gold' : ''}" id="btnUpgradeBase"
-           ${upChk.ok ? '' : 'disabled'} style="margin-top:6px;">
-           ${upChk.ok ? '🏯 성 올리기' : upChk.why}</button>
+           ${upChk.ok ? '' : 'disabled'}>${upChk.ok ? '올리기' : upChk.why}</button>
        </div>`
-    : `<div class="gRow done"><div class="gHead"><span class="gIcon">🏯</span>
-         <b>철옹성 — 최고 단계입니다</b></div></div>`;
+    : `<div class="cDone"><span>🏯</span><b>철옹성</b>
+         <span class="cEff">최고 단계 · 망루가 적을 자동으로 쏩니다</span><span class="cOk">완료</span></div>`;
   const ub = $('btnUpgradeBase');
   if (ub) ub.onclick = () => { Sim.upgradeBase(S); handleEvents(); refreshCraft(); refreshHUD(); };
 
-  // 장비 — 종류별로 묶어서
+  /* ── 제작 — 만들 수 있는 것을 위로, 가진 것은 아래로 ── */
   const groups = {};
   for (const c of C.CRAFTS) (groups[c.group] = groups[c.group] || []).push(c);
 
-  $('craftList').innerHTML = Object.entries(groups).map(([g, list]) => `
-    <div class="craftGroup"><h4>${g}</h4>${list.map(c => {
-      const owned = Sim.hasCraft(S, c.id);
-      const chk = Sim.canCraft(S, c.id);
-      const extra = c.id === 'weapon' ? ` <span class="gHave">${S.weaponLv}/${c.max}단계</span>`
-                  : c.id === 'potion' ? ` <span class="gHave">보유 ${S.potions}개</span>` : '';
-      return `<button class="craftItem${owned ? ' done' : ''}" data-craft="${c.id}"
-                ${chk.ok ? '' : 'disabled'}>
-        <div class="gHead"><span class="gIcon">${c.icon}</span><b>${c.name}</b>${extra}
-          <span class="gHave">${owned ? '보유 중' : (chk.ok ? '만들 수 있음' : chk.why)}</span></div>
-        <div class="gLine"><span class="gTag">필요</span>${costChips(Sim.craftCost(S, c.id))}</div>
-        <div class="gLine"><span class="gTag">효과</span>${c.effect}</div>
-      </button>`;
-    }).join('')}</div>`).join('');
+  $('craftList').innerHTML = Object.entries(groups).map(([g, list]) => {
+    const sorted = [...list].sort((a, b) => {
+      const oa = Sim.hasCraft(S, a.id) ? 2 : (Sim.canCraft(S, a.id).ok ? 0 : 1);
+      const ob = Sim.hasCraft(S, b.id) ? 2 : (Sim.canCraft(S, b.id).ok ? 0 : 1);
+      return oa - ob;
+    });
+    return `<div class="craftGroup"><h4>${g}</h4>${sorted.map(craftRow).join('')}</div>`;
+  }).join('');
 
   $('craftList').querySelectorAll('[data-craft]').forEach(b => {
     b.onclick = () => { Sim.doCraft(S, b.dataset.craft); handleEvents(); refreshCraft(); refreshBuildCards(); refreshHUD(); };
@@ -809,17 +874,27 @@ function refreshGuide() {
       <div class="gLine"><span class="gTag">효과</span>${b.desc}</div>
     </div>`).join('');
 
-  // 3) 제작 — 순서와 효과
-  $('guideCraft').innerHTML = C.CRAFTS.map(c => {
-    const chk = S ? Sim.canCraft(S, c.id) : { ok:false, why:'' };
-    const owned = S ? Sim.hasCraft(S, c.id) : false;
-    return `<div class="gRow${owned ? ' done' : ''}">
-      <div class="gHead"><span class="gIcon">${c.icon}</span><b>${c.name}</b>
-        <span class="gHave">${owned ? '보유 중' : (chk.ok ? '제작 가능' : chk.why)}</span></div>
-      <div class="gLine"><span class="gTag">필요</span>${costChips(S ? Sim.craftCost(S, c.id) : c.cost)}</div>
-      <div class="gLine"><span class="gTag">효과</span>${c.effect}</div>
-    </div>`;
-  }).join('');
+  /* 3) 제작 — 8개뿐이지만 '장비 / 시설 강화 / 소모품' 세 묶음으로 나눠 보여 줍니다.
+        한 줄로 쭉 늘어놓으면 뭐부터 만들지가 안 보입니다. */
+  const gGroups = [];
+  for (const c of C.CRAFTS) {
+    let g = gGroups.find(x => x.name === (c.group || '장비'));
+    if (!g) gGroups.push(g = { name: c.group || '장비', items: [] });
+    g.items.push(c);
+  }
+  $('guideCraft').innerHTML = gGroups.map(g =>
+    `<p class="secTitle" style="margin:10px 0 4px;">${g.name}</p>`
+    + g.items.map(c => {
+      const chk = S ? Sim.canCraft(S, c.id) : { ok:false, why:'' };
+      const owned = S ? Sim.hasCraft(S, c.id) : false;
+      return `<div class="gRow${owned ? ' done' : ''}">
+        <div class="gHead"><span class="gIcon">${c.icon}</span><b>${c.name}</b>
+          <span class="gHave">${owned ? '보유 중' : (chk.ok ? '제작 가능' : chk.why)}</span></div>
+        <div class="gLine"><span class="gTag">필요</span>${costChips(S ? Sim.craftCost(S, c.id) : c.cost)}</div>
+        <div class="gLine"><span class="gTag">효과</span>${c.effect}</div>
+      </div>`;
+    }).join('')
+  ).join('');
 
   // 4-b) 적의 종류
   const MONDAY = { normal:'1막부터', fast:'44일~', tank:'55일~', elite:'77일~' };
@@ -832,7 +907,7 @@ function refreshGuide() {
       <div class="gLine"><span class="gTag">대응</span>${
         k === 'fast' ? '함정 한 칸으로는 못 잡습니다. 함정을 두세 칸 이어 까세요.'
         : k === 'tank' ? '목책이 오래 버텨야 합니다. 성을 올리고 방패 용병을 세우세요.'
-        : k === 'elite' ? '예비 동작을 회피로 흘리고 스킬로 끊으세요. 정면으로 맞으면 아픕니다.'
+        : k === 'elite' ? '붉은 원이 차오르면 걸어서 물러나 흘리고, 스킬로 끊으세요. 정면으로 맞으면 아픕니다.'
         : '기본 몬스터입니다. 함정과 병사로 충분히 정리됩니다.'}</div>
     </div>`).join('');
 

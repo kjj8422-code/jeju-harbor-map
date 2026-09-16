@@ -28,7 +28,8 @@ run "② 로직 검수"                          node design/tests/sim-test.mjs
 run "③ 건설 조작 검수"                     node design/tests/ui-build-test.mjs
 run "④ 웨이브 진행 검수 (밤 → 낮 복귀)"    node design/tests/ui-wave-test.mjs
 run "⑤ 전수 클릭 점검 (모든 버튼)"         node design/tests/audit-clicks.mjs
-run "⑥ 긴 플레이 점검 (99일 완주)"         node design/tests/audit-longplay.mjs
+run "⑥ 제작소 점검 (제작 화면 전수)"      node design/tests/audit-craft.mjs
+run "⑦ 긴 플레이 점검 (99일 완주)"         node design/tests/audit-longplay.mjs
 
 [ -n "${SERVER:-}" ] && kill $SERVER 2>/dev/null
 

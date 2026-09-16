@@ -404,6 +404,42 @@ details.panel[open] summary::before{content:'▾ ';}
 .tpBtn .c b{color:var(--gold);}
 .tpBtn .d{font-size:10px;color:#a89c8a;display:block;margin-top:2px;line-height:1.4;}
 .tpNow{font-size:11px;color:var(--dim);margin-top:7px;}
+
+/* ── 제작 화면 (정리판) ── */
+.craftGroup{margin-bottom:14px;}
+.craftGroup h4{margin:0 0 6px;font-size:11.5px;color:var(--gold);letter-spacing:.06em;}
+.cItem{display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;
+  background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:9px 11px;margin-bottom:6px;color:var(--ink);font-family:inherit;cursor:pointer;
+  transition:border-color .12s,transform .12s;}
+.cItem:hover:not(:disabled){border-color:var(--gold);transform:translateY(-1px);}
+.cItem:disabled{cursor:not-allowed;}
+.cItem.locked{opacity:.55;border-style:dashed;}
+.cItem.asRow{cursor:default;align-items:center;}
+.cItem.asRow:hover{transform:none;border-color:var(--line);}
+.cItem.asRow .btn{flex:0 0 auto;font-size:12px;padding:7px 14px;}
+.cIcon{font-size:22px;line-height:1.1;flex:0 0 auto;}
+.cBody{flex:1 1 auto;min-width:0;}
+.cTop{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;}
+.cName{font-size:14px;}
+.cStar{font-size:12.5px;color:var(--gold);letter-spacing:1px;}
+.cCount{font-size:10.5px;color:var(--dim);}
+.cWhy{margin-left:auto;font-size:10.5px;color:#e39184;font-weight:700;}
+.cEff{display:block;font-size:11.5px;color:#cfc6b8;margin-top:2px;line-height:1.5;}
+.cCost{display:block;margin-top:5px;}
+.cChip{display:inline-block;background:#2b261f;border:1px solid var(--line);border-radius:12px;
+  padding:2px 8px;margin:0 4px 2px 0;font-size:10.5px;font-weight:700;color:#e39184;}
+.cChip.ok{color:#9fdcae;}
+.cChip.ess{color:#E0B44A;border-color:rgba(224,180,74,.5);}
+.cDone{display:flex;gap:8px;align-items:center;background:#1d2a20;border:1px solid var(--good);
+  border-radius:8px;padding:6px 11px;margin-bottom:6px;font-size:12px;}
+.cDone b{font-size:13px;}
+.cDone .cEff{display:inline;margin:0;font-size:11px;color:var(--dim);}
+.cOk{margin-left:auto;font-size:11px;color:var(--good);font-weight:800;}
+/* 만들 수 있는 줄에만 붙는 딱지 — 성 올리기의 '올리기' 버튼과 같은 자리·같은 모양입니다 */
+.cGo{flex:0 0 auto;align-self:center;background:var(--gold);color:#241d12;
+  border-radius:7px;padding:7px 14px;font-size:12px;font-weight:800;white-space:nowrap;}
+.cItem:hover:not(:disabled) .cGo{filter:brightness(1.12);}
 </style>
 </head>
 <body>
@@ -523,7 +559,7 @@ details.panel[open] summary::before{content:'▾ ';}
     <div style="font-size:11.5px;color:var(--dim);line-height:1.6;">
       병영을 지으면 병사를 고용할 수 있습니다. 병사를 눌러
       <b style="color:var(--gold)">목재 → 석재 → 약초 → 철 → 방어</b> 순으로 역할을 바꿉니다.
-      <b>철은 돌 곡괭이를 만든 뒤에만</b> 맡길 수 있습니다 — 중앙 철광까지 오가는 일을 병사가 나눠 집니다.
+      <b>철은 곡괭이를 만든 뒤에만</b> 맡길 수 있습니다 — 중앙 철광까지 오가는 일을 병사가 나눠 집니다.
     </div>
     <div class="sldRow" id="sldRow"></div>
     <div style="margin-top:8px;"><button class="btn" id="btnHire">＋ 병사 고용 (목재 10 · 석재 5)</button></div>
@@ -599,8 +635,9 @@ details.panel[open] summary::before{content:'▾ ';}
   <div class="sheet">
     <h2>제작소 · 성</h2>
     <p class="sub">
-      장비는 순서가 있습니다 — 돌 곡괭이가 있어야 철을 캐고, 철이 있어야 철 곡괭이를 만듭니다.
-      가죽은 <b style="color:var(--gold)">밤에 몬스터를 잡아야</b> 나옵니다.
+      <b>곡괭이부터</b> 만드세요 — 철을 캘 수 있게 되고 채집이 빨라집니다.<br>
+      가죽은 <b style="color:var(--gold)">밤에 몬스터를 잡아야</b> 나오고,
+      시설 강화 둘은 <b>성 단계</b>가 열어줍니다. 자원이 모자라면 <b style="color:#E0B44A">⭐ 정수</b>로 메울 수 있습니다.
     </p>
     <p class="secTitle" style="margin-top:4px;">성 올리기</p>
     <div id="baseUpgrade"></div>
