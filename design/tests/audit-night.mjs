@@ -112,6 +112,13 @@ await p.evaluate(() => { const { S, C } = window.__sg;
   S.monsters.length = 0; S.day = 10; S.dayT = C.DAY_SEC - 0.05;
   S.res.wood = 500; S.res.stone = 500; });
 ok('예고 단계로 들어간다', await waitFor(() => window.__sg.S.phase === 'warn'), );
+/* ★ 예고 중에도 게이지가 떠 있습니다. 그때 "남은 적 0" 이라고 적혀 있으면
+   적이 쏟아지기 직전에 0마리라고 말하는 셈이라 게이지를 못 믿게 됩니다. */
+ok('예고 중에는 몇 마리가 오는지 미리 알려준다',
+   await waitFor(() => /곧 \d+마리/.test(document.getElementById('wbFoe').textContent), 5),
+   await p.evaluate(() => document.getElementById('wbFoe').textContent));
+ok('예고 중에 "남은 적 0" 이라고 적지 않는다',
+   await p.evaluate(() => !/남은 적 0/.test(document.getElementById('wbFoe').textContent)));
 ok('밤이 시작된다', await waitFor(() => window.__sg.S.phase === 'night', 14));
 
 const n0 = await p.evaluate(() => { const S = window.__sg.S;
@@ -124,17 +131,31 @@ ok('전황 게이지가 뜬다',
 /* ★ 여기서 실제 버그를 잡았습니다 — 밤이 막 열린 순간 "남은 적 0" 이 떴습니다.
    S.waveLeft 가 0 으로 시작하는데 화면이 그 값을 그대로 믿었기 때문입니다.
    "숫자가 적혀 있다" 가 아니라 "숫자가 맞다" 를 재야 잡힙니다. */
+/* 화면 갱신은 0.12초마다이므로 DOM 이 따라올 시간을 줍니다 */
+await waitFor(() => /남은 적 \d+/.test(document.getElementById('wbFoe').textContent), 6);
 ok('전황 게이지에 남은 적이 적힌다',
    await p.evaluate(() => /남은 적 \d+/.test(document.getElementById('wbFoe').textContent)),
    await p.evaluate(() => document.getElementById('wbFoe').textContent));
+/* 적이 남아 있는 '동안' 을 잡아서 재야 합니다 —
+   장수가 다 잡아버린 뒤에 재면 0 이 맞는 값이 되어 버그를 못 봅니다. */
+const foeMatch = await (async () => {
+  for (let i = 0; i < 60; i++) {
+    const r = await p.evaluate(() => {
+      const S = window.__sg.S;
+      if (S.phase !== 'night') return null;
+      const want = S.monsters.length + S.surges.reduce((a, g) => a + g.kinds.length, 0);
+      if (want <= 0) return null;
+      const shown = Number((document.getElementById('wbFoe').textContent.match(/\d+/) || [-1])[0]);
+      return { want, shown };
+    });
+    if (r) return r;
+    await p.waitForTimeout(120);
+  }
+  return null;
+})();
 ok('남은 적 수가 실제 마릿수와 맞는다',
-   await p.evaluate(() => {
-     const S = window.__sg.S;
-     const want = S.monsters.length + S.surges.reduce((a, g) => a + g.kinds.length, 0);
-     const shown = Number((document.getElementById('wbFoe').textContent.match(/\d+/) || [0])[0]);
-     return want > 0 && Math.abs(shown - want) <= 1;
-   }),
-   await p.evaluate(() => document.getElementById('wbFoe').textContent));
+   !!foeMatch && Math.abs(foeMatch.shown - foeMatch.want) <= 2,
+   foeMatch ? `화면 ${foeMatch.shown} / 실제 ${foeMatch.want}` : '적이 남은 순간을 못 잡음');
 
 ok('진격 배너가 실제로 뜬다',
    await waitFor(() => document.getElementById('surgeBanner').classList.contains('on'), 20));
@@ -169,6 +190,32 @@ ok('밤을 끝내면 리포트가 뜬다',
 ok('리포트 버튼이 남은 시간을 알려준다',
    await p.evaluate(() => /초/.test(document.getElementById('btnRepClose').textContent)),
    await p.evaluate(() => document.getElementById('btnRepClose').textContent));
+/* ★ 일시정지를 걸면 시간이 멈춰야 합니다.
+   "갇히지 않는다" 만 재면 저절로 넘어가는 것도 통과로 셉니다 — 질문을 바꿔야 잡힙니다.
+   천천히 읽으려고 멈췄는데 리포트가 날아가면 멈춘 의미가 없습니다. */
+/* ⏸ 일시정지 버튼은 리포트 화면에 **덮여서 누를 수 없습니다** — 먼저 그걸 확인합니다.
+   (그래서 "멈춰서 읽으면 되지" 가 성립하지 않고, 읽을 시간을 늘리는 수단이
+    리포트 안에 있어야 합니다) */
+ok('리포트 중에는 일시정지 버튼이 덮여 있다 → 리포트 안에 수단이 있어야 한다',
+   await p.evaluate(() => {
+     const b = document.getElementById('btnPause'), r = b.getBoundingClientRect();
+     return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) !== b;
+   }));
+ok('리포트에 「잠깐 더 볼게요」 버튼이 있다',
+   await p.evaluate(() => !!document.getElementById('btnRepHold')));
+await p.click('#btnRepHold');
+await p.waitForTimeout(600);
+const heldPhase0 = await p.evaluate(() => window.__sg.S.phase);
+await p.waitForTimeout(12000);          // 자동 닫힘(8초)보다 넉넉히 더
+ok('「잠깐」 을 누르면 리포트가 저절로 닫히지 않는다',
+   heldPhase0 === 'report' && await p.evaluate(() => window.__sg.S.phase === 'report'),
+   `누른 뒤 12초 → ${await p.evaluate(() => window.__sg.S.phase)}`);
+ok('멈춰 있는 동안 버튼이 그렇다고 알려준다',
+   await p.evaluate(() => /준비되면/.test(document.getElementById('btnRepClose').textContent)),
+   await p.evaluate(() => document.getElementById('btnRepClose').textContent));
+await p.click('#btnRepHold');           // 다시 시간이 흐르게
+await p.waitForTimeout(400);
+
 ok('누르지 않아도 저절로 날이 밝는다',
    await waitFor(() => window.__sg.S.phase === 'day', 20), '자동으로 낮 복귀');
 ok('날이 밝는 연출이 실제로 나온다',

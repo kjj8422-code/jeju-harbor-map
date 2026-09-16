@@ -539,7 +539,7 @@ details.panel[open] summary::before{content:'▾ ';}
           <span><i>🌿</i> <span id="hHerb">0</span></span>
           <span><i>🟤</i> <span id="hHide">0</span></span>
           <span title="모자란 자원을 대신합니다"><i>⭐</i> <span id="hEssence">0</span></span></div>
-        <div style="color:var(--dim);margin-top:3px;">🏯 <span id="hBaseLv">토성</span>
+        <div style="color:var(--dim);margin-top:3px;"><span id="hDiff"></span>🏯 <span id="hBaseLv">토성</span>
           · 병사 <span id="hSol">0</span>/<span id="hSolMax">0</span>
           · 🧪 <span id="hPotion">0</span> · 옥새 <span id="hShard">0</span></div>
         <div style="color:var(--red);font-weight:800;margin-top:3px;" id="hNext">다음 대란 D-10</div>
@@ -786,6 +786,25 @@ details.panel[open] summary::before{content:'▾ ';}
     <p class="secTitle">병사와 용병</p>
     <div id="guideMerc"></div>
 
+    <p class="secTitle">난이도 — 무엇이 달라지나</p>
+    <div id="guideDiff"></div>
+
+    <div class="panel" style="border-left:3px solid var(--red);">
+      <h3>밤은 여러 번의 <b>진격</b>으로 나뉩니다</h3>
+      밤이 시작되면 <b>선발대</b>만 먼저 옵니다. 나머지는 <b>2~5차례</b>에 나눠
+      한 덩어리씩 밀고 들어옵니다.<br>
+      진격이 시작될 때마다 화면 가운데에
+      <b style="color:#E0554A">「적 본대가 밀려온다!!」</b> 같은 배너가 뜨고,
+      화면이 흔들리고 가장자리가 붉게 번지고 징·함성이 울립니다.<br><br>
+      한 무리는 <b>대열을 이뤄 뭉쳐서</b> 옵니다 — 가장 느린 놈에 속도를 맞춥니다.
+      거점 가까이 오거나 피해를 입으면 대열이 풀리고 각자 싸웁니다.<br><br>
+      <b style="color:var(--gold)">화면 위 전황 게이지</b>에
+      우리 방어선과 <b>남은 적</b>이 나옵니다. 아래에 진격이 몇 차례 남았는지도 적힙니다 —
+      "지금 밀어붙여야 하나, 물러나서 다시 세워야 하나"를 그걸 보고 정하세요.<br><br>
+      밤이 끝나면 <b>누르지 않아도 8초 뒤 날이 밝습니다.</b>
+      먼저 읽고 넘어가고 싶으면 버튼을 누르면 됩니다.
+    </div>
+
     <p class="secTitle">99일의 흐름</p>
     <div id="guideActs"></div>
 
@@ -822,7 +841,10 @@ details.panel[open] summary::before{content:'▾ ';}
       <div class="repRow" style="border-bottom:none;"><span>획득한 옥새 조각</span><b id="repShard">0</b></div>
     </div>
     <div class="panel" id="repAdvice"></div>
-    <button class="btn primary" id="btnRepClose" style="margin-top:12px;padding:11px 24px;font-size:14px;">▶ 다음 날로</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;">
+      <button class="btn primary" id="btnRepClose" style="padding:11px 24px;font-size:14px;">▶ 다음 날로</button>
+      <button class="btn" id="btnRepHold" style="padding:11px 18px;font-size:13px;">⏸ 잠깐 — 더 볼게요</button>
+    </div>
   </div>
 </div>
 

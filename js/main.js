@@ -247,6 +247,12 @@ function startGame(heroId) {
   S = Sim.createSim(hid, awakenOf(hid), selDiff);
   R3.buildWorld(S);
   buildSel = null; paused = false;
+  /* 지난 판의 연출 흔적을 지웁니다 — 배너·섬광·일출이 클래스로 남아 있으면
+     새 판 첫 프레임에 잠깐 비칠 수 있습니다 */
+  if (dawnTimer) { clearTimeout(dawnTimer); dawnTimer = null; }
+  for (const id of ['surgeBanner', 'flash', 'dawn', 'dawnWord'])
+    { const el = $(id); if (el) el.classList.remove('on'); }
+  { const wb = $('warBar'); if (wb) wb.classList.remove('on'); }
   closeAll();
   refreshBuildCards(); refreshSoldiers(); refreshHUD(); refreshObjective();
   const bar0 = $('skillBar'); if (bar0) bar0.dataset.hero = '';
@@ -354,6 +360,12 @@ function handleEvents() {
 
 /* ---------------- HUD ---------------- */
 function refreshHUD() {
+  /* 지금 난이도를 HUD 에 계속 띄웁니다.
+     예전에는 시작할 때 토스트로 한 번 알려주고 2초 뒤 사라져서,
+     한참 하다 보면 자기가 무슨 난이도로 하는지 알 길이 없었습니다. */
+  const dEl = $('hDiff');
+  if (dEl && S) dEl.innerHTML =
+    `<b style="color:${S.diff.color}" title="${S.diff.detail}">${S.diff.icon} ${S.diff.name}</b> · `;
   if (!S) return;
   const act = C.actOf(S.day);
   $('hDay').innerHTML = `Day ${S.day} <span>/ ${C.TOTAL_DAYS} · ${act.act}막 ${act.name}</span>`;
@@ -947,6 +959,19 @@ function refreshGuide() {
       <div class="gLine"><span class="gTag">대응</span>${m.tip || ''}</div>
     </div>`).join('');
 
+  /* 4-b2) 난이도 — 지금 고른 것에 표시가 붙습니다 */
+  const gd = $('guideDiff');
+  if (gd) gd.innerHTML = C.DIFFS.map(d => {
+    const now = S ? S.diff.id === d.id : d.id === selDiff;
+    return `<div class="gRow${now ? ' done' : ''}">
+      <div class="gHead"><span class="gIcon">${d.icon}</span>
+        <b style="color:${d.color}">${d.name}</b>
+        <span class="gHave">${now ? '지금 이 판' : d.tag}</span></div>
+      <div class="gLine"><span class="gTag">성격</span>${d.desc}</div>
+      <div class="gLine"><span class="gTag">수치</span>${d.detail}</div>
+    </div>`;
+  }).join('');
+
   // 4-c) 병사와 용병
   $('guideMerc').innerHTML = `
     <div class="gRow">
@@ -1023,14 +1048,28 @@ function refreshWarBar() {
      밤이 막 열린 순간 "남은 적 0" 이 떴습니다. 화면에서 직접 셉니다. */
   const pending = S.surges ? S.surges.reduce((a, g) => a + g.kinds.length, 0) : 0;
   const left = S.monsters.length + pending;
-  const total = Math.max(1, S.waveTotal || left || 1);
-  const foePct = Math.max(0, Math.min(100, Math.round(left * 100 / total)));
 
   const basePct = Math.max(0, S.base.hp / S.base.maxHp);
   const troops = S.soldiers.filter(x => !x.down).length;
   const allyPct = Math.round(basePct * 100);
-
   $('wbAlly').textContent = `방어선 ${Math.round(S.base.hp)} · 병력 ${troops}`;
+
+  /* ★ 예고(warn) 단계에도 이 게이지가 떠 있습니다 (isNight 은 warn 을 포함합니다).
+     그때는 아직 적이 하나도 없어서 "남은 적 0" 이 떴습니다 — 적이 몰려오기 직전에
+     "0마리" 라고 적혀 있으면 게이지를 못 믿게 됩니다.
+     예고 중에는 **몇 마리가 오는지**를 미리 알려주는 편이 맞습니다. */
+  if (S.phase === 'warn') {
+    const w = Sim.waveForDay(S.day);
+    const coming = w ? Math.max(1, Math.round(w.count * S.heroDef.waveMul * S.diff.waveMul)) : 0;
+    $('wbFoe').textContent = `곧 ${coming}마리`;
+    $('wbAllyBar').style.width = '100%';
+    $('wbFoeBar').style.width = '0%';
+    $('wbNote').innerHTML = `<b>${w ? w.name : '대란'}</b> — 곧 밀려옵니다`;
+    return;
+  }
+
+  const total = Math.max(1, S.waveTotal || left || 1);
+  const foePct = Math.max(0, Math.min(100, Math.round(left * 100 / total)));
   $('wbFoe').textContent = `남은 적 ${left}`;
   /* 두 막대가 가운데서 만나게 — 어느 쪽이 밀리는지 한눈에 보입니다 */
   const a = allyPct, b = foePct, sum = Math.max(1, a + b);
@@ -1048,6 +1087,12 @@ function refreshWarBar() {
    대신 **누르지 않아도 저절로 닫히게** 하고, 닫히는 순간 일출을 깔았습니다.
    먼저 읽고 싶으면 버튼으로 바로 넘어갈 수 있습니다. */
 let dawnTimer = null;
+/* ★ 리포트를 읽는 동안 시간을 멈추는 장치.
+   ⏸ 일시정지 버튼은 리포트 화면(inset:0, z-index 50)에 **덮여서 누를 수가 없습니다** —
+   실제로 눌러보니 elementFromPoint 가 scReport 를 돌려줬습니다.
+   그래서 "멈추려면 일시정지를 누르면 되지" 는 성립하지 않습니다.
+   읽을 시간을 늘리는 수단은 리포트 **안에** 있어야 합니다. */
+let dawnHold = false;
 function playDawn(day) {
   const d = $('dawn'), w = $('dawnWord');
   if (d) { d.classList.remove('on'); void d.offsetWidth; d.classList.add('on'); }
@@ -1059,6 +1104,7 @@ function playDawn(day) {
 }
 function closeReportNow() {
   if (dawnTimer) { clearTimeout(dawnTimer); dawnTimer = null; }
+  dawnHold = false;
   if (!S || S.phase !== 'report') return;
   const day = S.day;
   Sim.closeReport(S); handleEvents();
@@ -1122,10 +1168,28 @@ function showReport(e) {
 
   /* 자동으로 날이 밝습니다 — 남은 시간을 버튼에 적어 "곧 넘어간다" 를 보이게 합니다 */
   if (dawnTimer) clearTimeout(dawnTimer);
+  dawnHold = false;
+  const hold = $('btnRepHold');
+  if (hold) {
+    hold.textContent = '⏸ 잠깐 — 더 볼게요';
+    hold.onclick = () => {
+      dawnHold = !dawnHold;
+      hold.textContent = dawnHold ? '⏵ 다시 시간 흐르게' : '⏸ 잠깐 — 더 볼게요';
+      Audio.play(dawnHold ? 'deny' : 'objective');
+    };
+  }
   const btn = $('btnRepClose');
   let left = C.REPORT_AUTO_SEC;
   const tick = () => {
     if (!S || S.phase !== 'report') return;
+    /* ★ 일시정지 중에는 시간이 흐르면 안 됩니다.
+       천천히 읽으려고 멈췄는데 저절로 넘어가 버리면, 멈춘 의미가 없습니다.
+       (검수에서 "갇히지 않는다" 만 봤더니 이걸 통과로 셌습니다 — 질문이 틀렸던 겁니다) */
+    if (paused || dawnHold) {
+      if (btn) btn.textContent = '▶ 준비되면 눌러서 다음 날로';
+      dawnTimer = setTimeout(tick, 400);
+      return;
+    }
     if (btn) btn.textContent = `▶ 날이 밝습니다 — ${left}초 (눌러서 바로)`;
     if (left-- <= 0) { closeReportNow(); return; }
     dawnTimer = setTimeout(tick, 1000);
