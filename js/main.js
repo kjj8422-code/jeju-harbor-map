@@ -366,6 +366,7 @@ function refreshHUD() {
   $('hIron').textContent = Math.floor(S.res.iron);
   $('hHerb').textContent = Math.floor(S.res.herb);
   $('hHide').textContent = Math.floor(S.res.hide);
+  $('hEssence').textContent = Math.floor(S.res.essence);
   $('hPotion').textContent = S.potions;
   $('hBaseLv').textContent = (C.BASE_LEVELS.find(b => b.lv === S.baseLv) || {}).name || '';
   const wounded = S.soldiers.filter(s => s.down).length;
@@ -392,6 +393,7 @@ function refreshHUD() {
   /* ★ 깔아둔 함정 중 몇 개가 실제로 그 길 위에 있는가.
      목책을 옮겨 길이 바뀌면 이 숫자가 바로 변합니다 — 판단의 근거가 됩니다. */
   refreshObjective();          // 부족분이 실시간으로 보이게
+  refreshTodo();               // 지금 할 일도 함께
 
   const tp = Sim.trapsOnPath(S);
   const ti = $('trapInfo');
@@ -425,6 +427,90 @@ function objectiveCost(S2, idx) {
   for (const c of C.CRAFTS) if (t.includes(c.name)) return Sim.craftCost(S2, c.id);
   for (const b of C.BUILDS) if (t.includes(b.name)) return b.cost;
   return null;
+}
+
+/* ==================================================================
+   "지금 할 일" 패널
+   ------------------------------------------------------------------
+   팀장님 피드백: "하면서 내가 뭘 해야 하지 라는 생각이 많이 든다."
+   목표 한 줄로는 부족합니다. 지금 할 수 있는 일을 **버튼으로** 띄우고,
+   누르면 바로 그 행동으로 넘어갑니다 (건설 카드 선택 / 제작 화면 / 자원 안내).
+   ================================================================== */
+let guideTarget = null;         // 자원 길잡이가 가리키는 자원지
+
+function doTodo(act) {
+  if (!S || S.over) return;
+  const [kind, arg] = act.split(':');
+  if (kind === 'build') { selectBuild(arg); }
+  else if (kind === 'craft') { refreshCraft(); openScreen('scCraft'); }
+  else if (kind === 'upgrade') { refreshCraft(); openScreen('scCraft'); }
+  else if (kind === 'hire') { Sim.hireSoldier(S); handleEvents(); refreshSoldiers(); refreshHUD(); }
+  else if (kind === 'gather') {
+    const n = Sim.nearestNodeOf(S, arg);
+    if (n) {
+      guideTarget = n;
+      const R = C.RESOURCES[arg];
+      toast(`가장 가까운 <b>${R.name}</b> 쪽으로 화살표가 나타납니다 — 옆에 서 있으면 자동으로 캡니다`);
+      R3.pingWorld(n.x, n.y);
+    } else toast('근처에 캘 수 있는 곳이 없습니다 — 미니맵의 점을 보세요');
+  }
+}
+
+function refreshTodo() {
+  const box = $('todoList');
+  if (!box || !S) return;
+  const list = Sim.todoList(S, 3);
+  const sig = list.map(t => `${t.id}${t.ready ? 1 : 0}${t.essence}`).join('|');
+  if (box.dataset.sig === sig) return;      // 바뀐 게 없으면 DOM 을 손대지 않습니다
+  box.dataset.sig = sig;
+  box.innerHTML = '';
+  if (!list.length) { box.innerHTML = '<div style="font-size:11px;color:var(--dim)">할 일 없음</div>'; return; }
+  for (const t of list) {
+    const el = document.createElement('button');
+    el.className = 'tdItem' + (t.ready ? '' : ' lack');
+    let cost = '';
+    if (t.cost) {
+      const parts = Object.entries(t.cost).map(([k, v]) => {
+        const have = Math.floor(S.res[k]), R = C.RESOURCES[k];
+        return `<b class="${have >= v ? 'ok' : ''}">${R.icon}${have}/${v}</b>`;
+      });
+      cost = `<span class="tc">${parts.join(' ')}`
+           + (t.essence > 0 ? ` <span class="tessence">⭐${t.essence}로 가능</span>` : '')
+           + '</span>';
+    }
+    el.innerHTML = `<span class="ti">${t.icon}</span><span class="tb">`
+      + `<b class="tt">${t.text}</b><span class="tn">${t.note}</span>${cost}</span>`;
+    el.onclick = () => doTodo(t.act);
+    box.appendChild(el);
+  }
+}
+
+/** 자원 길잡이 — 목표 자원지 방향을 화면에 표시합니다 */
+function updateGuideArrow() {
+  const el = $('guideArrow');
+  if (!el) return;
+  if (!S || !guideTarget || guideTarget.amt <= 0) { el.style.display = 'none'; guideTarget = null; return; }
+  const d = Math.hypot(guideTarget.x - S.hero.x, guideTarget.y - S.hero.y);
+  if (d < C.GATHER_RANGE) { el.style.display = 'none'; guideTarget = null; return; }  // 도착
+  const p = R3.worldToScreen(guideTarget.x, guideTarget.y, 1.6);
+  const R = C.RESOURCES[guideTarget.type];
+  el.style.display = '';
+  if (p.visible) {
+    el.style.left = p.x + 'px'; el.style.top = p.y + 'px';
+    el.textContent = `${R.icon} ${Math.round(d / C.TILE)}칸`;
+  } else {
+    // 화면 밖이면 가장자리에 방향으로 붙입니다
+    const st = $('stage').getBoundingClientRect();
+    const yaw = R3.getCameraYaw();
+    const dx = guideTarget.x - S.hero.x, dy = guideTarget.y - S.hero.y;
+    const sx = dx * Math.cos(yaw) - dy * Math.sin(yaw);
+    const sy = dx * Math.sin(yaw) + dy * Math.cos(yaw);
+    const a = Math.atan2(sx, -sy);
+    const rx = st.width * 0.42, ry = st.height * 0.38;
+    el.style.left = (st.width / 2 + Math.sin(a) * rx) + 'px';
+    el.style.top = (st.height / 2 - Math.cos(a) * ry) + 'px';
+    el.textContent = `${R.icon} ${Math.round(d / C.TILE)}칸 →`;
+  }
 }
 
 function refreshObjective() {
@@ -1276,8 +1362,13 @@ function applyInput() {
        건설 바가 #stage 안에 있으니, 버튼을 누르면 pointerdown 이 stage 까지 올라와
        setPointerCapture 가 걸리고 → 버튼의 click 이 아예 발생하지 않았습니다.
        화면 안에 UI를 새로 얹을 때는 반드시 이 목록에 넣어야 합니다. */
-  const fromUI = e => !!(e.target && e.target.closest &&
-    e.target.closest('#buildDock, #buildConfirm, #hud, #minimapWrap, #objective, #buildHint'));
+  /* ★ 화면(#stage) 안에 얹은 UI 는 **빠짐없이** 여기 적어야 합니다.
+     빠뜨리면 그 UI 의 클릭이 통째로 죽습니다 —
+     pointerdown 이 stage 까지 올라와 setPointerCapture 가 걸리면서
+     버튼의 click 이 아예 발생하지 않기 때문입니다.
+     #buildDock 을 빠뜨려 건설이 막힌 적이 있고, #todo 로 같은 일을 또 겪었습니다.
+     그래서 이제 개별 선택자 대신 **공통 표시(data-ui)** 로 한 번에 잡습니다. */
+  const fromUI = e => !!(e.target && e.target.closest && e.target.closest('[data-ui]'));
 
   /* ★ 마우스 오른쪽 버튼 = 취소.
      건설 중이면 배치를 물리고, 아무것도 안 하고 있으면 건설 카드 선택 자체를 풉니다.
@@ -1515,6 +1606,7 @@ function frame(ts) {
       updateFloaters(raw);
       updateHpBars();
       updateRespawnBox();
+      updateGuideArrow();
       hudTimer += raw;
       if (hudTimer > 0.12) { hudTimer = 0; refreshHUD(); refreshSkillBar(); }
     }

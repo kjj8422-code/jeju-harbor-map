@@ -296,13 +296,13 @@ export const BUILDS = [
   { id:'wall',  name:'목책',     icon:'🧱', cost:{ wood:8 }, hp:130,
     desc:'적의 길을 막아 돌아가게 만듭니다. 장수와 병사는 넘어다닙니다. 막는 게 아니라 길을 몰아가는 도구입니다.',
     effect:'침공로를 바꿉니다' },
-  { id:'trap',  name:'가시함정', icon:'🔻', cost:{ wood:5, stone:10 }, dur:250,
+  { id:'trap',  name:'가시함정', icon:'🔻', cost:{ wood:10, stone:7 }, dur:250,
     desc:'밟고 지나가는 적을 크게 늦추고 계속 피해를 줍니다. 바닥의 붉은 화살표 위에 깔아야 일을 합니다.',
     effect:'침공로 위에서만 효과' },
-  { id:'camp',  name:'병영',     icon:'⛺', cost:{ wood:25, stone:15 },
+  { id:'camp',  name:'병영',     icon:'⛺', cost:{ wood:35, stone:10 },
     desc:'병사를 둘 자리가 1칸 늘어납니다. 병영만 지어서는 병사가 안 나오고, 아래 「＋ 병사 고용」을 눌러야 들어옵니다.',
     effect:'병사 정원 +1 (고용은 따로)' },
-  { id:'forge', name:'대장간',   icon:'🔨', cost:{ wood:30, stone:25 }, once:true,
+  { id:'forge', name:'대장간',   icon:'🔨', cost:{ wood:40, stone:18 }, once:true,
     desc:'🔨 제작·성 화면의 장비 제작이 열립니다. 돌 곡괭이가 있어야 철을 캘 수 있으니 가장 먼저 지으세요. 한 채면 충분합니다.',
     effect:'장비 제작 개방 (1채면 충분)' }
 ];
@@ -381,9 +381,9 @@ export const POTION_HEAL = 50;
 export const BASE_LEVELS = [
   { lv:1, name:'토성',   maxHp:1300, cost:null,
     desc:'흙과 돌로 쌓은 기본 거점입니다.' },
-  { lv:2, name:'석성',   maxHp:1900, cost:{ stone:60, wood:40 },
+  { lv:2, name:'석성',   maxHp:1900, cost:{ stone:45, wood:70 },
     desc:'성벽이 높아지고 체력이 크게 늘어납니다.' },
-  { lv:3, name:'철옹성', maxHp:3200, cost:{ stone:120, iron:30 },
+  { lv:3, name:'철옹성', maxHp:3200, cost:{ stone:85, wood:90, iron:25 },
     desc:'망루에서 다가오는 적을 자동으로 공격합니다. 3막을 버티려면 반드시 필요합니다.' }
 ];
 export const BASE_TOWER_DMG = 14;       // 3단계 망루의 자동 공격
@@ -411,10 +411,25 @@ export const RESOURCES = {
            use:'치유약·횃불' },
   hide:  { name:'가죽', icon:'🟤', color:'#8a5a3b',
            from:'몬스터를 처치하면 나옵니다. 사냥용 칼이 있으면 두 배',
-           use:'가죽 갑옷·철 갑옷' }
+           use:'가죽 갑옷·철 갑옷' },
+  /* ★ 정수 — 무엇을 캐든 낮은 확률로 함께 나옵니다.
+     쓸 곳: **모자란 자원을 대신합니다.** 철이 없어도 정수로 무기를 강화할 수 있고,
+     석재가 모자라도 정수로 성을 올릴 수 있습니다.
+     "돌만 계속 캐야 해서 답답하다" 는 문제를 재료 하나로 풀어줍니다. */
+  essence:{ name:'정수', icon:'⭐', color:'#E0B44A',
+           from:'무엇을 캐든 낮은 확률로 함께 나옵니다 (철광에서 제일 잘 나옵니다)',
+           use:'모자란 자원을 대신합니다 — 제작·건설·성 업그레이드 어디에나' }
 };
-export const NODE_MAX = { wood:26, stone:26, iron:16, herb:10 };
-export const GATHER_RATE = { wood:4, stone:3, iron:2, herb:5 };   // 장수 채집 속도(초당)
+
+/* 자원지별 정수가 나올 확률 (한 번 캘 때마다) */
+export const ESSENCE_CHANCE = { wood: 0.012, stone: 0.02, iron: 0.05, herb: 0.02 };
+/** 정수 1개가 대신할 수 있는 일반 자원의 양 */
+export const ESSENCE_WORTH = 6;
+export const NODE_MAX = { wood:22, stone:30, iron:18, herb:10 };
+/* ★ 지도에 나무가 돌보다 3배 많은데 캐는 속도까지 더 빨랐습니다.
+   실제로 해보면 "나무는 넘치는데 돌이 없어서 아무것도 못 짓는" 상태가 됩니다.
+   속도를 뒤집어 균형을 맞춥니다 — 돌은 귀한 대신 빨리 캐집니다. */
+export const GATHER_RATE = { wood:3.4, stone:4.2, iron:2.4, herb:5 };   // 장수 채집 속도(초당)
 export const SOLDIER_GATHER_RATE = 2.2;
 export const NODE_REGROW_SEC = 24;
 export const HIDE_PER_KILL = 1;         // 몬스터 처치 시 가죽

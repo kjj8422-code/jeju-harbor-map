@@ -133,6 +133,40 @@ if (hit) {
 }
 ok('철거 모드로 목책을 부술 수 있다', demolished, hit?`(${hit.tx},${hit.ty})`:'화면 안에 목책이 없음');
 
+/* ⑨ 화면 안에 얹은 UI 는 전부 클릭이 살아 있어야 합니다
+   ------------------------------------------------------------------
+   #stage 안의 UI 를 fromUI 목록에 빠뜨리면 그 UI 의 클릭이 통째로 죽습니다.
+   pointerdown 이 stage 로 올라가 setPointerCapture 가 걸리면서
+   버튼의 click 이 아예 발생하지 않기 때문입니다.
+   #buildDock 을 빠뜨려 건설이 막혔고, #todo 로 같은 일을 또 겪었습니다.
+   이제 화면 안 UI 는 전부 data-ui 표시를 달고, 여기서 그걸 검사합니다. */
+const uiAudit = await p.evaluate(() => {
+  const stage = document.getElementById('stage');
+  const missing = [];
+  // stage 안에서 실제로 클릭을 받는 요소들
+  for (const el of stage.querySelectorAll('div[id]')) {
+    const cs = getComputedStyle(el);
+    if (cs.pointerEvents === 'none') continue;       // 클릭을 안 받으면 상관없음
+    if (el.closest('[data-ui]')) continue;           // 이미 표시돼 있음
+    if (el.id === 'stage') continue;
+    missing.push(el.id);
+  }
+  return missing;
+});
+ok('화면 안 UI 가 전부 클릭 보호 목록에 들어 있다', uiAudit.length === 0,
+   uiAudit.length ? '빠진 것: ' + uiAudit.join(', ') : '');
+
+// 실제로 눌러서 확인 — 할 일 패널
+const todoN = await p.locator('#todo .tdItem').count();
+ok('할 일 패널에 항목이 있다', todoN > 0, `${todoN}개`);
+if (todoN) {
+  await p.evaluate(() => { window.__clicked = false;
+    document.querySelector('#todo .tdItem').addEventListener('click', () => { window.__clicked = true; }); });
+  await p.locator('#todo .tdItem').first().click();
+  await p.waitForTimeout(250);
+  ok('할 일 항목의 클릭이 실제로 전달된다', await p.evaluate(() => window.__clicked === true));
+}
+
 console.log('\n=== 건설 조작 검수 ===\n');
 console.log(R.join('\n'));
 const bad = R.filter(x=>x.startsWith('❌')).length;

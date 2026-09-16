@@ -102,8 +102,8 @@ export function createSim(heroId, awaken = 0) {
     day: 1, dayT: 0, warnT: 0, t: 0,
     over: false, win: false,
 
-    res: { wood: Math.round(60 * mul), stone: Math.round(30 * mul), iron: 0, herb: 0, hide: 0 },
-    got: { wood: 0, stone: 0, iron: 0, herb: 0, hide: 0 },
+    res: { wood: Math.round(60 * mul), stone: Math.round(30 * mul), iron: 0, herb: 0, hide: 0, essence: 0 },
+    got: { wood: 0, stone: 0, iron: 0, herb: 0, hide: 0, essence: 0 },
     cnt: { wall: 0, trap: 0, camp: 0 },
     shard: 0,
 
@@ -367,11 +367,57 @@ export const heroDamage = S => C.HERO_ATK * combatMul(S) * weaponOf(S).dmg;
 /* ==================================================================
    건설 · 제작 · 병사
    ================================================================== */
+/* ==================================================================
+   정수(精髓) — 모자란 자원을 대신합니다
+   ------------------------------------------------------------------
+   "돌이 없어서 아무것도 못 짓는" 막힘이 이 게임에서 가장 답답한 순간입니다.
+   정수 1개가 일반 자원 6을 대신하므로, 캐다 보면 막힘이 저절로 풀립니다.
+   가죽·정수 자체는 정수로 대신할 수 없습니다(그러면 무한 증식이 됩니다).
+   ================================================================== */
+const SUBSTITUTABLE = { wood: 1, stone: 1, iron: 1, herb: 1 };
+
+/** 이 비용을 내려면 정수가 몇 개 필요한가 (0 이면 정수 없이 됨, -1 이면 불가) */
+export function essenceNeeded(S, cost) {
+  let need = 0;
+  for (const k in cost) {
+    const short = cost[k] - S.res[k];
+    if (short <= 0) continue;
+    if (!SUBSTITUTABLE[k]) return -1;              // 가죽은 정수로 못 삽니다
+    need += Math.ceil(short / C.ESSENCE_WORTH);
+  }
+  return need;
+}
+
 export function canAfford(S, cost) {
   for (const k in cost) if (S.res[k] < cost[k]) return false;
   return true;
 }
-function pay(S, cost) { for (const k in cost) S.res[k] -= cost[k]; }
+
+/** 정수를 보태서라도 낼 수 있는가 */
+export function canAffordWithEssence(S, cost) {
+  if (canAfford(S, cost)) return { ok: true, essence: 0 };
+  const n = essenceNeeded(S, cost);
+  if (n < 0 || n > S.res.essence) return { ok: false, essence: n };
+  return { ok: true, essence: n };
+}
+
+function pay(S, cost) {
+  /* 모자란 만큼만 정수로 채웁니다 — 있는 자원부터 씁니다 */
+  let used = 0;
+  for (const k in cost) {
+    const short = cost[k] - S.res[k];
+    if (short > 0 && SUBSTITUTABLE[k]) {
+      const n = Math.ceil(short / C.ESSENCE_WORTH);
+      S.res.essence -= n; used += n;
+      S.res[k] += n * C.ESSENCE_WORTH;
+    }
+    S.res[k] -= cost[k];
+  }
+  if (used > 0) {
+    fx(S, S.hero.x, S.hero.y - 34, `⭐ -${used}`, '#E0B44A');
+    toast(S, `모자란 자원을 <b style="color:#E0B44A">정수 ${used}개</b>로 메웠습니다`);
+  }
+}
 
 export function costText(cost) {
   const names = { wood: '목재', stone: '석재', iron: '철' };
@@ -379,16 +425,35 @@ export function costText(cost) {
 }
 
 /** 이 칸에 지을 수 있는지 — 화면의 미리보기도 같은 함수를 씁니다 */
+/** 이 칸에 자원지가 있으면 그 자원지를 돌려줍니다 (없으면 null) */
+export function nodeAt(S, tx, ty) {
+  if (!inMap(tx, ty) || S.occ[tkey(tx, ty)] !== C.OCC_NODE) return null;
+  return S.nodes.find(n => n.tx === tx && n.ty === ty) || null;
+}
+
+/** 자원지를 밀고 지을 때 돌려받는 자원 (남은 양의 절반) */
+export function clearYield(n) {
+  if (!n || n.amt <= 0) return null;
+  return { type: n.type, amt: Math.max(1, Math.floor(n.amt * 0.5)) };
+}
+
 export function canBuildAt(S, tx, ty, buildId) {
   if (!S || S.over || !buildId || !inMap(tx, ty)) return { ok: false, why: 'out' };
-  if (S.occ[tkey(tx, ty)] !== C.OCC_EMPTY) return { ok: false, why: 'occupied' };
+  const occ = S.occ[tkey(tx, ty)];
+  /* ★ 예전에는 나무·바위가 있는 칸에 영원히 아무것도 못 지었습니다.
+     거점 반경 7칸의 11% 가 그렇게 막혀 있어서, 목책을 한 줄로 세우려 해도
+     하필 나무가 걸리면 그 자리에 구멍이 났습니다.
+     이제 **밀어내고 지을 수 있습니다** — 남은 자원의 절반을 챙기고 자원지는 사라집니다.
+     "이 나무를 벨까, 자원으로 남길까" 라는 선택이 생깁니다. */
+  if (occ !== C.OCC_EMPTY && occ !== C.OCC_NODE) return { ok: false, why: 'occupied' };
   const cx = tx * C.TILE + C.TILE / 2, cy = ty * C.TILE + C.TILE / 2;
   if (Math.hypot(cx - S.hero.x, cy - S.hero.y) > C.BUILD_RANGE) return { ok: false, why: 'far' };
   const def = C.BUILDS.find(b => b.id === buildId);
   if (!def) return { ok: false, why: 'out' };
   if (def.id === 'forge' && S.forge) return { ok: false, why: 'owned' };
-  if (!canAfford(S, def.cost)) return { ok: false, why: 'cost' };
-  return { ok: true, why: '' };
+  const aff = canAffordWithEssence(S, def.cost);
+  if (!aff.ok) return { ok: false, why: 'cost' };
+  return { ok: true, why: '', essence: aff.essence };
 }
 
 const BUILD_DENY = {
@@ -406,6 +471,20 @@ export function tryBuild(S, tx, ty, buildId) {
     return false;
   }
   const k = tkey(tx, ty);
+
+  /* 자원지를 밀어내고 짓는 경우 — 남은 자원의 절반을 챙깁니다 */
+  const node = nodeAt(S, tx, ty);
+  if (node) {
+    const got = clearYield(node);
+    if (got) {
+      S.res[got.type] += got.amt; S.got[got.type] += got.amt;
+      fx(S, node.x, node.y - 14, `${C.RESOURCES[got.type].icon} +${got.amt}`, '#C7D9A8');
+    }
+    const i = S.nodes.indexOf(node);
+    if (i >= 0) S.nodes.splice(i, 1);
+    S.occ[k] = C.OCC_EMPTY;
+    emit(S, 'nodeCleared', { tx, ty, type: node.type });
+  }
 
   const def = C.BUILDS.find(b => b.id === buildId);
   pay(S, def.cost);
@@ -517,7 +596,7 @@ export function hireSoldier(S) {
     toast(S, S.camps === 0 ? '먼저 <b>병영</b>을 지어야 합니다' : '병영을 더 지어야 병사를 늘릴 수 있습니다');
     return false;
   }
-  if (!canAfford(S, C.SOLDIER_COST)) { toast(S, `자원이 부족합니다 — ${costText(C.SOLDIER_COST)}`); return false; }
+  if (!canAffordWithEssence(S, C.SOLDIER_COST).ok) { toast(S, `자원이 부족합니다 — ${costText(C.SOLDIER_COST)}`); return false; }
   pay(S, C.SOLDIER_COST);
   S.soldiers.push({
     x: S.base.x + rnd(-40, 40), y: S.base.y + rnd(20, 50),
@@ -646,8 +725,9 @@ export function canCraft(S, id) {
     const pre = C.CRAFTS.find(x => x.id === c.need);
     return { ok:false, why:`먼저 ${pre ? pre.name : c.need} 필요` };
   }
-  if (!canAfford(S, craftCost(S, id))) return { ok:false, why:'자원 부족' };
-  return { ok:true, why:'' };
+  const aff = canAffordWithEssence(S, craftCost(S, id));
+  if (!aff.ok) return { ok:false, why: aff.essence > 0 ? `자원 부족 (정수 ${aff.essence}개로도 가능)` : '자원 부족' };
+  return { ok:true, why:'', essence: aff.essence };
 }
 
 export function doCraft(S, id) {
@@ -714,7 +794,7 @@ export function nextBaseLevel(S) {
 export function canUpgradeBase(S) {
   const nx = nextBaseLevel(S);
   if (!nx) return { ok:false, why:'최고 단계입니다' };
-  if (!canAfford(S, nx.cost)) return { ok:false, why:'자원 부족' };
+  if (!canAffordWithEssence(S, nx.cost).ok) return { ok:false, why:'자원 부족' };
   if (isNight(S)) return { ok:false, why:'밤에는 공사할 수 없습니다' };
   return { ok:true, why:'' };
 }
@@ -1090,6 +1170,104 @@ function updateObjective(S) {
 }
 export const currentObjective = S => OBJECTIVES[S.objIdx] || null;
 
+/* ==================================================================
+   "지금 뭘 해야 하지" — 할 일을 계산해 돌려줍니다
+   ------------------------------------------------------------------
+   목표 한 줄만으로는 부족합니다. 플레이어가 실제로 묻는 것은
+   "지금 당장 뭘 눌러야 하나" 이고, 그 답은 상황마다 다릅니다.
+   여기서 우선순위대로 뽑아 화면에 버튼으로 띄웁니다.
+
+   각 항목: { id, icon, text, act, cost, ready, why }
+     act — 'build:wall' / 'craft:pickaxe' / 'upgrade' / 'hire' / 'gather:stone' / 'screen:craft'
+   ================================================================== */
+export function todoList(S, max = 3) {
+  if (!S || S.over) return [];
+  const out = [];
+  const add = (id, icon, text, act, cost, note) => {
+    if (out.length >= max || out.some(o => o.id === id)) return;
+    const aff = cost ? canAffordWithEssence(S, cost) : { ok: true, essence: 0 };
+    out.push({ id, icon, text, act, cost: cost || null,
+               ready: aff.ok, essence: aff.essence || 0, note: note || '' });
+  };
+
+  const night = isNight(S);
+  const nw = nextWave(S);
+  const dday = nw ? nw.day - S.day : 99;
+
+  /* ① 밤이면 싸우는 게 먼저입니다 */
+  if (night && S.monsters.length) {
+    add('fight', '⚔️', `적 ${S.monsters.length}마리를 막으세요`, 'none', null,
+        '거점에 닿기 전에 잡으세요');
+  }
+
+  /* ② 막혀 있는 진입 장벽부터 */
+  if (!S.forge) add('forge', '🔨', '대장간을 지으세요', 'build:forge',
+                    C.BUILDS.find(b => b.id === 'forge').cost, '장비 제작이 열립니다');
+  else if (!S.pickaxe) add('pickaxe', '⛏️', '돌 곡괭이를 만드세요', 'craft:pickaxe',
+                    craftCost(S, 'pickaxe'), '철을 캘 수 있게 됩니다');
+
+  /* ③ 대란이 가까우면 방어 준비 */
+  if (nw && dday <= 4) {
+    const tp = trapsOnPath(S);
+    if (tp.on < 4) add('trap', '🔻', `함정을 침공로 위에 까세요 (지금 ${tp.on}개)`, 'build:trap',
+                       C.BUILDS.find(b => b.id === 'trap').cost, `${dday}일 뒤 ${nw.name}`);
+    if (S.cnt.wall < 12) add('wall', '🧱', '목책으로 길을 좁히세요', 'build:wall',
+                       C.BUILDS.find(b => b.id === 'wall').cost, '적을 한 길로 몰아갑니다');
+  }
+
+  /* ④ 병력 */
+  if (S.camps === 0) add('camp', '⛺', '병영을 지으세요', 'build:camp',
+                    C.BUILDS.find(b => b.id === 'camp').cost, '병사를 둘 자리가 생깁니다');
+  else if (S.soldiers.filter(x => !x.merc).length < S.camps)
+    add('hire', '🗡️', `병사를 고용하세요 (${S.soldiers.filter(x => !x.merc).length}/${S.camps})`,
+        'hire', C.SOLDIER_COST, '채집을 맡길 수 있습니다');
+
+  /* ⑤ 성 · 장비 */
+  const nx = nextBaseLevel(S);
+  if (nx && S.day >= 18) add('upgrade', '🏯', `성을 ${nx.name}(으)로 올리세요`, 'upgrade',
+                    nx.cost, `거점 체력 ${S.base.maxHp} → ${nx.maxHp}`);
+  for (const id of ['weapon', 'leather', 'ironmail', 'steelspike', 'towerup', 'banner', 'ironpick']) {
+    const c = C.CRAFTS.find(x => x.id === id);
+    if (!c || hasCraft(S, id) || !S.forge) continue;
+    if (c.need && !hasCraft(S, c.need)) continue;
+    add('craft_' + id, c.icon, `${c.name}을(를) 만드세요`, 'craft:' + id, craftCost(S, id), c.effect);
+  }
+
+  /* ⑥ 그래도 빈자리가 있으면 — 가장 모자란 자원을 캐러 */
+  if (out.length < max) {
+    const want = {};
+    for (const o of out) for (const k in (o.cost || {})) want[k] = (want[k] || 0) + o.cost[k];
+    let lack = null, worst = 0;
+    for (const k in want) {
+      const d = want[k] - S.res[k];
+      if (d > worst) { worst = d; lack = k; }
+    }
+    if (!lack) { lack = ['stone', 'wood', 'herb'].sort((a, b) => S.res[a] - S.res[b])[0]; worst = 0; }
+    const R = C.RESOURCES[lack];
+    add('gather_' + lack, R.icon, `${R.name}을(를) 캐세요`, 'gather:' + lack, null,
+        worst > 0 ? `${Math.ceil(worst)} 더 필요합니다` : R.from);
+  }
+
+  /* ⑦ 치유약은 항상 아래에 */
+  if (out.length < max && S.forge && S.potions < 3)
+    add('potion', '🧪', '치유약을 만들어 두세요', 'craft:potion', craftCost(S, 'potion'),
+        `현재 ${S.potions}개 · H 키로 마십니다`);
+
+  return out;
+}
+
+/** 이 자원을 캘 수 있는 가장 가까운 자원지 */
+export function nearestNodeOf(S, type) {
+  let best = null, bd = Infinity;
+  for (const n of S.nodes) {
+    if (n.type !== type || n.amt <= 0) continue;
+    if (type === 'iron' && !S.pickaxe) continue;
+    const d = dist2(S.hero.x, S.hero.y, n.x, n.y);
+    if (d < bd) { bd = d; best = n; }
+  }
+  return best;
+}
+
 /* ---------------- 장수 ---------------- */
 function updateHero(S, dt) {
   const h = S.hero;
@@ -1190,6 +1368,13 @@ function updateHero(S, dt) {
     h.gp += C.GATHER_RATE[node.type] * (S.gear.ironpick ? 1.6 : 1) * dt;
     while (h.gp >= 1 && node.amt > 0) {
       h.gp -= 1; node.amt--; S.res[node.type]++; S.got[node.type]++;
+      // 정수 — 무엇을 캐든 낮은 확률로 함께 나옵니다
+      if (Math.random() < (C.ESSENCE_CHANCE[node.type] || 0)) {
+        S.res.essence++; S.got.essence++;
+        fx(S, node.x, node.y - 22, '⭐ 정수 +1', '#E0B44A');
+        emit(S, 'essence', { x: node.x, y: node.y });
+        sound(S, 'coin');
+      }
       if (node.amt <= 0) { node.regrow = S.t + C.NODE_REGROW_SEC; emit(S, 'nodeDepleted', { node }); }
     }
     if (Math.random() < dt * 3) fx(S, node.x, node.y - 10, '+', '#C7D9A8');
@@ -1269,6 +1454,10 @@ function updateSoldiers(S, dt) {
         s.gp += (s.gather || C.SOLDIER_GATHER_RATE) * dt;
         while (s.gp >= 1 && s.node.amt > 0) {
           s.gp -= 1; s.node.amt--; s.carry++;
+          if (Math.random() < (C.ESSENCE_CHANCE[s.node.type] || 0) * 0.6) {
+            S.res.essence++; S.got.essence++;
+            fx(S, s.node.x, s.node.y - 22, '⭐ +1', '#E0B44A');
+          }
           if (s.node.amt <= 0) { s.node.regrow = S.t + C.NODE_REGROW_SEC; emit(S, 'nodeDepleted', { node: s.node }); }
         }
       }

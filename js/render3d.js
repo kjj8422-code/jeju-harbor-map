@@ -1104,6 +1104,12 @@ const PATH_MAX = 520;                   // 화살표 인스턴스 최대 개수
 
 export function markPathDirty() { R.path.dirty = true; }
 
+/** 세상의 한 지점을 잠깐 표시합니다 — "여기로 가세요" 를 눈으로 알려줄 때 */
+export function pingWorld(x, y) {
+  spawnShockwave(x, y, 70, 0xE0B44A, 1.1);
+  spawnShockwave(x, y, 120, 0xE0B44A, 1.5);
+}
+
 function ensurePathInst() {
   if (R.path.inst) return;
   // 납작한 삼각형(쐐기) 하나를 거점 쪽으로 눕혀 씁니다 — 전부 합쳐 draw call 1

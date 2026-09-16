@@ -145,7 +145,7 @@ body{padding-bottom:20px;}
   background:rgba(140,30,20,.9);color:#fff;font-size:11.5px;font-weight:700;
   padding:4px 10px;border-radius:14px;pointer-events:none;z-index:5;}
 
-#perf{position:absolute;left:8px;bottom:70px;font-size:10px;color:var(--dim);
+#perf{position:absolute;right:150px;bottom:70px;font-size:10px;color:var(--dim);
   background:rgba(18,17,15,.7);padding:3px 7px;border-radius:4px;pointer-events:none;}
 
 /* ---- 조작 ---- */
@@ -351,6 +351,36 @@ details.panel[open] summary::before{content:'▾ ';}
 .dexCard .dg{font-size:19px;line-height:1.1;}
 .dexCard .dn{font-size:11px;font-weight:700;color:var(--ink);}
 .dexCard .dc{font-size:10px;color:var(--dim);}
+
+/* ── 지금 할 일 ── */
+/* 왼쪽에 둡니다 — 오른쪽은 자원·대란 정보와 미니맵이 이미 차지하고 있어
+   할 일 패널을 두면 미니맵을 가립니다(실제로 가렸습니다). */
+#todo{position:absolute;left:8px;top:152px;width:212px;pointer-events:auto;z-index:4;
+  max-height:calc(100% - 232px);overflow-y:auto;
+  background:rgba(18,17,15,.86);border:1px solid var(--line);border-left:3px solid var(--gold);
+  border-radius:8px;padding:7px 8px;backdrop-filter:blur(3px);}
+#todo .tdHead{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.08em;margin-bottom:5px;}
+.tdItem{display:flex;gap:7px;align-items:flex-start;width:100%;text-align:left;
+  background:rgba(43,38,31,.9);border:1px solid var(--line);border-radius:7px;
+  padding:6px 8px;margin-bottom:5px;color:var(--ink);font-family:inherit;cursor:pointer;
+  transition:border-color .1s,transform .1s;}
+.tdItem:last-child{margin-bottom:0;}
+.tdItem:hover{border-color:var(--gold);transform:translateX(-2px);}
+.tdItem.lack{opacity:.72;border-style:dashed;}
+.tdItem .ti{font-size:16px;line-height:1.15;flex:0 0 auto;}
+.tdItem .tb{min-width:0;flex:1 1 auto;}
+.tdItem .tt{font-size:11.5px;font-weight:800;line-height:1.35;display:block;}
+.tdItem .tn{font-size:10px;color:var(--dim);line-height:1.4;display:block;margin-top:1px;}
+.tdItem .tc{font-size:10px;margin-top:2px;display:block;}
+.tdItem .tc b{color:#e39184;}
+.tdItem .tc b.ok{color:#9fdcae;}
+.tdItem .tessence{color:#E0B44A;font-weight:800;}
+@media (max-width:760px){ #todo{display:none;} }
+@media (max-height:520px){ #todo{max-height:calc(100% - 200px);} }
+
+/* 자원 길잡이 — 부족한 자원 방향 */
+#guideArrow{position:absolute;pointer-events:none;z-index:3;font-size:13px;font-weight:800;
+  color:#E0B44A;text-shadow:0 2px 6px #000;white-space:nowrap;transform:translate(-50%,-50%);}
 </style>
 </head>
 <body>
@@ -366,7 +396,7 @@ details.panel[open] summary::before{content:'▾ ';}
   </div>
 
   <div id="stage">
-    <div id="hud">
+    <div id="hud" data-ui>
       <div class="hudBox">
         <div class="hudDay" id="hDay">Day 1 <span>/ 99</span></div>
         <div id="hPhase" style="color:var(--dim);">낮 · 채집과 건설</div>
@@ -384,7 +414,8 @@ details.panel[open] summary::before{content:'▾ ';}
           <span><i>🪨</i> <span id="hStone">0</span></span>
           <span><i>⛓️</i> <span id="hIron">0</span></span>
           <span><i>🌿</i> <span id="hHerb">0</span></span>
-          <span><i>🟤</i> <span id="hHide">0</span></span></div>
+          <span><i>🟤</i> <span id="hHide">0</span></span>
+          <span title="모자란 자원을 대신합니다"><i>⭐</i> <span id="hEssence">0</span></span></div>
         <div style="color:var(--dim);margin-top:3px;">🏯 <span id="hBaseLv">토성</span>
           · 병사 <span id="hSol">0</span>/<span id="hSolMax">0</span>
           · 🧪 <span id="hPotion">0</span> · 옥새 <span id="hShard">0</span></div>
@@ -396,30 +427,33 @@ details.panel[open] summary::before{content:'▾ ';}
     <div id="fxLayer"></div>
     <div id="toast"></div>
     <div id="waveAlert"><div class="t" id="waTitle"></div><div class="s" id="waSub"></div></div>
-    <div id="objective">목표를 불러오는 중…</div>
-    <div id="respawnBox">
+    <!-- 지금 할 수 있는 일 — "뭘 해야 하지" 를 없애는 장치 -->
+    <div id="todo" data-ui><div class="tdHead">지금 할 일</div><div id="todoList"></div></div>
+    <div id="objective" data-ui>목표를 불러오는 중…</div>
+    <div id="respawnBox" data-ui>
       <div class="rt">쓰러졌습니다</div>
       <div class="rc" id="respawnSec">0.0</div>
       <div class="rs">초 후 부활 — <b>탈락은 없습니다</b></div>
       <div class="rbar"><div id="respawnBar"></div></div>
     </div>
-    <div id="minimapWrap">
+    <div id="minimapWrap" data-ui>
       <canvas id="minimap"></canvas>
       <div id="mmLabel">미니맵 · <span style="color:#E0554A">┅ 예상 침공로</span></div>
     </div>
-    <div id="buildHint"></div>
+    <div id="guideArrow" style="display:none"></div>
+    <div id="buildHint" data-ui></div>
     <!-- 건설 바를 3D 화면 안에 둡니다.
          화면 밖 아래까지 마우스를 내렸다 올리는 왕복이 사라집니다. 숫자키 1~4로도 됩니다. -->
-    <div id="buildDock">
+    <div id="buildDock" data-ui>
       <div class="bdRow" id="buildDockRow"></div>
       <div class="bdTip" id="buildDockTip">숫자키 <b>1~4</b> 로도 고를 수 있습니다 · 오른쪽 버튼 = 취소</div>
     </div>
-    <div id="buildConfirm">
+    <div id="buildConfirm" data-ui>
       <span class="t">여기에 지을까요?</span>
       <button class="btn gold" id="btnConfirmBuild">✔ 설치 (Enter)</button>
       <button class="btn" id="btnCancelBuild">✕ 취소</button>
     </div>
-    <div id="perf"></div>
+    <div id="perf" data-ui></div>
   </div>
 
   <div id="controls">
@@ -555,7 +589,25 @@ details.panel[open] summary::before{content:'▾ ';}
       <h3>한 줄 요약</h3>
       낮에는 <b>자원을 모으고 짓고</b>, 밤에는 <b>막습니다</b>.
       11·22·33일 밤에 대란이 오니 그 전에 목책으로 길을 좁히고 함정을 까세요.<br>
-      <b>가죽</b>은 몬스터를 잡아야 나오므로, 밤의 전투가 낮의 장비로 이어집니다.
+      <b>가죽</b>은 몬스터를 잡아야 나오므로, 밤의 전투가 낮의 장비로 이어집니다.<br><br>
+      <b style="color:#E0B44A">⭐ 정수</b>는 무엇을 캐든 낮은 확률로 함께 나옵니다.
+      <b>모자란 자원을 대신합니다</b> — 돌이 없어도 정수로 성을 올릴 수 있습니다.
+      자원이 부족해 막혔을 때 저절로 풀어주는 장치입니다.
+    </div>
+
+    <div class="panel" style="border-left:3px solid var(--good);">
+      <h3>막히면 화면 왼쪽 <b>「지금 할 일」</b>을 보세요</h3>
+      지금 할 수 있는 일 세 가지가 항상 떠 있습니다. <b>누르면 바로 그 행동으로 넘어갑니다</b> —
+      건설이면 카드가 선택되고, 제작이면 제작 화면이 열리고,
+      채집이면 <b>가장 가까운 자원지 방향으로 화살표</b>가 뜹니다.<br>
+      필요 자원과 보유량이 함께 나오니 <b>무엇이 얼마나 모자란지</b>도 바로 보입니다.
+    </div>
+
+    <div class="panel">
+      <h3>나무·바위가 있는 칸에도 지을 수 있습니다</h3>
+      목책을 한 줄로 세우려는데 하필 나무가 걸리면 답답합니다.
+      그 칸에도 그냥 지으면 되고, <b>나무를 베면서 남은 목재의 절반을 챙깁니다.</b>
+      대신 그 자원지는 사라지니, 거점 옆의 자원은 아껴두는 편이 좋습니다.
     </div>
 
     <div class="panel" style="border-left:3px solid var(--red);">

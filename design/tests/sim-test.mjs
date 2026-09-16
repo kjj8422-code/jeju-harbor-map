@@ -855,6 +855,113 @@ console.log('\n=== 삼국지 99일 생존 — 로직 검수 ===\n');
      !texts.some(t => /함정 처치 비율 4\d%|함정 처치 비율 [5-9]\d%/.test(t)));
 }
 
+/* ── 32. 자원지 위에도 지을 수 있는가 ─────────────────── */
+{
+  const S = Sim.createSim('taesaja');
+  S.res.wood = 999; S.res.stone = 999;
+  const n = S.nodes.find(x => x.type === 'wood' && x.amt > 0);
+  S.hero.x = n.x; S.hero.y = n.y;
+  ok('나무가 있는 칸에도 지을 수 있다', Sim.canBuildAt(S, n.tx, n.ty, 'wall').ok === true);
+  const w0 = S.res.wood, cost = C.BUILDS.find(b => b.id === 'wall').cost.wood;
+  ok('실제로 지어진다', Sim.tryBuild(S, n.tx, n.ty, 'wall') === true);
+  ok('나무를 베면 남은 양의 절반을 회수한다', S.res.wood > w0 - cost,
+     `${w0} → ${S.res.wood} (비용 ${cost})`);
+  ok('벤 자리에서 자원지가 사라진다', Sim.nodeAt(S, n.tx, n.ty) === null);
+  ok('사라진 자원지는 다시 자라지 않는다',
+     !S.nodes.some(x => x.tx === n.tx && x.ty === n.ty));
+
+  // 이미 건물이 있는 칸은 여전히 막힙니다
+  ok('이미 지은 칸에는 못 짓는다', Sim.canBuildAt(S, n.tx, n.ty, 'wall').why === 'occupied');
+}
+
+/* ── 33. 정수 — 모자란 자원을 대신한다 ────────────────── */
+{
+  const S = Sim.createSim('taesaja');
+  S.res.wood = 0; S.res.stone = 0; S.res.essence = 0;
+  const cost = { wood: 40, stone: 18 };
+  ok('정수가 없으면 자원이 모자라 못 짓는다', Sim.canAffordWithEssence(S, cost).ok === false);
+
+  const need = Sim.essenceNeeded(S, cost);
+  ok('필요한 정수 개수를 계산해 알려준다', need === Math.ceil(40 / C.ESSENCE_WORTH) + Math.ceil(18 / C.ESSENCE_WORTH),
+     `${need}개`);
+
+  S.res.essence = need;
+  ok('정수가 그만큼 있으면 지을 수 있다', Sim.canAffordWithEssence(S, cost).ok === true);
+
+  S.hero.x = S.base.x; S.hero.y = S.base.y;
+  clearColumn(S, C.BASE_TX - 3, C.BASE_TY, C.BASE_TY);
+  ok('정수로 실제 건설이 된다', Sim.tryBuild(S, C.BASE_TX - 3, C.BASE_TY, 'forge') === true);
+  ok('쓴 만큼 정수가 줄어든다', S.res.essence < need, `남은 ${S.res.essence}`);
+
+  // 가죽은 정수로 못 삽니다 (무한 증식 방지)
+  const H = Sim.createSim('taesaja');
+  H.res.hide = 0; H.res.essence = 999;
+  ok('가죽은 정수로 대신할 수 없다', Sim.essenceNeeded(H, { hide: 10 }) === -1);
+
+  // 자원이 충분하면 정수를 쓰지 않습니다
+  const F = Sim.createSim('taesaja');
+  F.res.wood = 999; F.res.essence = 10;
+  F.hero.x = F.base.x; F.hero.y = F.base.y;
+  clearColumn(F, C.BASE_TX + 2, C.BASE_TY, C.BASE_TY);
+  Sim.tryBuild(F, C.BASE_TX + 2, C.BASE_TY, 'wall');
+  ok('자원이 넉넉하면 정수를 건드리지 않는다', F.res.essence === 10);
+
+  ok('정수는 모든 자원지에서 나올 수 있다',
+     ['wood','stone','iron','herb'].every(t => C.ESSENCE_CHANCE[t] > 0));
+  ok('철광에서 가장 잘 나온다',
+     C.ESSENCE_CHANCE.iron > C.ESSENCE_CHANCE.stone
+     && C.ESSENCE_CHANCE.stone > C.ESSENCE_CHANCE.wood);
+}
+
+/* ── 34. "지금 할 일" 이 상황에 맞게 나오는가 ─────────── */
+{
+  const S = Sim.createSim('taesaja');
+  let td = Sim.todoList(S, 3);
+  ok('시작하자마자 할 일이 나온다', td.length === 3, td.map(t => t.id).join(','));
+  ok('첫 할 일은 대장간이다', td[0].id === 'forge');
+
+  S.forge = true; S.res.wood = 999; S.res.stone = 999;
+  td = Sim.todoList(S, 3);
+  ok('대장간을 지으면 곡괭이를 가리킨다', td.some(t => t.id === 'pickaxe'));
+
+  S.pickaxe = true;
+  S.day = 20;                                   // 대란이 2일 앞
+  td = Sim.todoList(S, 3);
+  ok('대란이 가까우면 방어 준비를 가리킨다', td.some(t => t.id === 'trap' || t.id === 'wall'),
+     td.map(t => t.id).join(','));
+
+  S.phase = 'night';
+  S.monsters.push({ x:0, y:0, hp:1, maxHp:1, spd:0, dmg:1, cd:99, boss:false,
+                    hitFlash:0, dead:false, windup:0, windupTgt:null, vx:0, vy:0, hitStop:0, armor:0 });
+  td = Sim.todoList(S, 3);
+  ok('밤에는 싸우라고 먼저 말한다', td[0].id === 'fight', td.map(t => t.id).join(','));
+
+  // 할 일에는 "지금 할 수 있는가" 와 부족분이 실려 있어야 합니다
+  const Z = Sim.createSim('taesaja');
+  Z.res.wood = 0; Z.res.stone = 0;
+  const z = Sim.todoList(Z, 3).find(t => t.cost);
+  ok('자원이 모자라면 할 일에 표시된다', z && z.ready === false);
+
+  // 가까운 자원지를 찾아줍니다
+  ok('가장 가까운 자원지를 찾아준다', !!Sim.nearestNodeOf(Z, 'wood'));
+  ok('곡괭이가 없으면 철광은 안내하지 않는다', Sim.nearestNodeOf(Z, 'iron') === null);
+}
+
+/* ── 35. 나무와 돌의 균형 ──────────────────────────────── */
+{
+  /* 팀장님 피드백: "나무는 채취가 너무 잘 되고 자원도 많은데 돌은 반대로 너무 필요하다" */
+  ok('돌이 나무보다 빨리 캐진다 (자원지가 적은 것을 보상)',
+     C.GATHER_RATE.stone > C.GATHER_RATE.wood,
+     `돌 ${C.GATHER_RATE.stone}/초 vs 나무 ${C.GATHER_RATE.wood}/초`);
+  ok('바위 하나에서 나무 하나보다 많이 나온다',
+     C.NODE_MAX.stone > C.NODE_MAX.wood, `돌 ${C.NODE_MAX.stone} vs 나무 ${C.NODE_MAX.wood}`);
+
+  const sumOf = r => C.BUILDS.reduce((a, b) => a + (b.cost[r] || 0), 0)
+                   + C.BASE_LEVELS.reduce((a, b) => a + ((b.cost && b.cost[r]) || 0), 0);
+  ok('건설·성 비용에서 목재가 석재보다 많이 쓰인다 (지도에 나무가 더 많으므로)',
+     sumOf('wood') > sumOf('stone'), `목재 ${sumOf('wood')} vs 석재 ${sumOf('stone')}`);
+}
+
 console.log(results.join('\n'));
 console.log(`\n결과: ${pass}개 통과, ${fail}개 실패\n`);
 process.exit(fail ? 1 : 0);
