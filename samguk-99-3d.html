@@ -381,6 +381,29 @@ details.panel[open] summary::before{content:'▾ ';}
 /* 자원 길잡이 — 부족한 자원 방향 */
 #guideArrow{position:absolute;pointer-events:none;z-index:3;font-size:13px;font-weight:800;
   color:#E0B44A;text-shadow:0 2px 6px #000;white-space:nowrap;transform:translate(-50%,-50%);}
+
+/* ── 화면 안 병력 창 ── */
+#troopPanel{display:none;position:absolute;left:50%;bottom:74px;transform:translateX(-50%);
+  width:min(560px,94%);background:rgba(18,17,15,.96);border:1px solid var(--gold);
+  border-radius:10px;padding:10px 12px;z-index:6;box-shadow:0 10px 34px rgba(0,0,0,.55);}
+#troopPanel.on{display:block;}
+.tpHead{font-size:12px;font-weight:800;color:var(--gold);margin-bottom:7px;
+  display:flex;align-items:baseline;gap:6px;}
+.tpHead span{font-size:10.5px;color:var(--dim);font-weight:600;}
+.tpX{margin-left:auto;background:none;border:none;color:var(--dim);font-size:15px;
+  cursor:pointer;font-family:inherit;padding:0 2px;}
+.tpX:hover{color:var(--ink);}
+.tpRow{display:flex;gap:6px;flex-wrap:wrap;}
+.tpBtn{flex:1 1 128px;min-width:120px;text-align:left;background:var(--panel);
+  border:1px solid var(--line);border-radius:8px;padding:7px 9px;cursor:pointer;
+  color:var(--ink);font-family:inherit;transition:border-color .1s,transform .1s;}
+.tpBtn:hover:not(:disabled){border-color:var(--gold);transform:translateY(-1px);}
+.tpBtn:disabled{opacity:.45;cursor:not-allowed;transform:none;}
+.tpBtn .n{font-size:12.5px;font-weight:800;display:block;}
+.tpBtn .c{font-size:10.5px;color:var(--dim);display:block;margin-top:2px;}
+.tpBtn .c b{color:var(--gold);}
+.tpBtn .d{font-size:10px;color:#a89c8a;display:block;margin-top:2px;line-height:1.4;}
+.tpNow{font-size:11px;color:var(--dim);margin-top:7px;}
 </style>
 </head>
 <body>
@@ -444,9 +467,17 @@ details.panel[open] summary::before{content:'▾ ';}
     <div id="buildHint" data-ui></div>
     <!-- 건설 바를 3D 화면 안에 둡니다.
          화면 밖 아래까지 마우스를 내렸다 올리는 왕복이 사라집니다. 숫자키 1~4로도 됩니다. -->
+    <!-- 병력 창 — 화면 안에서 바로 고용합니다.
+         예전에는 병사·용병 버튼이 화면 한참 아래에 있어서 스크롤해야 보였고,
+         실제로 병영을 2채 짓고도 병사를 한 명도 안 뽑는 일이 있었습니다. -->
+    <div id="troopPanel" data-ui>
+      <div class="tpHead">병력 <span>— 병영 정원 안에서 고용합니다</span>
+        <button class="tpX" id="btnTroopClose">✕</button></div>
+      <div id="troopBody"></div>
+    </div>
     <div id="buildDock" data-ui>
       <div class="bdRow" id="buildDockRow"></div>
-      <div class="bdTip" id="buildDockTip">숫자키 <b>1~4</b> 로도 고를 수 있습니다 · 오른쪽 버튼 = 취소</div>
+      <div class="bdTip">숫자키 <b>1~4</b> 로도 고를 수 있습니다 · 오른쪽 버튼 = 취소</div>
     </div>
     <div id="buildConfirm" data-ui>
       <span class="t">여기에 지을까요?</span>
@@ -505,7 +536,7 @@ details.panel[open] summary::before{content:'▾ ';}
     <div class="mercRow" id="mercRow"></div>
   </div>
 
-  <details class="panel" id="helpPanel">
+  <details class="panel">
     <summary>조작법과 이 프로토타입이 검증하려는 것</summary>
     <ul>
       <li><b>이동</b> — WASD 또는 조이스틱. <b>카메라가 보는 방향 기준</b>으로 움직입니다</li>

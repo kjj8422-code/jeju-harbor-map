@@ -444,7 +444,7 @@ function doTodo(act) {
   if (kind === 'build') { selectBuild(arg); }
   else if (kind === 'craft') { refreshCraft(); openScreen('scCraft'); }
   else if (kind === 'upgrade') { refreshCraft(); openScreen('scCraft'); }
-  else if (kind === 'hire') { Sim.hireSoldier(S); handleEvents(); refreshSoldiers(); refreshHUD(); }
+  else if (kind === 'hire') { toggleTroop(true); }
   else if (kind === 'gather') {
     const n = Sim.nearestNodeOf(S, arg);
     if (n) {
@@ -556,6 +556,19 @@ function refreshBuildDock() {
     row.appendChild(el);
   });
 
+  /* 병력 — 화면 안에서 바로 고용합니다.
+     화면 밖 패널만 있으면 스크롤해야 보이고, 그러면 그 기능이 없는 것과 같습니다. */
+  const troop = document.createElement('button');
+  troop.className = 'bdBtn' + ($('troopPanel').classList.contains('on') ? ' on' : '');
+  troop.title = '병사·용병을 고용합니다 (숫자키 6)';
+  const sN = S ? S.soldiers.filter(x => !x.merc).length : 0;
+  const mN = S ? S.soldiers.filter(x => x.merc).length : 0;
+  troop.innerHTML = `<span class="num">6</span><span class="ic">🗡️</span>`
+    + `<span class="tx"><b class="nm">병력</b>`
+    + `<span class="cs">병사 ${sN}/${S ? S.camps : 0}${mN ? ` · 용병 ${mN}` : ''}</span></span>`;
+  troop.onclick = () => toggleTroop();
+  row.appendChild(troop);
+
   /* 철거 — 목책을 옮기면 적의 길이 바뀌고, 예전 함정이 길에서 벗어납니다.
      치울 수 없으면 그 자원이 영원히 묶입니다. 절반을 돌려받고 다시 놓게 합니다. */
   const del = document.createElement('button');
@@ -568,6 +581,61 @@ function refreshBuildDock() {
 }
 
 const DEMOLISH = '__demolish';
+
+/* ---------------- 화면 안 병력 창 ---------------- */
+function toggleTroop(force) {
+  const el = $('troopPanel');
+  const on = force !== undefined ? force : !el.classList.contains('on');
+  el.classList.toggle('on', on);
+  if (on) { refreshTroop(); Audio.play('build'); }
+  const dock = $('buildDockRow');
+  if (dock) dock.dataset.sig = '';        // 버튼 상태를 다시 그리게
+  refreshBuildDock();
+}
+
+function refreshTroop() {
+  const box = $('troopBody');
+  if (!box || !S) return;
+  const reg = S.soldiers.filter(x => !x.merc).length;
+  const mercN = S.soldiers.filter(x => x.merc).length;
+  const rows = [];
+
+  const canS = Sim.canAffordWithEssence(S, C.SOLDIER_COST);
+  const roomS = reg < S.camps;
+  rows.push(`<button class="tpBtn" data-hire="soldier" ${roomS && canS.ok ? '' : 'disabled'}>
+      <b class="n">🗡️ 병사 고용</b>
+      <span class="c">${Sim.costText(C.SOLDIER_COST)}${canS.essence ? ` <b>또는 ⭐${canS.essence}</b>` : ''}</span>
+      <span class="d">${roomS ? '떠나지 않습니다 · 역할을 바꿀 수 있습니다'
+                              : (S.camps === 0 ? '먼저 병영을 지으세요' : `정원이 찼습니다 (${reg}/${S.camps})`)}</span>
+    </button>`);
+
+  for (const m of C.MERCS) {
+    const enough = totalShard() >= m.cost;
+    rows.push(`<button class="tpBtn" data-hire="${m.id}" ${enough ? '' : 'disabled'}>
+      <b class="n">${m.icon} ${m.name}</b>
+      <span class="c">🔶 <b>${m.cost}</b>${enough ? '' : ` (보유 ${totalShard()})`}</span>
+      <span class="d">${m.desc.split('.')[0]}.</span>
+    </button>`);
+  }
+
+  box.innerHTML = `<div class="tpRow">${rows.join('')}</div>`
+    + `<div class="tpNow">지금 — 병사 <b>${reg}/${S.camps}</b>`
+    + (mercN ? ` · 용병 <b>${mercN}</b>명` : '')
+    + ` · 옥새 조각 <b>${totalShard()}</b>`
+    + `<br><span style="opacity:.8">병사는 아래 목록에서 눌러 역할(목재·석재·약초·철·방어)을 바꿉니다.</span></div>`;
+
+  box.querySelectorAll('[data-hire]').forEach(b => {
+    b.onclick = () => {
+      const id = b.dataset.hire;
+      if (id === 'soldier') Sim.hireSoldier(S);
+      else if (pullShardIntoRun(C.MERCS.find(m => m.id === id).cost)) Sim.hireMerc(S, id);
+      else { toast('옥새 조각이 부족합니다'); Audio.play('deny'); }
+      handleEvents(); refreshSoldiers(); refreshHUD(); refreshTroop();
+      const dock = $('buildDockRow'); if (dock) dock.dataset.sig = '';
+      refreshBuildDock();
+    };
+  });
+}
 
 /** 건설 카드 선택 — 화면 안 바와 화면 밖 카드가 같은 함수를 씁니다 */
 function selectBuild(id) {
@@ -1286,6 +1354,7 @@ window.addEventListener('keydown', e => {
     if (k >= '1' && k <= '9' && S && !uiOpen && !S.over) {
       const n = Number(k);
       if (n === C.BUILDS.length + 1) selectBuild(DEMOLISH);
+      else if (n === C.BUILDS.length + 2) toggleTroop();
       else { const b = C.BUILDS[n - 1]; if (b) selectBuild(b.id); }
     }
     if (k === 'q') doSkill(0);
@@ -1293,7 +1362,10 @@ window.addEventListener('keydown', e => {
     if (k === 'h') { Sim.usePotion(S); handleEvents(); refreshHUD(); }
   }
   keys[k] = true;
-  if (e.key === 'Escape') { buildSel = null; refreshBuildCards(); R3.setBuildMode(false); cancelBuild(); }
+  if (e.key === 'Escape') {
+    if ($('troopPanel').classList.contains('on')) { toggleTroop(false); return; }
+    buildSel = null; refreshBuildCards(); R3.setBuildMode(false); cancelBuild();
+  }
   if (e.key === 'Enter' && pending) confirmBuild();
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
 });
@@ -1537,7 +1609,8 @@ $('btnCancel').onclick = () => { buildSel = null; refreshBuildCards(); R3.setBui
 if ($('btnConfirmBuild')) $('btnConfirmBuild').onclick = confirmBuild;
 if ($('btnCancelBuild')) $('btnCancelBuild').onclick = cancelBuild;
 if ($('chkInstant')) $('chkInstant').onchange = e => { instantBuild = e.target.checked; };
-$('btnHire').onclick = () => Sim.hireSoldier(S);
+$('btnHire').onclick = () => { Sim.hireSoldier(S); handleEvents(); refreshSoldiers(); refreshHUD(); };
+$('btnTroopClose').onclick = () => toggleTroop(false);
 $('btnCraft').onclick = () => { if (!S) return; refreshCraft(); openScreen('scCraft'); };
 $('btnGuide').onclick = () => { refreshGuide(); openScreen('scGuide'); };
 $('btnGuideClose').onclick = () => closeAll();

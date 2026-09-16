@@ -131,6 +131,10 @@ const RECIPE = {
   coin:      t => { tone(t, 1180, 1560, 0.09, 0.18, 'square'); tone(t + 0.07, 1560, 1980, 0.14, 0.12, 'square'); },
   potion:    t => { tone(t, 700, 1300, 0.28, 0.2, 'sine'); },
   objective: t => { tone(t, 760, 1010, 0.10, 0.2, 'triangle'); tone(t + 0.1, 1010, 1270, 0.16, 0.15, 'triangle'); },
+  /* 성 업그레이드 — 돌을 쌓아 올리는 묵직한 소리. 정적 점검에서 "없는 소리" 로 잡혔습니다. */
+  upgrade:   t => { noise(t, 0.3, 0.4, 'lowpass', 700, 0.8); tone(t, 140, 220, 0.4, 0.34, 'triangle');
+                    tone(t + 0.18, 330, 440, 0.35, 0.22, 'triangle');
+                    tone(t + 0.36, 440, 660, 0.4, 0.18, 'triangle'); },
 
   /* ── 상황 ── */
   windup:    t => { tone(t, 190, 260, 0.14, 0.11, 'sine'); },
