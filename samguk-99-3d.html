@@ -471,8 +471,14 @@ body.mob .topbar > div{ pointer-events:auto; margin-left:auto; display:flex; gap
    무슨 게임인지는 이미 화면이 말해줍니다. */
 body.mob .brand{ display:none; }
 body.mob .brand small{ display:none; }
-body.mob .topbar .btn{ font-size:0; padding:7px 9px; line-height:1; }
-body.mob .topbar .btn::first-letter{ font-size:16px; }
+/* ★ 손가락으로 누르는 버튼은 최소 44x44 여야 합니다(애플 권장).
+   재보니 상단 버튼이 40x32, 건설 버튼이 33x43, 화면 버튼이 높이 30px 이었습니다.
+   32px 짜리는 엄지로 누르면 옆 버튼이 같이 눌립니다. */
+body.mob .topbar .btn{
+  font-size:0; padding:0; line-height:1; width:44px; height:44px;
+  display:flex; align-items:center; justify-content:center;
+}
+body.mob .topbar .btn::first-letter{ font-size:18px; }
 body.mob .backLink{ display:none; }
 
 /* HUD — 한 줄로 압축하고 글자를 줄입니다 */
@@ -524,9 +530,10 @@ body.mob .oCost{ font-size:9px; }
    비용까지 적으면 두 줄이 되고, 두 줄이 되면 위 버튼들과 겹칩니다.
    좁은 화면에서는 아이콘 + 이름만 남깁니다 (비용은 눌러보면 고스트와 힌트로 나옵니다). */
 body.mob #buildDock{ bottom:calc(env(safe-area-inset-bottom,0px) + 118px); padding:3px 4px; background:none; }
-body.mob .bdRow{ gap:3px; flex-wrap:nowrap; justify-content:center; }
-body.mob .bdBtn{ padding:5px 5px; gap:3px; background:rgba(34,31,27,.96);
-  flex-direction:column; align-items:center; min-width:0; }
+body.mob .bdRow{ gap:3px; flex-wrap:nowrap; justify-content:stretch; }
+body.mob .bdBtn{ padding:5px 2px; gap:2px; background:rgba(34,31,27,.96);
+  flex-direction:column; align-items:center; justify-content:center;
+  flex:1 1 0; min-width:48px; min-height:48px; }   /* 6개가 가로를 균등하게 나눠 씁니다 */
 body.mob .bdBtn .ic{ font-size:17px; }
 body.mob .bdBtn .tx{ text-align:center; }
 body.mob .bdBtn .nm{ font-size:8.5px; white-space:nowrap; }
@@ -555,7 +562,8 @@ body.mob .ctrlRight{
   pointer-events:none; width:auto; flex-wrap:nowrap;
 }
 body.mob .ctrlRight .btn{
-  pointer-events:auto; font-size:10.5px; padding:7px 9px; white-space:nowrap;
+  pointer-events:auto; font-size:11px; padding:0 12px; white-space:nowrap;
+  height:44px; display:flex; align-items:center;
   background:rgba(34,31,27,.94);
 }
 /* ★ 위에서 배경만 덮어썼더니 금색 버튼(가챠)의 **글자가 안 보이게** 됐습니다.
@@ -572,8 +580,9 @@ body.mob #skillBar{
   bottom:calc(env(safe-area-inset-bottom,0px) + 8px);
   display:flex; flex-direction:row; gap:6px; width:auto; justify-content:flex-end;
 }
-body.mob .skillBtn{ min-width:0; width:62px; padding:9px 4px; background:rgba(34,31,27,.92); }
-body.mob .skillBtn.ult{ min-width:0; width:70px; }
+body.mob .skillBtn{ min-width:0; width:64px; min-height:50px; padding:8px 4px;
+  background:rgba(34,31,27,.92); }
+body.mob .skillBtn.ult{ min-width:0; width:72px; }
 body.mob .skillBtn .k{ font-size:8px; }
 body.mob .skillBtn .n{ font-size:11px; }
 
@@ -622,7 +631,7 @@ body.mob #controls{ display:block !important; }
 .scX{
   position:fixed; z-index:60; display:none;
   top:calc(env(safe-area-inset-top,0px) + 8px); right:10px;
-  width:40px; height:40px; border-radius:50%; padding:0;
+  width:44px; height:44px; border-radius:50%; padding:0;
   background:rgba(34,31,27,.96); border:1px solid var(--line);
   color:var(--ink); font-size:17px; font-family:inherit; cursor:pointer;
   box-shadow:0 4px 14px rgba(0,0,0,.45);

@@ -1815,7 +1815,13 @@ window.addEventListener('orientationchange', () => setTimeout(applyMobileLayout,
     e.preventDefault();
   }
   const stop = () => { active = false; stickVec.x = stickVec.y = 0; setKnob(0, 0); };
-  el.addEventListener('pointerdown', e => { active = true; el.setPointerCapture(e.pointerId); onMove(e); });
+  /* ★ setPointerCapture 는 던질 수 있습니다.
+     "No active pointer with the given id is found" — 그 손가락이 이미 떨어졌거나
+     브라우저가 다른 데로 캡처를 가져간 경우입니다. 폰에서 손가락을 여러 개 쓰면
+     실제로 납니다. 던지면 그 뒤의 onMove 가 통째로 날아가 **조이스틱이 먹통**이 됩니다.
+     캡처는 있으면 좋은 것일 뿐, 없다고 못 움직일 이유는 없습니다. */
+  const capture = (node, id) => { try { node.setPointerCapture(id); } catch (err) {} };
+  el.addEventListener('pointerdown', e => { active = true; capture(el, e.pointerId); onMove(e); });
   el.addEventListener('pointermove', onMove);
   ['pointerup','pointercancel','pointerleave'].forEach(t => el.addEventListener(t, stop));
 })();
@@ -1868,7 +1874,7 @@ window.addEventListener('orientationchange', () => setTimeout(applyMobileLayout,
     }
     dragging = true;
     lastX = e.clientX; lastY = e.clientY;
-    stage.setPointerCapture(e.pointerId);
+    try { stage.setPointerCapture(e.pointerId); } catch (err) {}   // 위와 같은 이유
     if (buildSel) aimAt(e.clientX, e.clientY);
   });
 
