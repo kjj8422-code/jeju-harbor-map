@@ -371,6 +371,7 @@ function refreshHUD() {
   /* 지금 난이도를 HUD 에 계속 띄웁니다.
      예전에는 시작할 때 토스트로 한 번 알려주고 2초 뒤 사라져서,
      한참 하다 보면 자기가 무슨 난이도로 하는지 알 길이 없었습니다. */
+  layoutMobileOverlays();
   const dEl = $('hDiff');
   if (dEl && S) dEl.innerHTML =
     `<b style="color:${S.diff.color}" title="${S.diff.detail}">${S.diff.icon} ${S.diff.name}</b> · `;
@@ -440,9 +441,12 @@ function refreshHUD() {
 
   // ★ 침공 방향을 첫날부터 보여줍니다 — 이게 없으면 어디를 막을지 판단할 수 없습니다
   const dirs = Sim.upcomingDirs(S);
+  /* 폰에서는 이 설명 한 줄이 HUD 상자를 4줄로 만듭니다.
+     "붉은 화살표 = 걸어올 길" 은 📖 안내에 그림과 함께 있으니 좁은 화면에서는 뺍니다. */
+  const narrow = document.body.classList.contains('mob');
   $('hDirs').innerHTML = dirs.length
     ? `침공 방향 <b>${dirs.map(Sim.dirName).join(' · ')}</b>`
-      + `<br><span style="opacity:.75">바닥의 붉은 화살표 = 적이 걸어올 길</span>`
+      + (narrow ? '' : `<br><span style="opacity:.75">바닥의 붉은 화살표 = 적이 걸어올 길</span>`)
     : '남은 대란 없음';
 
   /* ★ 깔아둔 함정 중 몇 개가 실제로 그 길 위에 있는가.
@@ -458,12 +462,12 @@ function refreshHUD() {
     ti.textContent = '';
   } else if (!tp.total) {
     ti.className = '';
-    ti.textContent = '함정 없음 — 붉은 화살표 위에 까세요';
+    ti.textContent = narrow ? '함정 없음' : '함정 없음 — 붉은 화살표 위에 까세요';
   } else {
     const good = tp.on === tp.total;
     ti.className = tp.on === 0 ? 'bad' : good ? 'good' : '';
-    ti.innerHTML = `함정 <b>${tp.on}/${tp.total}</b> 개가 침공로 위`
-      + (tp.on === 0 ? ' — 한 마리도 못 잡습니다' : good ? ' ✓' : '');
+    ti.innerHTML = `함정 <b>${tp.on}/${tp.total}</b>${narrow ? '' : ' 개가'} 침공로 위`
+      + (tp.on === 0 ? (narrow ? ' ✕' : ' — 한 마리도 못 잡습니다') : good ? ' ✓' : '');
   }
 
   $('perf').textContent = `${R3.stats ? '' : ''}${R3.R.stats.fps}fps · draw ${R3.R.stats.calls} · 삼각형 ${(R3.R.stats.tris / 1000).toFixed(0)}k`
@@ -706,14 +710,15 @@ function selectBuild(id) {
   R3.setBuildMode(!!buildSel);
   $('modeTag').innerHTML = buildSel
     ? '🧱 <b style="color:var(--gold)">건설 모드</b> — 땅을 눌러 위치를 잡고 확인'
-    : '🖱 드래그 = 카메라 회전 · 휠 = 확대';
+    : (isMobile() ? '한 손가락으로 화면을 쓸면 카메라가 돌아갑니다'
+                : '🖱 드래그 = 카메라 회전 · 휠 = 확대');
   if (!buildSel) cancelBuild();
   else if (buildSel === DEMOLISH) {
     $('modeTag').innerHTML = '⛏️ <b style="color:#e39184">철거 모드</b> — 부술 것을 누르세요';
     toast('부술 것을 누르세요 — <b>자원의 절반</b>을 돌려받습니다');
   } else {
     const b = C.BUILDS.find(x => x.id === buildSel);
-    toast(`땅을 눌러 <b>${b.name}</b> 위치를 잡으세요`
+    toast(`땅을 ${isMobile() ? '탭해' : '눌러'} <b>${b.name}</b> 위치를 잡으세요`
         + (b.id === 'trap' ? ' — <b style="color:#E0554A">붉은 화살표 위</b>에 놓아야 잡습니다' : ''));
   }
   Audio.play(buildSel ? 'build' : 'deny');
@@ -1778,6 +1783,32 @@ window.addEventListener('resize', applyMobileLayout);
 })();
 window.addEventListener('orientationchange', () => setTimeout(applyMobileLayout, 250));
 
+/* ==================================================================
+   모바일 겹침 정리 — HUD **아래**에 자동으로 붙입니다
+   ------------------------------------------------------------------
+   실제 기기 화면을 보니 「지금 할 일」이 왼쪽 HUD 상자를 덮어
+   장수 이름("태사자")이 잘려 있었습니다.
+
+   CSS 에 top 을 숫자로 박아두면 계속 어긋납니다 —
+   HUD 상자의 높이가 **내용에 따라 변하기** 때문입니다.
+   (1일차와 4일차의 높이가 다르고, 밤에는 한 줄이 더 붙습니다)
+   그래서 실제 높이를 재서 그 아래에 붙입니다.
+   ================================================================== */
+function layoutMobileOverlays() {
+  if (!document.body.classList.contains('mob')) return;
+  const boxes = document.querySelectorAll('#hud .hudBox');
+  if (boxes.length < 2) return;
+  const L = boxes[0].getBoundingClientRect(), Rt = boxes[1].getBoundingClientRect();
+  const todo = $('todo'), mini = $('minimapWrap'), obj = $('objective');
+  if (todo) todo.style.top = Math.round(L.bottom + 6) + 'px';
+  if (mini) mini.style.top = Math.round(Rt.bottom + 6) + 'px';
+  if (obj) {
+    const below = Math.max(todo ? todo.getBoundingClientRect().bottom : 0,
+                           mini ? mini.getBoundingClientRect().bottom : 0);
+    obj.style.top = Math.round(below + 6) + 'px';
+  }
+}
+
 /* 「지금 할 일」 접기 — 좁은 화면에서 자리를 많이 먹습니다 */
 (function () {
   const head = document.querySelector('#todo .tdHead');
@@ -1787,6 +1818,7 @@ window.addEventListener('orientationchange', () => setTimeout(applyMobileLayout,
     const t = $('todo');
     t.classList.toggle('folded');
     head.querySelector('span').textContent = t.classList.contains('folded') ? '▸' : '▾';
+    layoutMobileOverlays();          // 펼치면 아래 것들이 밀려나야 합니다
   };
   /* 좁은 화면에서는 접힌 채로 시작합니다 — 펼쳐두면 화면 위쪽 1/3 을 덮습니다.
      한 번 누르면 펼쳐지고, 그 선택은 그대로 유지됩니다. */

@@ -27,6 +27,9 @@ body{padding-bottom:20px;}
 .topbar{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px;}
 .brand{font-size:18px;font-weight:700;font-family:var(--serif);letter-spacing:-.3px;}
 .brand small{font-size:11px;color:var(--dim);font-weight:600;margin-left:6px;font-family:inherit;}
+.btn i{font-style:normal;}
+.topBtns{display:flex;gap:6px;}
+.topBtns .btn i{margin-right:3px;}
 .btn{background:var(--panel);border:1px solid var(--line);color:var(--ink);font-size:12px;
   font-weight:700;padding:7px 12px;border-radius:6px;cursor:pointer;font-family:inherit;}
 .btn:active{background:#2d2823;}
@@ -466,19 +469,22 @@ body.mob .topbar{
   background:linear-gradient(to bottom,rgba(12,11,9,.85),rgba(12,11,9,0));
   pointer-events:none;
 }
-body.mob .topbar > div{ pointer-events:auto; margin-left:auto; display:flex; gap:4px; }
-/* 제목은 숨깁니다 — 좁은 화면에서 그 자리는 전황 게이지가 써야 합니다.
-   무슨 게임인지는 이미 화면이 말해줍니다. */
-body.mob .brand{ display:none; }
-body.mob .brand small{ display:none; }
+/* ★ 예전에는 `body.mob .topbar > div` 라고 썼습니다.
+   .brand 도 .topbar 안의 div 라서 **여기에 같이 걸렸고**, 우선순위가 더 높아
+   바로 아래의 `display:none` 을 이겨버렸습니다 — 숨기려던 제목이 그대로 떴습니다.
+   자식 전체를 잡는 선택자는 이렇게 조용히 옆엣것을 끌고 옵니다. 이름을 붙여 좁힙니다. */
+body.mob .topbar .topBtns{ pointer-events:auto; margin-left:auto; display:flex; gap:4px; }
+/* 제목은 숨깁니다 — 좁은 화면에서 그 자리는 전황 게이지가 써야 합니다. */
+body.mob .brand{ display:none !important; }
 /* ★ 손가락으로 누르는 버튼은 최소 44x44 여야 합니다(애플 권장).
    재보니 상단 버튼이 40x32, 건설 버튼이 33x43, 화면 버튼이 높이 30px 이었습니다.
    32px 짜리는 엄지로 누르면 옆 버튼이 같이 눌립니다. */
 body.mob .topbar .btn{
-  font-size:0; padding:0; line-height:1; width:44px; height:44px;
+  padding:0; line-height:1; width:46px; height:46px;
   display:flex; align-items:center; justify-content:center;
 }
-body.mob .topbar .btn::first-letter{ font-size:18px; }
+body.mob .topbar .btn i{ font-size:19px; font-style:normal; }
+body.mob .topbar .btn b{ display:none; }        /* 글자만 숨깁니다 */
 body.mob .backLink{ display:none; }
 
 /* HUD — 한 줄로 압축하고 글자를 줄입니다 */
@@ -486,7 +492,8 @@ body.mob .backLink{ display:none; }
    34px 로 두면 밤에 게이지와 10px 겹쳐서 자원 숫자를 가렸습니다. */
 body.mob #hud{ padding:calc(env(safe-area-inset-top,0px) + 50px) 6px 6px; gap:5px; }
 body.mob .hudBox{ font-size:9.5px; padding:4px 6px; line-height:1.4; max-width:48%; }
-body.mob #hud > .hudBox:last-child{ font-size:9px; }
+body.mob #hud > .hudBox:last-child{ font-size:9px; max-width:54%; }
+body.mob .res{ justify-content:flex-end; }
 body.mob .hudDay{ font-size:15px; }
 body.mob .bar{ width:74px; height:5px; }
 body.mob #dayTimer .dbar{ width:74px; }
@@ -494,14 +501,17 @@ body.mob .res{ gap:5px; font-size:10px; flex-wrap:wrap; }
 body.mob #hDirs, body.mob #trapInfo{ font-size:9px; }
 
 /* 미니맵 — 작게, 오른쪽 위 HUD 아래 */
-body.mob #minimapWrap{ right:6px; bottom:auto; top:calc(env(safe-area-inset-top,0px) + 206px); }
+body.mob #minimapWrap{ right:6px; bottom:auto; top:calc(env(safe-area-inset-top,0px) + 160px); }
 body.mob #minimap{ width:84px; height:63px; }
-body.mob #mmLabel{ font-size:8px; }
+/* 미니맵 라벨 — 좁은 폭에서 두 줄로 깨져 지도를 덮었습니다. 지도만 보여줍니다.
+   (붉은 점선이 예상 침공로라는 설명은 📖 안내에 있습니다) */
+body.mob #mmLabel{ display:none; }
 
 /* 지금 할 일 — 모바일에서도 보여야 합니다 (핵심 안내입니다).
    접었다 펼 수 있게 만들어 평소엔 자리를 거의 안 차지하게 합니다. */
+/* 「지금 할 일」이 왼쪽 HUD 상자를 덮어 장수 이름이 잘렸습니다 — 더 아래로 내립니다 */
 body.mob #todo{
-  display:block; left:6px; top:calc(env(safe-area-inset-top,0px) + 148px);
+  display:block; left:6px; top:calc(env(safe-area-inset-top,0px) + 160px);
   width:162px; max-height:none; padding:4px 6px; z-index:4;
 }
 body.mob #todo.folded{ width:auto; }
@@ -513,9 +523,12 @@ body.mob .tdItem .tt{ font-size:10px; }
 body.mob .tdItem .tn, body.mob .tdItem .tc{ font-size:8.5px; }
 
 /* 목표 문구 — 건설 바 위로 */
-/* 목표 문구 — HUD 두 상자 **아래**로 내립니다. 위에 두면 자원 숫자를 가립니다. */
-body.mob #objective{ bottom:auto; top:calc(env(safe-area-inset-top,0px) + 282px);
-  font-size:10px; max-width:76%; padding:4px 9px; left:38%; }
+/* 목표 문구 — 실제 기기에서 보니 화면 한가운데를 가로막아 장수가 안 보였습니다.
+   위쪽(미니맵 아래)으로 붙이고, 글자를 한 줄로 눌러 담습니다. */
+body.mob #objective{ bottom:auto; top:calc(env(safe-area-inset-top,0px) + 200px);
+  font-size:9.5px; max-width:52%; padding:3px 8px; left:6px; transform:none;
+  text-align:left; border-left-width:2px; line-height:1.45; }
+body.mob #objective .oCost{ margin-top:1px; }
 /* 토스트는 목표 문구 아래로 — 겹치면 둘 다 못 읽습니다 */
 body.mob #toast{ top:auto; bottom:calc(env(safe-area-inset-bottom,0px) + 270px); }
 body.mob .toastItem{ font-size:10.5px; padding:4px 10px; max-width:88vw; text-align:center; }
@@ -583,8 +596,11 @@ body.mob #skillBar{
 body.mob .skillBtn{ min-width:0; width:64px; min-height:50px; padding:8px 4px;
   background:rgba(34,31,27,.92); }
 body.mob .skillBtn.ult{ min-width:0; width:72px; }
-body.mob .skillBtn .k{ font-size:8px; }
-body.mob .skillBtn .n{ font-size:11px; }
+/* Q · E · Space 는 키보드 안내입니다 — 폰에는 키보드가 없으므로 지웁니다.
+   그 자리를 이름과 남은 시간에 내줍니다. */
+body.mob .skillBtn .k{ display:none; }
+body.mob .skillBtn .n{ font-size:12px; }
+body.mob .skillBtn .cd{ font-size:17px; }
 
 /* 전황 게이지·배너 크기 */
 /* 전황 게이지 — 맨 위 왼쪽(제목이 있던 자리)에. HUD 상자 위로 겹치면 자원 숫자를 가립니다. */
@@ -745,10 +761,15 @@ body.mob .cGo{ padding:8px 12px; font-size:11.5px; }
   <a href="./" class="backLink">← 제주 어항 해도로 돌아가기</a>
   <div class="topbar">
     <div class="brand">삼국지 99일 생존 3D<small>Day 1~99 · 3막 · 설치 불필요</small></div>
-    <div style="display:flex;gap:6px;">
-      <button class="btn" id="btnSound" title="효과음 켜기/끄기">🔊 효과음</button>
-      <button class="btn" id="btnMusic" title="배경음악 켜기/끄기">🎵 음악</button>
-      <button class="btn" id="btnPause">⏸ 일시정지</button>
+    <!-- ★ 아이콘과 글자를 따로 감쌉니다.
+         예전에는 모바일에서 font-size:0 + ::first-letter 로 아이콘만 남기려 했는데,
+         버튼을 display:flex 로 만드는 순간 ::first-letter 가 **아예 적용되지 않습니다**
+         (블록 컨테이너에만 먹습니다). 그래서 실제 폰에서 글자가 통째로 사라져
+         까만 사각형 세 개만 떴습니다. 이제 글자만 숨기면 됩니다. -->
+    <div class="topBtns">
+      <button class="btn" id="btnSound" title="효과음 켜기/끄기"><i>🔊</i><b>효과음</b></button>
+      <button class="btn" id="btnMusic" title="배경음악 켜기/끄기"><i>🎵</i><b>음악</b></button>
+      <button class="btn" id="btnPause"><i>⏸</i><b>일시정지</b></button>
     </div>
   </div>
 

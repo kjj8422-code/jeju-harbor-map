@@ -69,6 +69,33 @@ for (const [tag, vp] of SIZES) {
        e ? `${Math.round(e.x)},${Math.round(e.y)} ${Math.round(e.w)}x${Math.round(e.h)}` : '없음');
   }
   ok(`${tag} — 조이스틱이 다른 것에 가려지지 않는다`, m.stickHit);
+  /* ★ 실제 기기 화면에서 나온 것들 — 사진으로만 보였던 문제라 눈으로 재던 것을 숫자로 겁니다 */
+  ok(`${tag} — 상단 버튼의 아이콘이 실제로 보인다`, await p.evaluate(() =>
+    [...document.querySelectorAll('.topBtns .btn')].every(b => {
+      const i = b.querySelector('i');
+      return i && i.textContent.trim().length > 0 && parseFloat(getComputedStyle(i).fontSize) >= 12;
+    })), '(예전엔 까만 사각형만 떴습니다)');
+  ok(`${tag} — 게임 제목이 화면을 차지하지 않는다`,
+     await p.evaluate(() => getComputedStyle(document.querySelector('.brand')).display === 'none'));
+  ok(`${tag} — 스킬 버튼에 키보드 안내(Q·E·Space)가 없다`, await p.evaluate(() =>
+    [...document.querySelectorAll('#skillBar .skillBtn .k')]
+      .every(e => getComputedStyle(e).display === 'none')));
+  ok(`${tag} — 화면 위 안내들이 HUD 를 덮지 않는다`, await p.evaluate(() => {
+    const hit = (a, b) => !(a.right <= b.left || a.left >= b.right
+                         || a.bottom <= b.top || a.top >= b.bottom);
+    const hud = [...document.querySelectorAll('#hud .hudBox')].map(e => e.getBoundingClientRect());
+    return ['todo', 'objective', 'minimapWrap'].every(id => {
+      const e = document.getElementById(id);
+      if (!e || getComputedStyle(e).display === 'none') return true;
+      const r = e.getBoundingClientRect();
+      return hud.every(h => !hit(r, h));
+    });
+  }), '「지금 할 일」이 장수 이름을 덮던 자리');
+  ok(`${tag} — 폰 화면에 "클릭" 같은 PC 말이 안 보인다`, await p.evaluate(() => {
+    const t = document.getElementById('objective').textContent
+            + document.getElementById('todo').textContent;
+    return !/클릭|마우스|휠|우클릭/.test(t);
+  }), await p.evaluate(() => document.getElementById('objective').textContent.trim().slice(0, 40)));
   ok(`${tag} — 건설 버튼 6개가 한 줄에 들어간다`, m.dockN === 6 && m.dockRows === 1,
      `${m.dockN}개 / ${m.dockRows}줄`);
   await ctx.close();
