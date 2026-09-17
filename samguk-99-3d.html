@@ -437,6 +437,231 @@ details.panel[open] summary::before{content:'▾ ';}
 .cDone .cEff{display:inline;margin:0;font-size:11px;color:var(--dim);}
 .cOk{margin-left:auto;font-size:11px;color:var(--good);font-weight:800;}
 /* 만들 수 있는 줄에만 붙는 딱지 — 성 올리기의 '올리기' 버튼과 같은 자리·같은 모양입니다 */
+/* ==================================================================
+   모바일 전용 배치 (body.mob)
+   ------------------------------------------------------------------
+   왜 통째로 다시 짰나:
+     모바일에서 문서 높이가 1841px 인데 화면은 844px 이었습니다.
+     조이스틱과 스킬 버튼이 **화면 밖**이라 스크롤을 해야 눌렀고,
+     HUD 두 상자가 3D 화면을 거의 다 덮었습니다. 게임이 안 됩니다.
+
+   그래서 모바일에서는 **전체 화면 게임**으로 바꿉니다.
+     · 무대가 화면 전체(100dvh)를 채웁니다 — 주소창이 나타나도 안 잘리게 dvh 를 씁니다
+     · 조작(조이스틱·스킬·건설)은 전부 무대 **위에 겹칩니다** — 스크롤 0
+     · PC 용 설명 문단들은 숨기고 📖 안내로 보냅니다
+     · 노치·홈바를 피하도록 safe-area 를 씁니다
+   ================================================================== */
+body.mob { padding-bottom:0; overflow:hidden; overscroll-behavior:none; }
+body.mob #app { max-width:none; margin:0; padding:0; }
+
+/* 무대 = 화면 전체 */
+body.mob #stage{
+  position:fixed; inset:0; height:100dvh; width:100vw; border:none; z-index:0;
+}
+/* 상단 막대 — 무대 위에 얇게 겹칩니다 */
+body.mob .topbar{
+  position:fixed; left:0; right:0; top:0; z-index:12; margin:0;
+  padding:calc(env(safe-area-inset-top,0px) + 4px) 8px 4px;
+  display:flex; align-items:center; gap:6px;
+  background:linear-gradient(to bottom,rgba(12,11,9,.85),rgba(12,11,9,0));
+  pointer-events:none;
+}
+body.mob .topbar > div{ pointer-events:auto; margin-left:auto; display:flex; gap:4px; }
+/* 제목은 숨깁니다 — 좁은 화면에서 그 자리는 전황 게이지가 써야 합니다.
+   무슨 게임인지는 이미 화면이 말해줍니다. */
+body.mob .brand{ display:none; }
+body.mob .brand small{ display:none; }
+body.mob .topbar .btn{ font-size:0; padding:7px 9px; line-height:1; }
+body.mob .topbar .btn::first-letter{ font-size:16px; }
+body.mob .backLink{ display:none; }
+
+/* HUD — 한 줄로 압축하고 글자를 줄입니다 */
+/* HUD 는 위쪽 띠(상단 버튼 + 전황 게이지) 아래에서 시작합니다.
+   34px 로 두면 밤에 게이지와 10px 겹쳐서 자원 숫자를 가렸습니다. */
+body.mob #hud{ padding:calc(env(safe-area-inset-top,0px) + 50px) 6px 6px; gap:5px; }
+body.mob .hudBox{ font-size:9.5px; padding:4px 6px; line-height:1.4; max-width:48%; }
+body.mob #hud > .hudBox:last-child{ font-size:9px; }
+body.mob .hudDay{ font-size:15px; }
+body.mob .bar{ width:74px; height:5px; }
+body.mob #dayTimer .dbar{ width:74px; }
+body.mob .res{ gap:5px; font-size:10px; flex-wrap:wrap; }
+body.mob #hDirs, body.mob #trapInfo{ font-size:9px; }
+
+/* 미니맵 — 작게, 오른쪽 위 HUD 아래 */
+body.mob #minimapWrap{ right:6px; bottom:auto; top:calc(env(safe-area-inset-top,0px) + 206px); }
+body.mob #minimap{ width:84px; height:63px; }
+body.mob #mmLabel{ font-size:8px; }
+
+/* 지금 할 일 — 모바일에서도 보여야 합니다 (핵심 안내입니다).
+   접었다 펼 수 있게 만들어 평소엔 자리를 거의 안 차지하게 합니다. */
+body.mob #todo{
+  display:block; left:6px; top:calc(env(safe-area-inset-top,0px) + 148px);
+  width:162px; max-height:none; padding:4px 6px; z-index:4;
+}
+body.mob #todo.folded{ width:auto; }
+body.mob #todo .tdHead{ font-size:9px; cursor:pointer; display:flex; align-items:center; gap:4px; }
+body.mob #todo.folded #todoList{ display:none; }
+body.mob .tdItem{ padding:4px 6px; margin-bottom:4px; }
+body.mob .tdItem .ti{ font-size:13px; }
+body.mob .tdItem .tt{ font-size:10px; }
+body.mob .tdItem .tn, body.mob .tdItem .tc{ font-size:8.5px; }
+
+/* 목표 문구 — 건설 바 위로 */
+/* 목표 문구 — HUD 두 상자 **아래**로 내립니다. 위에 두면 자원 숫자를 가립니다. */
+body.mob #objective{ bottom:auto; top:calc(env(safe-area-inset-top,0px) + 282px);
+  font-size:10px; max-width:76%; padding:4px 9px; left:38%; }
+/* 토스트는 목표 문구 아래로 — 겹치면 둘 다 못 읽습니다 */
+body.mob #toast{ top:auto; bottom:calc(env(safe-area-inset-bottom,0px) + 270px); }
+body.mob .toastItem{ font-size:10.5px; padding:4px 10px; max-width:88vw; text-align:center; }
+body.mob .oCost{ font-size:9px; }
+
+/* ── 아래쪽 띠 배치 (세로 화면 기준) ──────────────────
+     바닥에서부터   6px  조이스틱(왼) · 스킬(오른)
+                  118px  건설 바 (가운데, 가로 전체)
+                  176px  화면 버튼들 (오른쪽: 안내·제작·가챠·취소)
+   서로 겹치지 않게 띠를 나눠 둡니다. */
+/* 건설 바 — 6개를 **한 줄에** 넣어야 합니다.
+   비용까지 적으면 두 줄이 되고, 두 줄이 되면 위 버튼들과 겹칩니다.
+   좁은 화면에서는 아이콘 + 이름만 남깁니다 (비용은 눌러보면 고스트와 힌트로 나옵니다). */
+body.mob #buildDock{ bottom:calc(env(safe-area-inset-bottom,0px) + 118px); padding:3px 4px; background:none; }
+body.mob .bdRow{ gap:3px; flex-wrap:nowrap; justify-content:center; }
+body.mob .bdBtn{ padding:5px 5px; gap:3px; background:rgba(34,31,27,.96);
+  flex-direction:column; align-items:center; min-width:0; }
+body.mob .bdBtn .ic{ font-size:17px; }
+body.mob .bdBtn .tx{ text-align:center; }
+body.mob .bdBtn .nm{ font-size:8.5px; white-space:nowrap; }
+body.mob .bdBtn .cs{ display:none; }          /* 비용은 힌트로 나옵니다 */
+body.mob .bdBtn .num{ display:none; }
+body.mob .bdTip{ display:none; }
+/* 자원이 모자란 건설은 테두리로 알려줍니다 (비용 글자를 숨겼으므로) */
+body.mob .bdBtn:disabled{ border-style:dashed; border-color:#7a4a42; }
+
+/* 조작 — 무대 위에 겹칩니다. 왼손 조이스틱, 오른손 스킬 */
+body.mob #controls{
+  position:fixed; left:0; right:0; z-index:11; margin:0;
+  bottom:calc(env(safe-area-inset-bottom,0px) + 6px);
+  padding:0 10px; display:block; pointer-events:none;
+}
+body.mob #stick{
+  pointer-events:auto; width:104px; height:104px;
+  background:rgba(34,31,27,.55); border-color:rgba(255,255,255,.18);
+}
+body.mob #stick .knob{ background:rgba(90,80,68,.9); }
+body.mob #stick .hint{ display:none; }
+body.mob #modeTag{ display:none; }
+body.mob .ctrlRight{
+  position:fixed; right:8px; left:8px; bottom:calc(env(safe-area-inset-bottom,0px) + 172px);
+  flex-direction:row; justify-content:center; align-items:center; gap:5px;
+  pointer-events:none; width:auto; flex-wrap:nowrap;
+}
+body.mob .ctrlRight .btn{
+  pointer-events:auto; font-size:10.5px; padding:7px 9px; white-space:nowrap;
+  background:rgba(34,31,27,.94);
+}
+/* ★ 위에서 배경만 덮어썼더니 금색 버튼(가챠)의 **글자가 안 보이게** 됐습니다.
+   .btn.gold 는 어두운 글자(#22200f)를 쓰는데 배경까지 어두워졌기 때문입니다.
+   색을 바꿀 때는 글자와 배경을 **함께** 봐야 합니다. */
+body.mob .ctrlRight .btn.gold{ background:var(--gold); color:#22200f; }
+/* 「건설 취소」는 모바일에서 숨깁니다 — 고른 건설 버튼을 다시 누르면 꺼지고,
+   설치 확인 창에도 ✕ 취소가 있습니다. 자리를 셋이 나눠 쓰는 편이 낫습니다. */
+body.mob #btnCancel{ display:none; }
+
+/* 스킬 — 오른손 엄지가 닿는 자리 */
+body.mob #skillBar{
+  position:fixed; z-index:11; right:10px;
+  bottom:calc(env(safe-area-inset-bottom,0px) + 8px);
+  display:flex; flex-direction:row; gap:6px; width:auto; justify-content:flex-end;
+}
+body.mob .skillBtn{ min-width:0; width:62px; padding:9px 4px; background:rgba(34,31,27,.92); }
+body.mob .skillBtn.ult{ min-width:0; width:70px; }
+body.mob .skillBtn .k{ font-size:8px; }
+body.mob .skillBtn .n{ font-size:11px; }
+
+/* 전황 게이지·배너 크기 */
+/* 전황 게이지 — 맨 위 왼쪽(제목이 있던 자리)에. HUD 상자 위로 겹치면 자원 숫자를 가립니다. */
+body.mob #warBar{
+  width:auto; left:8px; right:132px; transform:none;
+  top:calc(env(safe-area-inset-top,0px) + 6px);
+}
+body.mob .wbTop{ font-size:9px; }
+body.mob .wbNote{ font-size:8.5px; }
+body.mob #surgeBanner .sgT{ font-size:24px; }
+body.mob #surgeBanner .sgS{ font-size:11px; }
+body.mob #waveAlert .t{ font-size:21px; }
+body.mob #waveAlert .s{ font-size:11px; }
+body.mob #dawnWord .dwT{ font-size:21px; }
+
+/* 설치 확인 · 병력 창 */
+body.mob #buildConfirm{ bottom:calc(env(safe-area-inset-bottom,0px) + 218px); }
+body.mob #buildConfirm .btn{ font-size:12px; padding:9px 13px; }
+body.mob #buildConfirm .t{ font-size:10.5px; }
+body.mob #buildHint{ bottom:calc(env(safe-area-inset-bottom,0px) + 262px); font-size:10px; max-width:88%; text-align:center; }
+body.mob #troopPanel{ bottom:calc(env(safe-area-inset-bottom,0px) + 218px); width:94%; }
+body.mob #perf{ display:none; }
+
+/* PC 용 설명 문단은 숨깁니다 — 내용은 📖 안내에 다 있습니다.
+   ★ 처음엔 "#app 의 div 중 stage/topbar/controls 빼고 전부 숨김" 이라고 썼다가
+      **스킬바까지 같이 숨겼습니다.** 포괄 규칙은 새 요소가 생길 때마다 조용히 잡아먹습니다.
+      숨길 것을 하나씩 적는 편이 길지만 안전합니다. */
+body.mob .backLink,
+body.mob #app > .secTitle,
+body.mob #app > p,
+body.mob #app > details.panel,
+body.mob #app > div.panel,
+body.mob #soldierPanel,
+body.mob .pcOnly{ display:none !important; }
+/* 스킬바 바로 앞뒤 설명 문단만 숨기고, 스킬바 자체는 반드시 보입니다 */
+body.mob #skillBar{ display:flex !important; }
+body.mob #controls{ display:block !important; }
+
+/* ★ 모바일에서 화면을 닫는 ✕ 를 **항상 오른쪽 위에 띄웁니다.**
+   상점·안내는 화면이 길어서 「닫기」 버튼이 맨 아래에 있습니다.
+   폰에서는 끝까지 스크롤해야 닫을 수 있다는 뜻이고, 그동안 게임은 멈춰 있습니다.
+   (검수를 짜다가 발견했습니다 — 상점의 첫 primary 버튼이 '닫기' 가 아니라
+    '10연차' 라서, 닫으려던 동작이 뽑기를 눌러버렸습니다) */
+.scX{
+  position:fixed; z-index:60; display:none;
+  top:calc(env(safe-area-inset-top,0px) + 8px); right:10px;
+  width:40px; height:40px; border-radius:50%; padding:0;
+  background:rgba(34,31,27,.96); border:1px solid var(--line);
+  color:var(--ink); font-size:17px; font-family:inherit; cursor:pointer;
+  box-shadow:0 4px 14px rgba(0,0,0,.45);
+}
+.scX.on{ display:block; }
+
+/* 화면(오버레이)들은 세이프 에어리어를 지킵니다 */
+body.mob .screen{
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 10px
+          calc(env(safe-area-inset-bottom,0px) + 30px);
+  -webkit-overflow-scrolling:touch;
+}
+body.mob .sheet h2{ font-size:19px; }
+body.mob .sheet .sub{ font-size:11.5px; }
+body.mob .diffRow{ grid-template-columns:1fr; }
+body.mob .cItem{ padding:8px 9px; }
+body.mob .cGo{ padding:8px 12px; font-size:11.5px; }
+
+/* 가로로 눕혔을 때 — 세로 공간이 부족하므로 더 납작하게 */
+@media (orientation:landscape) and (max-height:520px){
+  /* 가로에서는 세로 공간이 거의 없습니다 — 띠를 하나로 합칩니다.
+     건설 바는 위쪽으로 올리고, 화면 버튼은 오른쪽 위로 보냅니다. */
+  body.mob #todo{ display:none; }
+  body.mob #minimapWrap{ top:auto; bottom:calc(env(safe-area-inset-bottom,0px) + 8px); right:8px;
+    left:auto; }
+  body.mob #minimap{ width:70px; height:52px; }
+  body.mob #buildDock{ bottom:calc(env(safe-area-inset-bottom,0px) + 6px); left:118px; right:180px; }
+  body.mob .bdRow{ justify-content:center; }
+  body.mob #stick{ width:84px; height:84px; }
+  body.mob .ctrlRight{ top:calc(env(safe-area-inset-top,0px) + 34px); bottom:auto;
+    left:auto; right:100px; }
+  body.mob #skillBar{ bottom:calc(env(safe-area-inset-bottom,0px) + 70px); right:8px; }
+  body.mob #objective{ display:none; }
+  body.mob .hudBox{ font-size:9px; }
+  body.mob #buildConfirm{ bottom:calc(env(safe-area-inset-bottom,0px) + 120px); }
+  body.mob #buildHint{ bottom:calc(env(safe-area-inset-bottom,0px) + 162px); }
+  body.mob #troopPanel{ bottom:calc(env(safe-area-inset-bottom,0px) + 120px); }
+}
+
 /* ── 진격 배너 (「적 본대가 밀려온다!!」) ── */
 #surgeBanner{position:absolute;left:50%;top:26%;transform:translate(-50%,-50%) scale(.8);
   pointer-events:none;z-index:8;opacity:0;text-align:center;}
@@ -615,7 +840,7 @@ details.panel[open] summary::before{content:'▾ ';}
     <label style="font-size:11px;color:var(--dim);font-weight:600;margin-left:8px;">
       <input type="checkbox" id="chkInstant"> 바로 설치 (확인 단계 건너뛰기)</label>
   </p>
-  <div style="font-size:11.5px;color:var(--dim);line-height:1.7;background:var(--panel);
+  <div class="pcOnly" style="font-size:11.5px;color:var(--dim);line-height:1.7;background:var(--panel);
               border:1px solid var(--line);border-radius:7px;padding:9px 11px;">
     <b style="color:var(--gold)">1 목책</b> 적의 길을 막아 <b>돌아가게</b> 만듭니다 ·
     <b style="color:var(--gold)">2 가시함정</b> 밟는 적에게 계속 피해 —
@@ -920,6 +1145,8 @@ details.panel[open] summary::before{content:'▾ ';}
     <button class="btn primary" id="btnShopClose" style="margin-top:14px;padding:10px 20px;">닫기</button>
   </div>
 </div>
+
+<button class="scX" id="btnScreenX" title="닫기">✕</button>
 
 <script type="module" src="js/main.js"></script>
 </body>

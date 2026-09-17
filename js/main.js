@@ -1728,13 +1728,84 @@ function applyInput() {
   S.input.y = -ix * sin + iz * cos;
 }
 
+/* ==================================================================
+   모바일 — 전체 화면 게임으로 바꿉니다
+   ------------------------------------------------------------------
+   예전에는 PC 배치를 그대로 좁은 화면에 밀어 넣었습니다.
+   그 결과 문서 높이가 1841px(화면은 844px)이 되어서
+   **조이스틱과 스킬 버튼이 화면 밖**에 있었습니다 — 스크롤해야 눌렀습니다.
+   body 에 .mob 을 붙이면 CSS 가 무대를 화면 전체로 깔고 조작을 그 위에 겹칩니다.
+   ================================================================== */
+export const isMobile = () =>
+  (navigator.maxTouchPoints > 0 || 'ontouchstart' in window) &&
+  Math.min(window.innerWidth, window.innerHeight) < 900;
+
+function applyMobileLayout() {
+  const on = isMobile();
+  document.body.classList.toggle('mob', on);
+  if (on) {
+    /* 주소창이 나타났다 사라지면 높이가 바뀝니다.
+       100dvh 가 대부분 처리하지만, 안 되는 브라우저를 위해 값도 직접 넣어둡니다. */
+    document.documentElement.style.setProperty('--vh', window.innerHeight + 'px');
+  }
+  if (typeof R3 !== 'undefined' && R3.resize) R3.resize();
+}
+applyMobileLayout();
+window.addEventListener('resize', applyMobileLayout);
+
+/* 모바일 전용 ✕ — 열려 있는 화면을 그 화면의 '닫기' 와 똑같이 닫습니다.
+   각 화면마다 닫기 동작이 다르므로(상점은 시작 화면으로 돌아가기도 합니다)
+   버튼을 새로 만들지 않고 **원래 닫기 버튼을 대신 눌러줍니다.** */
+(function () {
+  const x = $('btnScreenX');
+  if (!x) return;
+  const CLOSER = { scGuide:'btnGuideClose', scCraft:'btnCraftClose', scShop:'btnShopClose',
+                   scReport:'btnRepClose', scEnd:'btnAgain' };
+  x.onclick = () => {
+    const open = document.querySelector('.screen.on');
+    if (!open) return;
+    const btn = $(CLOSER[open.id]);
+    if (btn) btn.click(); else open.classList.remove('on');
+  };
+  /* 화면이 열려 있을 때만 보이게 — 시작 화면에서는 닫을 게 없으므로 숨깁니다 */
+  const sync = () => {
+    const open = document.querySelector('.screen.on');
+    x.classList.toggle('on', !!open && open.id !== 'scTitle' && isMobile());
+  };
+  new MutationObserver(sync).observe(document.body,
+    { subtree:true, attributes:true, attributeFilter:['class'] });
+  sync();
+})();
+window.addEventListener('orientationchange', () => setTimeout(applyMobileLayout, 250));
+
+/* 「지금 할 일」 접기 — 좁은 화면에서 자리를 많이 먹습니다 */
+(function () {
+  const head = document.querySelector('#todo .tdHead');
+  if (!head) return;
+  head.innerHTML = '지금 할 일 <span style="margin-left:auto;opacity:.7">▾</span>';
+  head.onclick = () => {
+    const t = $('todo');
+    t.classList.toggle('folded');
+    head.querySelector('span').textContent = t.classList.contains('folded') ? '▸' : '▾';
+  };
+  /* 좁은 화면에서는 접힌 채로 시작합니다 — 펼쳐두면 화면 위쪽 1/3 을 덮습니다.
+     한 번 누르면 펼쳐지고, 그 선택은 그대로 유지됩니다. */
+  if (isMobile()) { $('todo').classList.add('folded'); head.querySelector('span').textContent = '▸'; }
+})();
+
 /* 조이스틱 */
 (function () {
-  const el = $('stick'), knob = $('knob'), R = 36;
+  const el = $('stick'), knob = $('knob');
   let active = false;
-  const setKnob = (dx, dy) => { knob.style.left = (56 + dx) + 'px'; knob.style.top = (56 + dy) + 'px'; };
+  /* ★ 예전에는 가운데를 56px 로 **박아뒀습니다** (112px 짜리 기준).
+     모바일에서 조이스틱을 104px 로 줄이면 손잡이가 한쪽으로 치우칩니다.
+     실제 크기에서 계산합니다. */
+  const half = () => el.offsetWidth / 2;
+  const radius = () => el.offsetWidth * 0.32;
+  const setKnob = (dx, dy) => { knob.style.left = (half() + dx) + 'px'; knob.style.top = (half() + dy) + 'px'; };
   function onMove(e) {
     if (!active) return;
+    const R = radius();
     const r = el.getBoundingClientRect();
     let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
     const len = Math.hypot(dx, dy);

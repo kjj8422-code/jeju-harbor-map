@@ -81,8 +81,13 @@ const noUi = [];
     const covered = guarded.some(Boolean) || hasUi;
     /* 클릭을 아예 안 받는 요소(pointer-events:none)는 표시가 필요 없습니다 */
     const id = idm ? idm[1] : null;
-    const cssBlock = id ? (html.match(new RegExp(`#${id}\\{[^}]*\\}`)) || [''])[0] : '';
-    const noPointer = /pointer-events\s*:\s*none/.test(cssBlock)
+    /* ★ 한 id 의 CSS 블록은 **여러 개**일 수 있습니다 (PC 용 + 모바일 용 등).
+       예전에는 첫 번째 블록만 보고 판정해서, 모바일 규칙이 앞에 붙은 뒤로는
+       원래 블록의 pointer-events:none 을 못 찾아 멀쩡한 요소를 잘못 지적했습니다. */
+    const cssBlocks = id
+      ? [...html.matchAll(new RegExp(`#${id}\\s*\\{[^}]*\\}`, 'g'))].map(m => m[0]).join(' ')
+      : '';
+    const noPointer = /pointer-events\s*:\s*none/.test(cssBlocks)
                    || /pointer-events\s*:\s*none/.test(attrs);
     if (id && id !== 'stage' && !covered && !noPointer) noUi.push(id);
     guarded[depth] = hasUi || noPointer;

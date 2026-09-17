@@ -171,6 +171,14 @@ export function resize() {
   const w = R.container.clientWidth;
   const h = R.container.clientHeight;
   R.camera.aspect = w / h;
+  /* ★ 세로로 긴 화면(휴대폰)에서는 보이는 폭이 확 줄어듭니다.
+     three.js 의 fov 는 **세로** 기준이라, 화면이 좁아지면 가로가 그만큼 잘립니다.
+     휴대폰 세로(비율 0.46)에서는 성벽 한 장이 화면을 다 덮어서 주변이 안 보였습니다.
+     비율이 1 보다 작으면 fov 를 넓혀 **가로로 보이는 폭을 지켜줍니다.** */
+  const base = 55;
+  R.camera.fov = R.camera.aspect < 1
+    ? Math.min(78, base / Math.max(0.4, R.camera.aspect) * 0.62)
+    : base;
   R.camera.updateProjectionMatrix();
   R.renderer.setSize(w, h, false);
   if (R.composer) R.composer.setSize(w, h);
