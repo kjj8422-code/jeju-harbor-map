@@ -1,0 +1,228 @@
+[
+	{
+		"Name": "Day11",
+		"Day": 11,
+		"WaveName": "황건적의 습격",
+		"WaveNote": "튜토리얼 웨이브 · 소수 약체",
+		"WaveStatScale": 1.0,
+		"TelegraphSeconds": 5.0,
+		"Groups": [
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Grunt.BP_Grunt_C",
+				"Count": 10,
+				"StatMultiplier": 1.0,
+				"SpawnPointIndex": 0,
+				"SpawnInterval": 0.3,
+				"StartDelay": 0.0
+			}
+		]
+	},
+	{
+		"Name": "Day22",
+		"Day": 22,
+		"WaveName": "산적 무리",
+		"WaveNote": "다수 약체 · 성벽의 필요성을 배우는 구간",
+		"WaveStatScale": 1.0,
+		"TelegraphSeconds": 5.0,
+		"Groups": [
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Grunt.BP_Grunt_C",
+				"Count": 12,
+				"StatMultiplier": 1.35,
+				"SpawnPointIndex": 0,
+				"SpawnInterval": 0.25,
+				"StartDelay": 0.0
+			},
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Grunt.BP_Grunt_C",
+				"Count": 6,
+				"StatMultiplier": 1.35,
+				"SpawnPointIndex": 1,
+				"SpawnInterval": 0.4,
+				"StartDelay": 6.0
+			}
+		]
+	},
+	{
+		"Name": "Day33",
+		"Day": 33,
+		"WaveName": "산적 두목",
+		"WaveNote": "1막 보스 · 함정의 가치를 배우는 구간",
+		"WaveStatScale": 1.0,
+		"TelegraphSeconds": 5.0,
+		"Groups": [
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Grunt.BP_Grunt_C",
+				"Count": 14,
+				"StatMultiplier": 1.65,
+				"SpawnPointIndex": 0,
+				"SpawnInterval": 0.25,
+				"StartDelay": 0.0
+			},
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Bandit_Elite.BP_Bandit_Elite_C",
+				"Count": 4,
+				"StatMultiplier": 1.0,
+				"SpawnPointIndex": 1,
+				"SpawnInterval": 1.0,
+				"StartDelay": 4.0
+			},
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_BanditChief.BP_BanditChief_C",
+				"Count": 1,
+				"StatMultiplier": 1.0,
+				"SpawnPointIndex": 0,
+				"SpawnInterval": 0.1,
+				"StartDelay": 10.0
+			}
+		]
+	},
+	{
+		"Name": "Day44",
+		"Day": 44,
+		"WaveName": "서량 기병",
+		"WaveNote": "빠른 돌진형 · 경로 차단을 요구",
+		"WaveStatScale": 1.0,
+		"TelegraphSeconds": 5.0,
+		"Groups": [
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Cavalry.BP_Cavalry_C",
+				"Count": 16,
+				"StatMultiplier": 1.0,
+				"SpawnPointIndex": 0,
+				"SpawnInterval": 0.2,
+				"StartDelay": 0.0
+			}
+		]
+	},
+	{
+		"Name": "Day55",
+		"Day": 55,
+		"WaveName": "남만 야수",
+		"WaveNote": "고체력 탱커형 · 화력을 요구",
+		"WaveStatScale": 1.0,
+		"TelegraphSeconds": 5.0,
+		"Groups": [
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Beast.BP_Beast_C",
+				"Count": 12,
+				"StatMultiplier": 1.0,
+				"SpawnPointIndex": 2,
+				"SpawnInterval": 0.5,
+				"StartDelay": 0.0
+			}
+		]
+	},
+	{
+		"Name": "Day66",
+		"Day": 66,
+		"WaveName": "오두미도 광신도",
+		"WaveNote": "2막 보스 · 2방향 동시 공격",
+		"WaveStatScale": 1.0,
+		"TelegraphSeconds": 6.0,
+		"Groups": [
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Zealot.BP_Zealot_C",
+				"Count": 14,
+				"StatMultiplier": 1.0,
+				"SpawnPointIndex": 0,
+				"SpawnInterval": 0.25,
+				"StartDelay": 0.0
+			},
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Zealot.BP_Zealot_C",
+				"Count": 14,
+				"StatMultiplier": 1.0,
+				"SpawnPointIndex": 1,
+				"SpawnInterval": 0.25,
+				"StartDelay": 0.0
+			},
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_ZealotLeader.BP_ZealotLeader_C",
+				"Count": 1,
+				"StatMultiplier": 1.0,
+				"SpawnPointIndex": 1,
+				"SpawnInterval": 0.1,
+				"StartDelay": 12.0
+			}
+		]
+	},
+	{
+		"Name": "Day77",
+		"Day": 77,
+		"WaveName": "역병의 밤",
+		"WaveNote": "자원 생산 저하 디버프 동반",
+		"WaveStatScale": 1.1,
+		"TelegraphSeconds": 5.0,
+		"Groups": [
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Plagued.BP_Plagued_C",
+				"Count": 26,
+				"StatMultiplier": 1.0,
+				"SpawnPointIndex": 3,
+				"SpawnInterval": 0.2,
+				"StartDelay": 0.0
+			}
+		]
+	},
+	{
+		"Name": "Day88",
+		"Day": 88,
+		"WaveName": "대화공(大火攻)",
+		"WaveNote": "건물 지속 피해 · 수리 압박",
+		"WaveStatScale": 1.15,
+		"TelegraphSeconds": 5.0,
+		"Groups": [
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Firebrand.BP_Firebrand_C",
+				"Count": 22,
+				"StatMultiplier": 1.0,
+				"SpawnPointIndex": 0,
+				"SpawnInterval": 0.25,
+				"StartDelay": 0.0
+			},
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Bandit_Elite.BP_Bandit_Elite_C",
+				"Count": 6,
+				"StatMultiplier": 1.3,
+				"SpawnPointIndex": 2,
+				"SpawnInterval": 0.8,
+				"StartDelay": 5.0
+			}
+		]
+	},
+	{
+		"Name": "Day99",
+		"Day": 99,
+		"WaveName": "최후의 결전",
+		"WaveNote": "초대형 웨이브 + 상대 기지 동시 공략",
+		"WaveStatScale": 1.25,
+		"TelegraphSeconds": 8.0,
+		"Groups": [
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Grunt.BP_Grunt_C",
+				"Count": 30,
+				"StatMultiplier": 2.0,
+				"SpawnPointIndex": 0,
+				"SpawnInterval": 0.15,
+				"StartDelay": 0.0
+			},
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_Bandit_Elite.BP_Bandit_Elite_C",
+				"Count": 8,
+				"StatMultiplier": 1.5,
+				"SpawnPointIndex": 1,
+				"SpawnInterval": 0.6,
+				"StartDelay": 8.0
+			},
+			{
+				"MonsterClass": "/Game/SamGuk99/Blueprints/Monsters/BP_FinalBoss.BP_FinalBoss_C",
+				"Count": 1,
+				"StatMultiplier": 1.0,
+				"SpawnPointIndex": 0,
+				"SpawnInterval": 0.1,
+				"StartDelay": 20.0
+			}
+		]
+	}
+]

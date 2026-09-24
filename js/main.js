@@ -1,0 +1,2179 @@
+/* ==================================================================
+   부팅 · 조작 · 화면 연결
+   규칙(sim) ↔ 화면(render3d) 을 이어주고, 입력을 받습니다.
+   ================================================================== */
+
+import * as C from './config.js';
+import * as Sim from './sim.js';
+import * as R3 from './render3d.js';
+import * as Models from './models.js';
+import * as Audio from './audio.js';
+
+const $ = id => document.getElementById(id);
+let S = null, selHero = 1, paused = false, uiOpen = true;
+let buildSel = null, soundOn = true;
+/* ★ 저장값을 안전하게 읽습니다.
+   Number('abc') 는 NaN 이고, NaN 은 어떤 계산을 해도 NaN 으로 번집니다.
+   실제로 저장값이 망가진 상태에서 상점을 열었더니 화면에 **NaN 이 세 군데** 찍혔습니다.
+   (브라우저 저장소는 다른 탭·확장·사용자가 건드릴 수 있으니 늘 의심해야 합니다) */
+function numStore(key, dflt = 0, min = 0) {
+  const v = Number(localStorage.getItem(key));
+  return Number.isFinite(v) ? Math.max(min, v) : dflt;
+}
+let wallet = numStore('sg3d_shard');
+
+/* 뽑아서 열린 장수들 — 기본 3명은 항상 열려 있습니다 */
+function unlockedHeroes() {
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem('sg3d_heroes') || '[]'); } catch (e) { saved = []; }
+  return new Set([...C.FREE_HEROES, ...saved]);
+}
+function unlockHero(id) {
+  const set = unlockedHeroes();
+  if (set.has(id)) return false;
+  const saved = [...set].filter(x => !C.FREE_HEROES.includes(x));
+  saved.push(id);
+  localStorage.setItem('sg3d_heroes', JSON.stringify(saved));
+  return true;
+}
+
+/* ---------------- 소리 ----------------
+   실제 합성은 js/audio.js 가 합니다. 여기서는 "언제 어떤 소리를 낼지"만 정합니다. */
+let soundOnMusic = true;
+
+/* 브라우저는 사용자가 한 번이라도 누르기 전에는 소리를 못 냅니다(자동재생 차단).
+   그래서 첫 입력 때 오디오를 깨웁니다. */
+function wakeAudio() {
+  Audio.ensure();
+  if (soundOnMusic) Audio.startMusic();
+  window.removeEventListener('pointerdown', wakeAudio);
+  window.removeEventListener('keydown', wakeAudio);
+}
+window.addEventListener('pointerdown', wakeAudio);
+window.addEventListener('keydown', wakeAudio);
+
+/** 무기에 맞는 타격음을 고릅니다 — 검·활·극이 서로 다르게 들려야 합니다 */
+function hitSoundFor(crit) {
+  if (crit) return 'hitCrit';
+  const w = S ? S.heroDef.weapon : 'sword';
+  return w === 'bow' ? 'hitBow' : w === 'halberd' ? 'hitHalberd' : 'hitSword';
+}
+
+function refreshSkillBar() {
+  if (!S) return;
+  const bar = $('skillBar');
+  if (!bar) return;
+  const defs = S.heroDef.skills || [];
+  if (bar.dataset.hero !== S.heroDef.id) {
+    bar.dataset.hero = S.heroDef.id;
+    bar.innerHTML = defs.map((sk, i) =>
+      `<button class="skillBtn${sk.ult ? ' ult' : ''}" data-slot="${i}" title="${sk.desc}">
+         <span class="k">${sk.key}</span><span class="n">${sk.name}</span>
+         <span class="cd" id="skcd${i}"></span></button>`).join('');
+    bar.querySelectorAll('[data-slot]').forEach(b =>
+      b.onclick = () => doSkill(Number(b.dataset.slot)));
+  }
+  for (let i = 0; i < defs.length; i++) {
+    const el = $('skcd' + i);
+    if (!el) continue;
+    const cd = Math.max(0, S.hero.skillCd[i]);
+    el.textContent = cd > 0 ? cd.toFixed(1) : '';
+    el.parentElement.classList.toggle('ready', cd <= 0);
+  }
+}
+
+/* ---------------- 화면 알림 ---------------- */
+function toast(msg) {
+  const box = $('toast');
+  const el = document.createElement('div');
+  el.className = 'toastItem'; el.innerHTML = msg;
+  box.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+  while (box.children.length > 4) box.firstChild.remove();
+}
+
+function addDamageNumber(e) {
+  const el = document.createElement('div');
+  el.className = 'dmgNum' + (e.crit ? ' crit' : '') + (e.src === 'trap' ? ' trap' : '');
+  el.textContent = (e.crit ? '' : '-') + e.amount + (e.crit ? '!' : '');
+  $('fxLayer').appendChild(el);
+  floaters.push({ el, x: e.x + (Math.random() - 0.5) * 14, y: e.y + (Math.random() - 0.5) * 10,
+                  life: e.crit ? 1.2 : 0.9, rise: 0 });
+  if (floaters.length > 60) { const f = floaters.shift(); f.el.remove(); }
+}
+
+const floaters = [];
+function addFloater(x, y, text, color) {
+  const el = document.createElement('div');
+  el.className = 'fxItem';
+  el.textContent = text;
+  el.style.color = color;
+  $('fxLayer').appendChild(el);
+  floaters.push({ el, x, y, life: 1.1, rise: 0 });
+  if (floaters.length > 40) { const f = floaters.shift(); f.el.remove(); }
+}
+function updateFloaters(dt) {
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    const f = floaters[i];
+    f.life -= dt; f.rise += dt * 0.9;
+    if (f.life <= 0) { f.el.remove(); floaters.splice(i, 1); continue; }
+    const p = R3.worldToScreen(f.x, f.y, 1.3 + f.rise);
+    if (!p.visible) { f.el.style.display = 'none'; continue; }
+    f.el.style.display = '';
+    f.el.style.left = p.x + 'px';
+    f.el.style.top = p.y + 'px';
+    f.el.style.opacity = Math.min(1, f.life);
+  }
+}
+
+/* ---------------- 체력 바 (화면에 겹쳐 그립니다) ----------------
+   3D 물체로 만들면 적 25마리에 draw call 50번이 추가됩니다.
+   화면 위에 얇은 막대를 겹쳐 그리면 draw call 0으로 같은 정보를 줍니다. */
+const hpBars = new Map();
+function getHpBar(key) {
+  let b = hpBars.get(key);
+  if (!b) {
+    const el = document.createElement('div');
+    el.className = 'hpBar';
+    el.innerHTML = '<i></i>';
+    $('fxLayer').appendChild(el);
+    b = { el, fill: el.firstChild, mode: 'hp' };
+    hpBars.set(key, b);
+  }
+  return b;
+}
+function updateHpBars() {
+  if (!S) return;
+  const live = new Set();
+
+  // 적 — 체력이 가득하면 숨깁니다 (화면이 지저분해지지 않게)
+  for (const m of S.monsters) {
+    const ratio = Math.max(0, m.hp / m.maxHp);
+    if (ratio >= 0.999 && !m.boss) continue;
+    live.add(m);
+    const b = getHpBar(m);
+    const p = R3.worldToScreen(m.x, m.y, m.boss ? 3.4 : 2.1);
+    if (!p.visible) { b.el.style.display = 'none'; continue; }
+    b.el.style.display = '';
+    b.el.style.left = p.x + 'px';
+    b.el.style.top = p.y + 'px';
+    if (b.mode !== 'hp') { b.mode = 'hp'; b.el.textContent = ''; b.el.appendChild(b.fill); }
+    b.el.className = 'hpBar' + (m.boss ? ' boss' : '');
+    b.fill.style.width = (ratio * 100) + '%';
+    b.fill.style.background = m.boss ? '#E0B44A' : ratio > 0.4 ? '#C6412F' : '#8C2B1F';
+  }
+
+  // 병사·용병 — 다쳤을 때만. 쓰러진 병사는 복귀까지 남은 초를 머리 위에 띄웁니다.
+  for (const so of S.soldiers) {
+    const ratio = Math.max(0, so.hp / so.maxHp);
+    if (!so.down && ratio >= 0.999) continue;
+    live.add(so);
+    const b = getHpBar(so);
+    const p = R3.worldToScreen(so.x, so.y, 1.9);
+    if (!p.visible) { b.el.style.display = 'none'; continue; }
+    b.el.style.display = '';
+    b.el.style.left = p.x + 'px';
+    b.el.style.top = p.y + 'px';
+    const mode = so.down ? 'down' : 'hp';
+    if (b.mode !== mode) {                       // 모드가 바뀔 때만 DOM 을 손댑니다
+      b.mode = mode;
+      if (mode === 'down') { b.el.className = 'downTimer'; b.el.textContent = ''; }
+      else { b.el.className = 'hpBar' + (so.merc ? ' merc' : ''); b.el.textContent = ''; b.el.appendChild(b.fill); }
+    }
+    if (mode === 'down') {
+      b.el.textContent = `🩹 ${so.name} 복귀 ${so.downT.toFixed(1)}초`;
+    } else {
+      b.fill.style.width = (ratio * 100) + '%';
+      b.fill.style.background = so.merc ? '#5B8FC7' : '#5FAE72';
+    }
+  }
+
+  // 장수 — 항상 표시 (내 상태를 눈을 안 옮기고 보게)
+  if (!S.hero.dead) {
+    live.add(S.hero);
+    const b = getHpBar(S.hero);
+    const p = R3.worldToScreen(S.hero.x, S.hero.y, 2.35);
+    if (p.visible) {
+      b.el.style.display = '';
+      b.el.style.left = p.x + 'px';
+      b.el.style.top = p.y + 'px';
+      const ratio = Math.max(0, S.hero.hp / S.hero.maxHp);
+      b.el.className = 'hpBar hero' + (S.hero.invuln > 0 ? ' invuln' : '');
+      b.fill.style.width = (ratio * 100) + '%';
+      b.fill.style.background = S.hero.guard > 0 ? '#5B8FC7' : ratio > 0.35 ? '#5FAE72' : '#C6412F';
+    } else b.el.style.display = 'none';
+  }
+
+  for (const [k, b] of hpBars) {
+    if (!live.has(k)) { b.el.remove(); hpBars.delete(k); }
+  }
+}
+
+/* ---------------- 부활 카운트다운 ----------------
+   쓰러진 다음 "언제 돌아오는지" 를 모르면 그냥 멈춘 것처럼 느껴집니다.
+   남은 초를 크게 보여주고, 탈락이 아니라는 것을 같이 적어둡니다. */
+let respawnTotal = 0;
+function updateRespawnBox() {
+  const box = $('respawnBox');
+  if (!box || !S) return;
+  const h = S.hero;
+  if (!h.dead) { if (box.style.display !== 'none') box.style.display = 'none'; respawnTotal = 0; return; }
+  if (!respawnTotal) respawnTotal = Math.max(0.1, h.respawn);
+  box.style.display = 'block';
+  $('respawnSec').textContent = Math.max(0, h.respawn).toFixed(1);
+  $('respawnBar').style.width = Math.min(100, (1 - h.respawn / respawnTotal) * 100) + '%';
+}
+
+/* ---------------- 시작 ---------------- */
+/* 난이도 — 고른 값은 다음 판에도 이어집니다 */
+let selDiff = localStorage.getItem('sg3d_diff') || C.DEFAULT_DIFF;
+if (!C.DIFFS.some(d => d.id === selDiff)) selDiff = C.DEFAULT_DIFF;
+
+function renderDiffCards() {
+  const row = $('diffRow');
+  if (!row) return;
+  row.innerHTML = C.DIFFS.map(d => `
+    <button class="diffCard${d.id === selDiff ? ' on' : ''}" data-diff="${d.id}"
+            style="border-top-color:${d.color}">
+      <span class="dh"><span class="di">${d.icon}</span>
+        <span class="dn" style="color:${d.color}">${d.name}</span>
+        <span class="dt">${d.tag}</span></span>
+      <span class="dd">${d.desc}</span>
+      <span class="dx">${d.detail}</span>
+    </button>`).join('');
+  row.querySelectorAll('[data-diff]').forEach(b => {
+    b.onclick = () => { selDiff = b.dataset.diff;
+      localStorage.setItem('sg3d_diff', selDiff);
+      renderDiffCards(); Audio.play('objective'); };
+  });
+}
+
+function startGame(heroId) {
+  for (const [, b] of hpBars) b.el.remove();
+  hpBars.clear();
+  const hid = heroId || C.GENERALS[selHero].id;
+  S = Sim.createSim(hid, awakenOf(hid), selDiff);
+  R3.buildWorld(S);
+  buildSel = null; paused = false;
+  /* 지난 판의 연출 흔적을 지웁니다 — 배너·섬광·일출이 클래스로 남아 있으면
+     새 판 첫 프레임에 잠깐 비칠 수 있습니다 */
+  if (dawnTimer) { clearTimeout(dawnTimer); dawnTimer = null; }
+  for (const id of ['surgeBanner', 'flash', 'dawn', 'dawnWord'])
+    { const el = $(id); if (el) el.classList.remove('on'); }
+  { const wb = $('warBar'); if (wb) wb.classList.remove('on'); }
+  closeAll();
+  refreshBuildCards(); refreshSoldiers(); refreshHUD(); refreshObjective();
+  const bar0 = $('skillBar'); if (bar0) bar0.dataset.hero = '';
+  refreshSkillBar();
+  refreshMercs();
+  Audio.ensure(); if (soundOnMusic) Audio.startMusic();
+  toast(`<b>1일차</b> — 99일을 버티면 승리합니다 `
+      + `(<b style="color:${S.diff.color}">${S.diff.icon} ${S.diff.name}</b>)`);
+  const d0 = Sim.upcomingDirs(S).map(Sim.dirName).join(' · ');
+  toast(`첫 대란은 <b>11일</b> · <b style="color:#E0554A">${d0}</b>에서 옵니다 — 바닥의 붉은 화살표가 그 길입니다`);
+}
+
+/* ---------------- 이벤트 처리 ---------------- */
+function handleEvents() {
+  for (const e of Sim.drainEvents(S)) {
+    switch (e.type) {
+      case 'toast': toast(e.msg); break;
+      case 'fx': addFloater(e.x, e.y, e.text, e.color); break;
+      case 'sound': Audio.play(e.name); break;
+      case 'build':
+        if (e.kind === 'wall') R3.addWall(e.tx, e.ty);
+        else if (e.kind === 'trap') R3.addTrap(e.tx, e.ty);
+        /* ★ 예전에는 structs 의 '마지막' 것을 그렸습니다.
+              한 프레임에 시설이 둘 이상 생기면 같은 것을 두 번 그리고 나머지는
+              structMeshes 에 등록되지 않아, 화면에는 서 있는데 지울 방법이 없는
+              유령 건물이 됐습니다. 이벤트가 tx·ty 를 들고 오니 그걸로 찾습니다. */
+        else R3.addStruct(S.structs.find(st => st.tx === e.tx && st.ty === e.ty));
+        if (e.kind === 'wall') R3.markPathDirty();   // 목책이 길을 바꿉니다
+        refreshBuildCards();
+        break;
+      case 'wallBroken': R3.removeWall(e.tx, e.ty); R3.markPathDirty(); Audio.play('wallBreak'); break;
+      case 'structRemoved': R3.removeStruct(e.tx, e.ty); break;
+      case 'demolished': refreshBuildCards(); refreshSoldiers(); refreshHUD(); break;
+      case 'trapBroken': R3.removeTrap(e.tx, e.ty); break;
+      case 'nodeDepleted': R3.refreshNodes(S); break;
+      case 'soldiers': refreshSoldiers(); break;
+      case 'objective': refreshObjective(); break;
+      case 'warn':
+        $('waveAlert').style.display = 'block';
+        $('waTitle').textContent = e.name;
+        $('waSub').innerHTML = `${e.note}<br>공격 방향: <b>${e.dirs.map(Sim.dirName).join(' · ')}</b>`
+          + `<br><span style="font-size:11px;opacity:.8">바닥의 붉은 화살표가 적이 걸어올 길입니다</span>`;
+        break;
+      case 'nightStart':
+        $('waveAlert').style.display = 'none';
+        toast(`<b style="color:#C6412F">${e.name}</b> — 몬스터 ${e.count}마리`
+            + (e.surges ? ` · <b>${e.surges}차례</b>에 나눠 밀려옵니다` : ''));
+        $('warBar').classList.add('on');
+        break;
+      /* ── 진격 — "적 본대가 밀려온다" ────────────────────────
+         같은 수의 적이라도 **한꺼번에 밀려오는 순간**이 있어야 밤이 사건이 됩니다.
+         배너 + 화면 흔들림 + 붉은 섬광 + 징·함성을 한 번에 터뜨립니다. */
+      case 'surge': surgeBanner(e); break;
+      case 'shot': R3.spawnArrow(e.from, e.to); Audio.play('shoot'); break;
+      case 'towerShot': R3.spawnArrow(e.from, e.to); break;
+      case 'hitNumber':
+        addDamageNumber(e);
+        if (e.src === 'trap') Audio.play('hitTrap');
+        break;
+      case 'hitSpark':
+        R3.spawnHitSpark(e.x, e.y, e.crit);
+        Audio.play(hitSoundFor(e.crit));
+        if (e.crit) R3.shakeCamera(0.22);
+        break;
+      case 'baseUpgraded': R3.rebuildBase(S); refreshHUD(); break;
+      case 'crafted': refreshCraft(); refreshBuildCards(); break;
+      case 'invulnBlock': R3.shakeCamera(0.05); Audio.play('block'); break;
+      case 'heroHit': R3.shakeCamera(0.28); Audio.play('heroHit'); break;
+      case 'heroSwing':
+        Audio.play(e.weapon === 'bow' ? 'shoot' : e.weapon === 'halberd' ? 'swingBig' : 'swing');
+        if (e.weapon !== 'bow') R3.shakeCamera(0.05);
+        break;
+      case 'monsterSwing': R3.shakeCamera(0.06); break;
+      case 'skillFx':
+        if (e.kind === 'arc' || e.kind === 'spin') {
+          const col = S.heroDef.color === '#E08B3C' ? 0xE08B3C : 0xffe0a0;
+          R3.spawnShockwave(e.x, e.y, e.range, e.ult ? 0xFFD98A : col, e.ult ? 0.8 : 0.45);
+          if (e.ult) {                       // 궁극기는 파동을 세 겹으로 겹칩니다
+            R3.spawnShockwave(e.x, e.y, e.range * 0.62, 0xffffff, 0.55);
+            R3.spawnShockwave(e.x, e.y, e.range * 1.25, col, 1.0);
+            R3.spawnAura(0x9fd8ff, 1.3);
+          }
+          R3.shakeCamera(e.ult ? 0.85 : 0.34);
+        } else if (e.kind === 'pierce') {
+          R3.spawnBeam(e.x, e.y, e.facing, e.range, e.ult ? 0xFFD98A : 0x9fd8ff);
+          if (e.ult) { R3.spawnAura(0x9fd8ff, 1.2); R3.spawnShockwave(e.x, e.y, e.range * 0.3, 0xffffff, 0.5); }
+          R3.shakeCamera(e.ult ? 0.6 : 0.2);
+        } else if (e.kind === 'multi') {
+          if (e.ult) { R3.spawnAura(0x9fd8ff, 1.3); R3.shakeCamera(0.4); }
+        } else if (e.kind === 'guard') {
+          R3.spawnAura(0x5B8FC7, e.dur);
+        } else if (e.kind === 'frenzy') {
+          R3.spawnAura(0xE08B3C, e.dur);
+          R3.shakeCamera(0.2);
+        }
+        break;
+      case 'report': showReport(e); break;
+      case 'end': showEnd(e); break;
+      case 'day': refreshHUD(); refreshSoldiers(); break;
+      case 'respawn': Audio.play('respawn'); break;
+      case 'baseHit': Audio.play('hitWall'); break;
+    }
+  }
+}
+
+/* ---------------- HUD ---------------- */
+function refreshHUD() {
+  /* 지금 난이도를 HUD 에 계속 띄웁니다.
+     예전에는 시작할 때 토스트로 한 번 알려주고 2초 뒤 사라져서,
+     한참 하다 보면 자기가 무슨 난이도로 하는지 알 길이 없었습니다. */
+  layoutMobileOverlays();
+  const dEl = $('hDiff');
+  if (dEl && S) dEl.innerHTML =
+    `<b style="color:${S.diff.color}" title="${S.diff.detail}">${S.diff.icon} ${S.diff.name}</b> · `;
+  if (!S) return;
+  const act = C.actOf(S.day);
+  $('hDay').innerHTML = `Day ${S.day} <span>/ ${C.TOTAL_DAYS} · ${act.act}막 ${act.name}</span>`;
+  $('hPhase').textContent = S.phase === 'night' ? '밤 · 방어'
+    : S.phase === 'warn' ? '해질녘 · 대란 임박' : '낮 · 채집과 건설';
+  Audio.setPhase(S.phase === 'night' || S.phase === 'warn' ? 'night' : 'day');
+
+  /* ★ 다음 날까지 얼마나 남았는지.
+     이게 없으면 "지금 캐도 되나, 지어도 되나" 를 판단할 수 없습니다. */
+  /* ★ 여기서 게임이 통째로 죽은 적이 있습니다.
+     예전 코드는 낮 분기에서 `$('hDayLeft')` 를 먼저 건드린 뒤,
+     .dt 의 innerHTML 을 `<b id="hDayLeft">…</b>` 로 다시 썼습니다.
+     그런데 밤·해질녘 분기는 .dt 를 통째로 갈아엎어 그 <b> 를 지웁니다.
+     → 밤이 끝나고 다시 낮이 되는 첫 프레임에 $('hDayLeft') 가 null 이 되어
+       TypeError 가 나고, frame() 마지막 줄의 requestAnimationFrame 까지
+       도달하지 못해 **루프가 영구 정지**했습니다(11일에서 멈춤).
+     이제 innerHTML 한 번만 쓰고, 사라질 수 있는 id 는 참조하지 않습니다. */
+  const dt = $('dayTimer'), dtText = dt.querySelector('.dt');
+  if (S.phase === 'day') {
+    dt.classList.remove('night');
+    const left = Math.max(0, C.DAY_SEC - S.dayT);
+    $('hDayBar').style.width = (S.dayT / C.DAY_SEC * 100) + '%';
+    dtText.innerHTML = `다음 날까지 <b>${left.toFixed(1)}</b>초`;
+  } else if (S.phase === 'warn') {
+    dt.classList.add('night');
+    const left = Math.max(0, C.WARN_SEC - S.warnT);
+    $('hDayBar').style.width = (S.warnT / C.WARN_SEC * 100) + '%';
+    dtText.innerHTML = `<b style="color:#E0554A">몰려오기까지 ${left.toFixed(1)}초</b>`;
+  } else if (S.phase === 'report') {
+    dt.classList.add('night');
+    $('hDayBar').style.width = '100%';
+    dtText.innerHTML = '<b style="color:#E0B44A">웨이브 리포트</b>';
+  } else {
+    dt.classList.add('night');
+    $('hDayBar').style.width = '100%';
+    dtText.innerHTML = `<b style="color:#E0554A">전투 중</b> — 남은 적 ${S.monsters.length}`;
+  }
+  $('hBaseHp').textContent = Math.max(0, Math.round(S.base.hp));
+  $('hBaseBar').style.width = Math.max(0, S.base.hp / S.base.maxHp) * 100 + '%';
+  $('hHeroName').textContent = S.heroDef.name
+    + (S.hero.dead ? ` — 부활까지 ${Math.max(0, S.hero.respawn).toFixed(1)}초` : '');
+  $('hHeroBar').style.width = Math.max(0, S.hero.hp / S.hero.maxHp) * 100 + '%';
+  $('hWood').textContent = Math.floor(S.res.wood);
+  $('hStone').textContent = Math.floor(S.res.stone);
+  $('hIron').textContent = Math.floor(S.res.iron);
+  $('hHerb').textContent = Math.floor(S.res.herb);
+  $('hHide').textContent = Math.floor(S.res.hide);
+  $('hEssence').textContent = Math.floor(S.res.essence);
+  $('hPotion').textContent = S.potions;
+  $('hBaseLv').textContent = (C.BASE_LEVELS.find(b => b.lv === S.baseLv) || {}).name || '';
+  const wounded = S.soldiers.filter(s => s.down).length;
+  const mercN = S.soldiers.filter(s => s.merc).length;
+  const regular = S.soldiers.length - mercN;
+  $('hSol').textContent = regular + (mercN ? ` +용병 ${mercN}` : '') + (wounded ? ` (부상 ${wounded})` : '');
+  $('hSolMax').textContent = S.camps;
+  $('hShard').textContent = wallet + S.shard;
+
+  const nw = Sim.nextWave(S);
+  $('hNext').innerHTML = nw
+    ? (S.phase === 'night'
+        ? `<span style="color:#E0B44A">전투 중 — 남은 ${S.monsters.length}</span>`
+        : `다음 대란 D-${nw.day - S.day} · ${nw.name}`)
+    : '<span style="color:#5FAE72">모든 대란 격퇴</span>';
+
+  // ★ 침공 방향을 첫날부터 보여줍니다 — 이게 없으면 어디를 막을지 판단할 수 없습니다
+  const dirs = Sim.upcomingDirs(S);
+  /* 폰에서는 이 설명 한 줄이 HUD 상자를 4줄로 만듭니다.
+     "붉은 화살표 = 걸어올 길" 은 📖 안내에 그림과 함께 있으니 좁은 화면에서는 뺍니다. */
+  const narrow = document.body.classList.contains('mob');
+  $('hDirs').innerHTML = dirs.length
+    ? `침공 방향 <b>${dirs.map(Sim.dirName).join(' · ')}</b>`
+      + (narrow ? '' : `<br><span style="opacity:.75">바닥의 붉은 화살표 = 적이 걸어올 길</span>`)
+    : '남은 대란 없음';
+
+  /* ★ 깔아둔 함정 중 몇 개가 실제로 그 길 위에 있는가.
+     목책을 옮겨 길이 바뀌면 이 숫자가 바로 변합니다 — 판단의 근거가 됩니다. */
+  refreshObjective();          // 부족분이 실시간으로 보이게
+  refreshTodo();               // 지금 할 일도 함께
+
+  const tp = Sim.trapsOnPath(S);
+  const ti = $('trapInfo');
+  if (!dirs.length) {
+    // 남은 대란이 없으면 "침공로" 자체가 없습니다. 0/n 으로 겁주지 않습니다.
+    ti.className = '';
+    ti.textContent = '';
+  } else if (!tp.total) {
+    ti.className = '';
+    ti.textContent = narrow ? '함정 없음' : '함정 없음 — 붉은 화살표 위에 까세요';
+  } else {
+    const good = tp.on === tp.total;
+    ti.className = tp.on === 0 ? 'bad' : good ? 'good' : '';
+    ti.innerHTML = `함정 <b>${tp.on}/${tp.total}</b>${narrow ? '' : ' 개가'} 침공로 위`
+      + (tp.on === 0 ? (narrow ? ' ✕' : ' — 한 마리도 못 잡습니다') : good ? ' ✓' : '');
+  }
+
+  $('perf').textContent = `${R3.stats ? '' : ''}${R3.R.stats.fps}fps · draw ${R3.R.stats.calls} · 삼각형 ${(R3.R.stats.tris / 1000).toFixed(0)}k`
+    + (R3.R.quality.shadows ? '' : ' · 그림자 OFF');
+}
+
+/* 현재 목표가 "무언가를 짓거나 만들라" 면, 그 비용과 부족분을 함께 보여줍니다.
+   자동 플레이를 돌려보니 "지금 뭐가 모자란지" 를 모르면 엉뚱한 자원만 캐다가
+   성도 못 올리고 함정도 못 깝니다. 사람도 똑같이 헤맵니다. */
+function objectiveCost(S2, idx) {
+  const o = Sim.OBJECTIVES[idx];
+  if (!o) return null;
+  const t = o.t;
+  if (t.includes('병사를 고용')) return C.SOLDIER_COST;
+  if (/석성|철옹성/.test(t)) { const nx = Sim.nextBaseLevel(S2); return nx ? nx.cost : null; }
+  for (const c of C.CRAFTS) if (t.includes(c.name)) return Sim.craftCost(S2, c.id);
+  for (const b of C.BUILDS) if (t.includes(b.name)) return b.cost;
+  return null;
+}
+
+/* ==================================================================
+   "지금 할 일" 패널
+   ------------------------------------------------------------------
+   팀장님 피드백: "하면서 내가 뭘 해야 하지 라는 생각이 많이 든다."
+   목표 한 줄로는 부족합니다. 지금 할 수 있는 일을 **버튼으로** 띄우고,
+   누르면 바로 그 행동으로 넘어갑니다 (건설 카드 선택 / 제작 화면 / 자원 안내).
+   ================================================================== */
+let guideTarget = null;         // 자원 길잡이가 가리키는 자원지
+
+function doTodo(act) {
+  if (!S || S.over) return;
+  const [kind, arg] = act.split(':');
+  if (kind === 'build') { selectBuild(arg); }
+  else if (kind === 'craft') { refreshCraft(); openScreen('scCraft'); }
+  else if (kind === 'upgrade') { refreshCraft(); openScreen('scCraft'); }
+  else if (kind === 'hire') { toggleTroop(true); }
+  else if (kind === 'gather') {
+    const n = Sim.nearestNodeOf(S, arg);
+    if (n) {
+      guideTarget = n;
+      const R = C.RESOURCES[arg];
+      toast(`가장 가까운 <b>${R.name}</b> 쪽으로 화살표가 나타납니다 — 옆에 서 있으면 자동으로 캡니다`);
+      R3.pingWorld(n.x, n.y);
+    } else toast('근처에 캘 수 있는 곳이 없습니다 — 미니맵의 점을 보세요');
+  }
+}
+
+function refreshTodo() {
+  const box = $('todoList');
+  if (!box || !S) return;
+  const list = Sim.todoList(S, 3);
+  const sig = list.map(t => `${t.id}${t.ready ? 1 : 0}${t.essence}`).join('|');
+  if (box.dataset.sig === sig) return;      // 바뀐 게 없으면 DOM 을 손대지 않습니다
+  box.dataset.sig = sig;
+  box.innerHTML = '';
+  if (!list.length) { box.innerHTML = '<div style="font-size:11px;color:var(--dim)">할 일 없음</div>'; return; }
+  for (const t of list) {
+    const el = document.createElement('button');
+    el.className = 'tdItem' + (t.ready ? '' : ' lack');
+    let cost = '';
+    if (t.cost) {
+      const parts = Object.entries(t.cost).map(([k, v]) => {
+        const have = Math.floor(S.res[k]), R = C.RESOURCES[k];
+        return `<b class="${have >= v ? 'ok' : ''}">${R.icon}${have}/${v}</b>`;
+      });
+      cost = `<span class="tc">${parts.join(' ')}`
+           + (t.essence > 0 ? ` <span class="tessence">⭐${t.essence}로 가능</span>` : '')
+           + '</span>';
+    }
+    el.innerHTML = `<span class="ti">${t.icon}</span><span class="tb">`
+      + `<b class="tt">${t.text}</b><span class="tn">${t.note}</span>${cost}</span>`;
+    el.onclick = () => doTodo(t.act);
+    box.appendChild(el);
+  }
+}
+
+/** 자원 길잡이 — 목표 자원지 방향을 화면에 표시합니다 */
+function updateGuideArrow() {
+  const el = $('guideArrow');
+  if (!el) return;
+  if (!S || !guideTarget || guideTarget.amt <= 0) { el.style.display = 'none'; guideTarget = null; return; }
+  const d = Math.hypot(guideTarget.x - S.hero.x, guideTarget.y - S.hero.y);
+  if (d < C.GATHER_RANGE) { el.style.display = 'none'; guideTarget = null; return; }  // 도착
+  const p = R3.worldToScreen(guideTarget.x, guideTarget.y, 1.6);
+  const R = C.RESOURCES[guideTarget.type];
+  el.style.display = '';
+  if (p.visible) {
+    el.style.left = p.x + 'px'; el.style.top = p.y + 'px';
+    el.textContent = `${R.icon} ${Math.round(d / C.TILE)}칸`;
+  } else {
+    // 화면 밖이면 가장자리에 방향으로 붙입니다
+    const st = $('stage').getBoundingClientRect();
+    const yaw = R3.getCameraYaw();
+    const dx = guideTarget.x - S.hero.x, dy = guideTarget.y - S.hero.y;
+    const sx = dx * Math.cos(yaw) - dy * Math.sin(yaw);
+    const sy = dx * Math.sin(yaw) + dy * Math.cos(yaw);
+    const a = Math.atan2(sx, -sy);
+    const rx = st.width * 0.42, ry = st.height * 0.38;
+    el.style.left = (st.width / 2 + Math.sin(a) * rx) + 'px';
+    el.style.top = (st.height / 2 - Math.cos(a) * ry) + 'px';
+    el.textContent = `${R.icon} ${Math.round(d / C.TILE)}칸 →`;
+  }
+}
+
+function refreshObjective() {
+  const o = Sim.currentObjective(S);
+  if (!o) { $('objective').innerHTML = `목표 — Day ${C.TOTAL_DAYS}까지 거점을 지켜내세요`; return; }
+  const cost = S ? objectiveCost(S, S.objIdx) : null;
+  let need = '';
+  if (cost) {
+    const parts = [];
+    for (const r in cost) {
+      const have = Math.floor(S.res[r]), want = cost[r];
+      const R = C.RESOURCES[r];
+      parts.push(`<span class="oNeed${have >= want ? ' ok' : ''}">${R.icon} ${have}/${want}</span>`);
+    }
+    if (parts.length) need = `<div class="oCost">필요 ${parts.join(' ')}</div>`;
+  }
+  $('objective').innerHTML = `목표 — ${o.t}${need}`;
+}
+
+/* 화면 안 건설 바 — 마우스를 화면 밖으로 내리지 않고 고를 수 있게 합니다.
+   숫자키 1~4 가 그대로 대응합니다. */
+function refreshBuildDock() {
+  const row = $('buildDockRow');
+  if (!row) return;
+  const sig = C.BUILDS.map(b =>
+    `${b.id}${buildSel === b.id ? '*' : ''}${S && Sim.canAfford(S, b.cost) ? '1' : '0'}`
+    + `${b.id === 'forge' && S && S.forge ? 'L' : ''}`).join('|')
+    + (buildSel === DEMOLISH ? '|X*' : '|X');
+  if (row.dataset.sig === sig) return;          // 바뀐 게 없으면 DOM 을 손대지 않습니다
+  row.dataset.sig = sig;
+  row.innerHTML = '';
+  C.BUILDS.forEach((b, i) => {
+    const can = S ? Sim.canAfford(S, b.cost) : false;
+    const locked = b.id === 'forge' && S && S.forge;
+    const el = document.createElement('button');
+    el.className = 'bdBtn' + (buildSel === b.id ? ' on' : '');
+    el.disabled = !can || locked;
+    el.title = b.desc;
+    el.innerHTML = `<span class="num">${i + 1}</span><span class="ic">${b.icon}</span>`
+      + `<span class="tx"><b class="nm">${b.name}</b>`
+      + `<span class="cs${can ? '' : ' lack'}">${locked ? '이미 보유' : Sim.costText(b.cost)}</span></span>`;
+    el.onclick = () => selectBuild(b.id);
+    row.appendChild(el);
+  });
+
+  /* 병력 — 화면 안에서 바로 고용합니다.
+     화면 밖 패널만 있으면 스크롤해야 보이고, 그러면 그 기능이 없는 것과 같습니다. */
+  const troop = document.createElement('button');
+  troop.className = 'bdBtn' + ($('troopPanel').classList.contains('on') ? ' on' : '');
+  troop.title = '병사·용병을 고용합니다 (숫자키 6)';
+  const sN = S ? S.soldiers.filter(x => !x.merc).length : 0;
+  const mN = S ? S.soldiers.filter(x => x.merc).length : 0;
+  troop.innerHTML = `<span class="num">6</span><span class="ic">🗡️</span>`
+    + `<span class="tx"><b class="nm">병력</b>`
+    + `<span class="cs">병사 ${sN}/${S ? S.camps : 0}${mN ? ` · 용병 ${mN}` : ''}</span></span>`;
+  troop.onclick = () => toggleTroop();
+  row.appendChild(troop);
+
+  /* 철거 — 목책을 옮기면 적의 길이 바뀌고, 예전 함정이 길에서 벗어납니다.
+     치울 수 없으면 그 자원이 영원히 묶입니다. 절반을 돌려받고 다시 놓게 합니다. */
+  const del = document.createElement('button');
+  del.className = 'bdBtn del' + (buildSel === DEMOLISH ? ' on' : '');
+  del.title = '목책·함정·건물을 부수고 자원의 절반을 돌려받습니다 (숫자키 5)';
+  del.innerHTML = `<span class="num">5</span><span class="ic">⛏️</span>`
+    + `<span class="tx"><b class="nm">철거</b><span class="cs">절반 회수</span></span>`;
+  del.onclick = () => selectBuild(DEMOLISH);
+  row.appendChild(del);
+}
+
+const DEMOLISH = '__demolish';
+
+/* ---------------- 화면 안 병력 창 ---------------- */
+function toggleTroop(force) {
+  const el = $('troopPanel');
+  const on = force !== undefined ? force : !el.classList.contains('on');
+  el.classList.toggle('on', on);
+  if (on) { refreshTroop(); Audio.play('build'); }
+  const dock = $('buildDockRow');
+  if (dock) dock.dataset.sig = '';        // 버튼 상태를 다시 그리게
+  refreshBuildDock();
+}
+
+function refreshTroop() {
+  const box = $('troopBody');
+  if (!box || !S) return;
+  const reg = S.soldiers.filter(x => !x.merc).length;
+  const mercN = S.soldiers.filter(x => x.merc).length;
+  const rows = [];
+
+  const canS = Sim.canAffordWithEssence(S, C.SOLDIER_COST);
+  const roomS = reg < S.camps;
+  rows.push(`<button class="tpBtn" data-hire="soldier" ${roomS && canS.ok ? '' : 'disabled'}>
+      <b class="n">🗡️ 병사 고용</b>
+      <span class="c">${Sim.costText(C.SOLDIER_COST)}${canS.essence ? ` <b>또는 ⭐${canS.essence}</b>` : ''}</span>
+      <span class="d">${roomS ? '떠나지 않습니다 · 역할을 바꿀 수 있습니다'
+                              : (S.camps === 0 ? '먼저 병영을 지으세요' : `정원이 찼습니다 (${reg}/${S.camps})`)}</span>
+    </button>`);
+
+  /* ★ 용병에도 정원이 있습니다 (거점 단계가 정합니다).
+     예전에는 상한이 없어서 옥새만 있으면 무한정 뽑혔습니다 —
+     화면에 정원이 안 보이면 그 사실 자체를 알 수가 없습니다. */
+  const cap = Sim.mercCap(S);
+  const roomM = mercN < cap;
+  for (const m of C.MERCS) {
+    const enough = totalShard() >= m.cost;
+    rows.push(`<button class="tpBtn" data-hire="${m.id}" ${enough && roomM ? '' : 'disabled'}>
+      <b class="n">${m.icon} ${m.name}</b>
+      <span class="c">🔶 <b>${m.cost}</b>${enough ? '' : ` (보유 ${totalShard()})`}</span>
+      <span class="d">${!roomM ? `정원이 찼습니다 (${mercN}/${cap}) — 성을 올리면 늘어납니다`
+                                : m.desc.split('.')[0] + '.'}</span>
+    </button>`);
+  }
+
+  box.innerHTML = `<div class="tpRow">${rows.join('')}</div>`
+    + `<div class="tpNow">지금 — 병사 <b>${reg}/${S.camps}</b>`
+    + ` · 용병 <b${roomM ? '' : ' style="color:#e39184"'}>${mercN}/${cap}</b>`
+    + ` · 옥새 조각 <b>${totalShard()}</b>`
+    + `<br><span style="opacity:.8">병사 정원은 <b>병영</b>이, 용병 정원은 <b>성 단계</b>가 정합니다 `
+    + `(토성 2 · 석성 3 · 철옹성 4). 병사는 아래 목록에서 눌러 역할을 바꿉니다.</span></div>`;
+
+  box.querySelectorAll('[data-hire]').forEach(b => {
+    b.onclick = () => {
+      const id = b.dataset.hire;
+      if (id === 'soldier') Sim.hireSoldier(S);
+      else if (pullShardIntoRun(C.MERCS.find(m => m.id === id).cost)) Sim.hireMerc(S, id);
+      else { toast('옥새 조각이 부족합니다'); Audio.play('deny'); }
+      handleEvents(); refreshSoldiers(); refreshHUD(); refreshTroop();
+      const dock = $('buildDockRow'); if (dock) dock.dataset.sig = '';
+      refreshBuildDock();
+    };
+  });
+}
+
+/** 건설 카드 선택 — 화면 안 바와 화면 밖 카드가 같은 함수를 씁니다 */
+function selectBuild(id) {
+  buildSel = buildSel === id ? null : id;
+  refreshBuildCards();
+  R3.setBuildMode(!!buildSel);
+  $('modeTag').innerHTML = buildSel
+    ? '🧱 <b style="color:var(--gold)">건설 모드</b> — 땅을 눌러 위치를 잡고 확인'
+    : (isMobile() ? '한 손가락으로 화면을 쓸면 카메라가 돌아갑니다'
+                : '🖱 드래그 = 카메라 회전 · 휠 = 확대');
+  if (!buildSel) cancelBuild();
+  else if (buildSel === DEMOLISH) {
+    $('modeTag').innerHTML = '⛏️ <b style="color:#e39184">철거 모드</b> — 부술 것을 누르세요';
+    toast('부술 것을 누르세요 — <b>자원의 절반</b>을 돌려받습니다');
+  } else {
+    const b = C.BUILDS.find(x => x.id === buildSel);
+    toast(`땅을 ${isMobile() ? '탭해' : '눌러'} <b>${b.name}</b> 위치를 잡으세요`
+        + (b.id === 'trap' ? ' — <b style="color:#E0554A">붉은 화살표 위</b>에 놓아야 잡습니다' : ''));
+  }
+  Audio.play(buildSel ? 'build' : 'deny');
+}
+
+/* 예전에는 화면 밖에도 같은 카드를 한 벌 더 그렸습니다.
+   화면 안 바가 생긴 뒤로는 중복이라 없앴습니다 — 설명은 📖 안내와 버튼 툴팁에 있습니다. */
+function refreshBuildCards() { refreshBuildDock(); }
+
+function refreshSoldiers() {
+  const row = $('sldRow');
+  row.innerHTML = '';
+  refreshMercs();
+  if (!S || !S.soldiers.length) {
+    row.innerHTML = '<span style="font-size:11.5px;color:#7d7466;">고용한 병사가 없습니다.</span>';
+    return;
+  }
+  const NAME = { wood: '목재', stone: '석재', herb: '약초', iron: '철', def: '방어' };
+  const COLOR = { wood: '#5FAE72', stone: '#9E9384', herb: '#6fbf7a', iron: '#c98a4b', def: '#C6412F' };
+  S.soldiers.forEach((s, i) => {
+    const el = document.createElement('button');
+    el.className = 'sldChip' + (s.merc ? ' merc' : '');
+    el.style.borderColor = s.merc ? '#5B8FC7' : COLOR[s.role];
+    const label = s.merc ? `${s.icon} ${s.name}` : `병사 ${i + 1}`;
+    const body = s.down
+      ? `<b style="color:#C6412F">부상 ${s.downT.toFixed(0)}초</b>`
+      : `<b style="color:${s.merc ? '#5B8FC7' : COLOR[s.role]}">${NAME[s.role]}</b>`;
+    el.innerHTML = `${label} · ${body}`
+      + (s.merc ? `<span class="ct">계약 ${s.contract}일 남음</span>` : '');
+    const canCycle = !s.merc || s.merc === 'gatherer';
+    el.title = canCycle ? `눌러서 역할을 바꿉니다 (${Sim.roleList(S, s).map(r => NAME[r]).join(' → ')})`
+                        : '전투 용병은 역할이 고정입니다';
+    el.onclick = () => { if (canCycle) { Sim.cycleRole(S, i); Audio.play('build'); } };
+    row.appendChild(el);
+  });
+}
+
+/* ---------------- 용병 ---------------- */
+function totalShard() { return wallet + (S ? S.shard : 0); }
+
+/** 옥새 조각은 저장분(wallet)과 이번 판(S.shard)에 나뉘어 있습니다.
+    화면에는 합쳐서 보여주므로, 쓸 때도 합쳐서 쓸 수 있게 먼저 모아줍니다. */
+function pullShardIntoRun(need) {
+  if (!S) return false;
+  if (S.shard >= need) return true;
+  const short = need - S.shard;
+  if (wallet < short) return false;
+  wallet -= short; S.shard += short;
+  localStorage.setItem('sg3d_shard', String(wallet));
+  return true;
+}
+
+function refreshMercs() {
+  const row = $('mercRow');
+  if (!row) return;
+  row.innerHTML = '';
+  const cap = S ? Sim.mercCap(S) : 0;
+  const now = S ? Sim.mercCount(S) : 0;
+  const roomM = S ? now < cap : false;
+  C.MERCS.forEach(m => {
+    const have = totalShard();
+    const el = document.createElement('button');
+    el.className = 'mercCard';
+    el.disabled = !S || S.over || have < m.cost || !roomM;
+    el.innerHTML = `<div class="mh"><span class="mn">${m.icon} ${m.name}</span>
+        <span class="mc">🔶 ${m.cost}</span></div>
+      <div class="md">${m.desc}</div>
+      <div class="mt">${roomM ? `💡 ${m.tip}`
+        : `<span style="color:#e39184">정원이 찼습니다 (${now}/${cap}) — 성을 올리면 늘어납니다</span>`}</div>`;
+    el.onclick = () => {
+      if (!S) return;
+      if (!pullShardIntoRun(m.cost)) { toast(`옥새 조각이 부족합니다 — <b>${m.cost}</b> 필요`); Audio.play('deny'); return; }
+      Sim.hireMerc(S, m.id);
+      handleEvents(); refreshSoldiers(); refreshHUD(); refreshMercs();
+    };
+    row.appendChild(el);
+  });
+  const cnt = document.createElement('div');
+  cnt.style.cssText = 'width:100%;font-size:11.5px;color:var(--dim);margin-top:4px;';
+  cnt.innerHTML = `용병 <b style="color:${roomM ? 'var(--gold)' : '#e39184'}">${now}/${cap}</b>명 `
+    + `— 정원은 <b>성 단계</b>가 정합니다 (토성 2 · 석성 3 · 철옹성 4). `
+    + `병영은 <b>병사</b>의 자리라서 용병 수와는 무관합니다.`;
+  row.appendChild(cnt);
+}
+
+/* ==================================================================
+   제작 화면
+   ------------------------------------------------------------------
+   "무기 업글 제작 너무 정신없다" 는 지적을 받고 다시 짰습니다.
+   달라진 점:
+     · 만들 수 있는 것을 **맨 위로** 올립니다 (잠긴 것은 아래로)
+     · 이미 만든 것은 **한 줄로 접습니다** (자리를 차지하지 않게)
+     · 무기 강화는 별(★★☆)로 진행도를 보여줍니다
+     · 못 만드는 이유를 **그 자리에** 적습니다 (무엇이 몇 개 모자란지까지)
+   ================================================================== */
+function craftRow(c) {
+  const owned = Sim.hasCraft(S, c.id);
+  const chk = Sim.canCraft(S, c.id);
+  const cost = Sim.craftCost(S, c.id);
+  const aff = Sim.canAffordWithEssence(S, cost);
+
+  /* 이미 가진 것은 한 줄로 */
+  if (owned) {
+    return `<div class="cDone"><span>${c.icon}</span><b>${c.name}</b>
+      <span class="cEff">${c.effect}</span><span class="cOk">보유</span></div>`;
+  }
+
+  const stars = c.id === 'weapon'
+    ? `<span class="cStar">${'★'.repeat(S.weaponLv)}${'☆'.repeat(c.max - S.weaponLv)}</span>` : '';
+  const count = c.id === 'potion' ? `<span class="cCount">보유 ${S.potions}</span>` : '';
+
+  /* 무기 강화만은 "지금 누르면 어떻게 되는지"를 적습니다.
+     '단계마다 +50%' 라고만 써두면 ★1 인 사람은 자기가 얼마가 되는지 암산해야 합니다. */
+  const effect = c.id === 'weapon'
+    ? `공격력 +${Math.round(C.WEAPON_STEP * S.weaponLv * 100)}% → `
+      + `<b style="color:var(--gold)">+${Math.round(C.WEAPON_STEP * (S.weaponLv + 1) * 100)}%</b>`
+    : c.effect;
+
+  /* 자원 칩 — 모자란 것은 빨갛게, 정수로 메울 수 있으면 알려줍니다 */
+  const chips = Object.entries(cost).map(([k, v]) => {
+    const have = Math.floor(S.res[k]), R = C.RESOURCES[k];
+    return `<span class="cChip${have >= v ? ' ok' : ''}">${R.icon} ${have}/${v}</span>`;
+  }).join('');
+  const essHint = (!aff.ok || aff.essence > 0) && aff.essence > 0 && aff.essence <= S.res.essence
+    ? `<span class="cChip ess">⭐ ${aff.essence}로 가능</span>` : '';
+
+  const locked = !chk.ok;
+  const why = locked
+    ? (chk.why === '자원 부족' || /자원 부족/.test(chk.why)
+        ? (aff.essence > 0 && aff.essence <= S.res.essence ? '' : '자원이 모자랍니다')
+        : chk.why)
+    : '';
+
+  /* 줄 전체가 버튼이지만, 성 올리기 줄에는 '올리기' 버튼이 따로 보입니다.
+     여기에도 같은 모양의 딱지를 붙여야 "눌러도 되는 줄" 인 게 보입니다. */
+  const go = chk.ok ? `<span class="cGo">만들기</span>` : '';
+
+  return `<button class="cItem${locked ? ' locked' : ''}"
+      data-craft="${c.id}" ${chk.ok ? '' : 'disabled'}>
+    <span class="cIcon">${c.icon}</span>
+    <span class="cBody">
+      <span class="cTop"><b class="cName">${c.name}</b>${stars}${count}
+        ${why ? `<span class="cWhy">🔒 ${why}</span>` : ''}</span>
+      <span class="cEff">${effect}</span>
+      <span class="cCost">${chips}${essHint}</span>
+    </span>
+    ${go}
+  </button>`;
+}
+
+function refreshCraft() {
+  if (!S) return;
+
+  /* ── 성 ── */
+  const nx = Sim.nextBaseLevel(S);
+  const upChk = Sim.canUpgradeBase(S);
+  const cur = C.BASE_LEVELS.find(b => b.lv === S.baseLv);
+  $('baseUpgrade').innerHTML = nx
+    ? `<div class="cItem asRow">
+         <span class="cIcon">🏯</span>
+         <span class="cBody">
+           <span class="cTop"><b class="cName">${cur.name} → ${nx.name}</b>
+             <span class="cCount">체력 ${S.base.maxHp} → ${nx.maxHp}</span></span>
+           <span class="cEff">${nx.desc}</span>
+           <span class="cCost">${Object.entries(nx.cost).map(([k, v]) => {
+             const have = Math.floor(S.res[k]), R = C.RESOURCES[k];
+             return `<span class="cChip${have >= v ? ' ok' : ''}">${R.icon} ${have}/${v}</span>`;
+           }).join('')}</span>
+         </span>
+         <button class="btn ${upChk.ok ? 'gold' : ''}" id="btnUpgradeBase"
+           ${upChk.ok ? '' : 'disabled'}>${upChk.ok ? '올리기' : upChk.why}</button>
+       </div>`
+    : `<div class="cDone"><span>🏯</span><b>철옹성</b>
+         <span class="cEff">최고 단계 · 망루가 적을 자동으로 쏩니다</span><span class="cOk">완료</span></div>`;
+  const ub = $('btnUpgradeBase');
+  if (ub) ub.onclick = () => { Sim.upgradeBase(S); handleEvents(); refreshCraft(); refreshHUD(); };
+
+  /* ── 제작 — 만들 수 있는 것을 위로, 가진 것은 아래로 ── */
+  const groups = {};
+  for (const c of C.CRAFTS) (groups[c.group] = groups[c.group] || []).push(c);
+
+  $('craftList').innerHTML = Object.entries(groups).map(([g, list]) => {
+    const sorted = [...list].sort((a, b) => {
+      const oa = Sim.hasCraft(S, a.id) ? 2 : (Sim.canCraft(S, a.id).ok ? 0 : 1);
+      const ob = Sim.hasCraft(S, b.id) ? 2 : (Sim.canCraft(S, b.id).ok ? 0 : 1);
+      return oa - ob;
+    });
+    return `<div class="craftGroup"><h4>${g}</h4>${sorted.map(craftRow).join('')}</div>`;
+  }).join('');
+
+  $('craftList').querySelectorAll('[data-craft]').forEach(b => {
+    b.onclick = () => { Sim.doCraft(S, b.dataset.craft); handleEvents(); refreshCraft(); refreshBuildCards(); refreshHUD(); };
+  });
+}
+
+/* ---------------- 안내 화면 ----------------
+   "무엇을 캐야 하고, 무엇을 지으려면 무엇이 필요한가"를 한 곳에서 봅니다.
+   초보자가 가장 자주 막히는 지점이라 별도 화면으로 뺐습니다. */
+function resChip(key, amount) {
+  const r = C.RESOURCES[key];
+  const have = S ? Math.floor(S.res[key]) : 0;
+  const enough = !amount || have >= amount;
+  return `<span class="resChip${enough ? '' : ' lack'}" title="${r.name}">`
+    + `${r.icon} ${r.name}${amount ? ` <b>${amount}</b>` : ''}`
+    + (amount ? `<i>보유 ${have}</i>` : '') + '</span>';
+}
+function costChips(cost) {
+  return Object.entries(cost || {}).map(([k, v]) => resChip(k, v)).join('');
+}
+
+function refreshGuide() {
+  // 1) 자원 — 어디서 얻고 어디에 쓰는가
+  $('guideRes').innerHTML = Object.entries(C.RESOURCES).map(([k, r]) => {
+    const have = S ? Math.floor(S.res[k]) : 0;
+    const got = S ? Math.floor(S.got[k]) : 0;
+    return `<div class="gRow">
+      <div class="gHead"><span class="gIcon">${r.icon}</span>
+        <b style="color:${r.color}">${r.name}</b>
+        <span class="gHave">보유 ${have}${got ? ` · 누적 ${got}` : ''}</span></div>
+      <div class="gLine"><span class="gTag">어디서</span>${r.from}</div>
+      <div class="gLine"><span class="gTag">어디에</span>${r.use}</div>
+    </div>`;
+  }).join('');
+
+  // 2) 건설 — 무엇이 필요한가
+  $('guideBuild').innerHTML = C.BUILDS.map(b => `
+    <div class="gRow">
+      <div class="gHead"><span class="gIcon">${b.icon}</span><b>${b.name}</b></div>
+      <div class="gLine"><span class="gTag">필요</span>${costChips(b.cost)}</div>
+      <div class="gLine"><span class="gTag">효과</span>${b.desc}</div>
+    </div>`).join('');
+
+  /* 3) 제작 — 8개뿐이지만 '장비 / 시설 강화 / 소모품' 세 묶음으로 나눠 보여 줍니다.
+        한 줄로 쭉 늘어놓으면 뭐부터 만들지가 안 보입니다. */
+  const gGroups = [];
+  for (const c of C.CRAFTS) {
+    let g = gGroups.find(x => x.name === (c.group || '장비'));
+    if (!g) gGroups.push(g = { name: c.group || '장비', items: [] });
+    g.items.push(c);
+  }
+  $('guideCraft').innerHTML = gGroups.map(g =>
+    `<p class="secTitle" style="margin:10px 0 4px;">${g.name}</p>`
+    + g.items.map(c => {
+      const chk = S ? Sim.canCraft(S, c.id) : { ok:false, why:'' };
+      const owned = S ? Sim.hasCraft(S, c.id) : false;
+      return `<div class="gRow${owned ? ' done' : ''}">
+        <div class="gHead"><span class="gIcon">${c.icon}</span><b>${c.name}</b>
+          <span class="gHave">${owned ? '보유 중' : (chk.ok ? '제작 가능' : chk.why)}</span></div>
+        <div class="gLine"><span class="gTag">필요</span>${costChips(S ? Sim.craftCost(S, c.id) : c.cost)}</div>
+        <div class="gLine"><span class="gTag">효과</span>${c.effect}</div>
+      </div>`;
+    }).join('')
+  ).join('');
+
+  /* 4-b) 적의 종류 — 목록도 설명도 config 에서 그대로 끌어옵니다.
+     예전에는 여기 4종이 손으로 박혀 있어서, 적을 늘려도 안내에는 안 나왔습니다. */
+  const ICON = { man:'👹', beast:'🐺', undead:'🧟' };
+  const firstDay = k => {           // 이 적이 처음 나오는 일차를 웨이브에서 직접 찾습니다
+    const w = C.WAVES.find(w => w.mix.some(([kk]) => kk === k));
+    return w ? `${w.day}일~` : '';
+  };
+  $('guideMon').innerHTML = Object.entries(C.MONSTER_KINDS).map(([k, m]) => `
+    <div class="gRow">
+      <div class="gHead"><span class="gIcon">${ICON[m.body] || '👹'}</span>
+        <b style="color:#${m.color.toString(16).padStart(6, '0')}">${m.name}</b>
+        <span class="gHave">${firstDay(k)}</span></div>
+      <div class="gLine"><span class="gTag">특징</span>체력 ×${m.hpMul} · 속도 ×${m.spdMul} · 공격 ×${m.dmgMul}${m.armor ? ` · 받는 피해 -${Math.round(m.armor * 100)}%` : ''}${m.voice ? ' · 다가올 때 웁니다' : ''}</div>
+      <div class="gLine"><span class="gTag">대응</span>${m.tip || ''}</div>
+    </div>`).join('');
+
+  /* 4-b2) 난이도 — 지금 고른 것에 표시가 붙습니다 */
+  const gd = $('guideDiff');
+  if (gd) gd.innerHTML = C.DIFFS.map(d => {
+    const now = S ? S.diff.id === d.id : d.id === selDiff;
+    return `<div class="gRow${now ? ' done' : ''}">
+      <div class="gHead"><span class="gIcon">${d.icon}</span>
+        <b style="color:${d.color}">${d.name}</b>
+        <span class="gHave">${now ? '지금 이 판' : d.tag}</span></div>
+      <div class="gLine"><span class="gTag">성격</span>${d.desc}</div>
+      <div class="gLine"><span class="gTag">수치</span>${d.detail}</div>
+    </div>`;
+  }).join('');
+
+  // 4-c) 병사와 용병
+  $('guideMerc').innerHTML = `
+    <div class="gRow">
+      <div class="gHead"><span class="gIcon">🗡️</span><b>병사</b>
+        <span class="gHave">목재 10 · 석재 5</span></div>
+      <div class="gLine"><span class="gTag">조건</span>병영 1채당 1명까지</div>
+      <div class="gLine"><span class="gTag">특징</span>눌러서 목재 → 석재 → 방어 순으로 역할을 바꿉니다. 떠나지 않습니다.</div>
+    </div>`
+    + C.MERCS.map(m => `
+    <div class="gRow">
+      <div class="gHead"><span class="gIcon">${m.icon}</span><b>${m.name}</b>
+        <span class="gHave">옥새 조각 ${m.cost}</span></div>
+      <div class="gLine"><span class="gTag">조건</span>병영과 무관 · 용병 정원은 <b>성 단계</b>가 정합니다(토성 2 · 석성 3 · 철옹성 4) · ${C.MERC_CONTRACT_DAYS}일 계약</div>
+      <div class="gLine"><span class="gTag">특징</span>${m.desc}</div>
+      <div class="gLine"><span class="gTag">추천</span>${m.tip}</div>
+    </div>`).join('');
+
+  // 4-d) 99일의 흐름
+  $('guideActs').innerHTML = C.ACTS.map(a => {
+    const ws = C.WAVES.filter(w => w.act === a.act);
+    const cur = S && S.day >= a.from && S.day <= a.to;
+    return `<div class="gRow${cur ? ' done' : ''}">
+      <div class="gHead"><span class="gIcon">📜</span><b>${a.act}막 ${a.name}</b>
+        <span class="gHave">${a.from}~${a.to}일${cur ? ' · 현재' : ''}</span></div>
+      <div class="gLine"><span class="gTag">배울 것</span>${a.lesson}</div>
+      <div class="gLine"><span class="gTag">대란</span>${ws.map(w => `${w.day}일 ${w.name}`).join(' · ')}</div>
+    </div>`;
+  }).join('');
+
+  // 4) 성 단계
+  $('guideBase').innerHTML = C.BASE_LEVELS.map(b => {
+    const cur = S && S.baseLv === b.lv;
+    return `<div class="gRow${cur ? ' done' : ''}">
+      <div class="gHead"><span class="gIcon">🏯</span><b>${b.lv}단계 ${b.name}</b>
+        <span class="gHave">${cur ? '현재' : ''}체력 ${b.maxHp}</span></div>
+      <div class="gLine"><span class="gTag">필요</span>${b.cost ? costChips(b.cost) : '기본'}</div>
+      <div class="gLine"><span class="gTag">효과</span>${b.desc}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ---------------- 오버레이 ---------------- */
+function openScreen(id) { closeAll(); $(id).classList.add('on'); uiOpen = true; }
+function closeAll() {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
+  uiOpen = false;
+}
+
+let lastReport = null;
+/* ---------------- 진격 연출 ---------------- */
+function surgeBanner(e) {
+  const box = $('surgeBanner'), fl = $('flash');
+  if (box) {
+    $('sgTitle').textContent = e.label;
+    $('sgSub').innerHTML = `${Sim.dirName(e.side)} 방향 · <b>${e.count}마리</b>`
+      + `  <span style="opacity:.75">(${e.no}/${e.total}차)</span>`;
+    box.classList.remove('on'); void box.offsetWidth;   // 애니메이션 재시작
+    box.classList.add('on');
+  }
+  if (fl) { fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on'); }
+  R3.shakeCamera(e.shake || 0.9, 0.85);   // 길게 울립니다 — 땅이 흔들리는 느낌
+}
+
+/* ---------------- 전황 게이지 ----------------
+   몹 하나하나의 체력이 아니라 "이번 밤이 얼마나 남았나" 를 보여줍니다.
+   왼쪽은 우리 방어선(거점 체력 + 병력), 오른쪽은 남은 적. */
+function refreshWarBar() {
+  const bar = $('warBar');
+  if (!bar) return;
+  if (!S || !Sim.isNight(S) || S.over) { bar.classList.remove('on'); return; }
+  bar.classList.add('on');
+
+  /* ★ S.waveLeft 는 0 으로 시작하므로 그대로 믿으면 안 됩니다 —
+     밤이 막 열린 순간 "남은 적 0" 이 떴습니다. 화면에서 직접 셉니다. */
+  const pending = S.surges ? S.surges.reduce((a, g) => a + g.kinds.length, 0) : 0;
+  const left = S.monsters.length + pending;
+
+  const basePct = Math.max(0, S.base.hp / S.base.maxHp);
+  const troops = S.soldiers.filter(x => !x.down).length;
+  const allyPct = Math.round(basePct * 100);
+  $('wbAlly').textContent = `방어선 ${Math.round(S.base.hp)} · 병력 ${troops}`;
+
+  /* ★ 예고(warn) 단계에도 이 게이지가 떠 있습니다 (isNight 은 warn 을 포함합니다).
+     그때는 아직 적이 하나도 없어서 "남은 적 0" 이 떴습니다 — 적이 몰려오기 직전에
+     "0마리" 라고 적혀 있으면 게이지를 못 믿게 됩니다.
+     예고 중에는 **몇 마리가 오는지**를 미리 알려주는 편이 맞습니다. */
+  if (S.phase === 'warn') {
+    const w = Sim.waveForDay(S.day);
+    const coming = w ? Math.max(1, Math.round(w.count * S.heroDef.waveMul * S.diff.waveMul)) : 0;
+    $('wbFoe').textContent = `곧 ${coming}마리`;
+    $('wbAllyBar').style.width = '100%';
+    $('wbFoeBar').style.width = '0%';
+    $('wbNote').innerHTML = `<b>${w ? w.name : '대란'}</b> — 곧 밀려옵니다`;
+    return;
+  }
+
+  const total = Math.max(1, S.waveTotal || left || 1);
+  const foePct = Math.max(0, Math.min(100, Math.round(left * 100 / total)));
+  $('wbFoe').textContent = `남은 적 ${left}`;
+  /* 두 막대가 가운데서 만나게 — 어느 쪽이 밀리는지 한눈에 보입니다 */
+  const a = allyPct, b = foePct, sum = Math.max(1, a + b);
+  $('wbAllyBar').style.width = `${a * 100 / sum}%`;
+  $('wbFoeBar').style.width = `${b * 100 / sum}%`;
+  const waiting = S.surges ? S.surges.length : 0;
+  $('wbNote').innerHTML = waiting
+    ? `<b>${waiting}차례</b>의 진격이 더 남았습니다`
+    : (left ? '마지막 무리입니다 — 끝까지 밀어내세요' : '');
+}
+
+/* ---------------- 날이 밝아옵니다 ----------------
+   팀장님: "다음날 눌러서 넘어가는 게 아니라 자연스럽게 날이 밝아오는 장면으로 충분할 것 같아."
+   리포트를 없애지는 않았습니다 — 함정이 몇 마리를 잡았는지가 이 게임의 핵심 지표라서요.
+   대신 **누르지 않아도 저절로 닫히게** 하고, 닫히는 순간 일출을 깔았습니다.
+   먼저 읽고 싶으면 버튼으로 바로 넘어갈 수 있습니다. */
+let dawnTimer = null;
+/* ★ 리포트를 읽는 동안 시간을 멈추는 장치.
+   ⏸ 일시정지 버튼은 리포트 화면(inset:0, z-index 50)에 **덮여서 누를 수가 없습니다** —
+   실제로 눌러보니 elementFromPoint 가 scReport 를 돌려줬습니다.
+   그래서 "멈추려면 일시정지를 누르면 되지" 는 성립하지 않습니다.
+   읽을 시간을 늘리는 수단은 리포트 **안에** 있어야 합니다. */
+let dawnHold = false;
+function playDawn(day) {
+  const d = $('dawn'), w = $('dawnWord');
+  if (d) { d.classList.remove('on'); void d.offsetWidth; d.classList.add('on'); }
+  if (w) {
+    $('dawnSub').textContent = `${day}일차 — 다시 낮입니다`;
+    w.classList.remove('on'); void w.offsetWidth; w.classList.add('on');
+  }
+  Audio.play('respawn');
+}
+function closeReportNow() {
+  if (dawnTimer) { clearTimeout(dawnTimer); dawnTimer = null; }
+  dawnHold = false;
+  if (!S || S.phase !== 'report') return;
+  const day = S.day;
+  Sim.closeReport(S); handleEvents();
+  if (!S.over) { closeAll(); playDawn(day); }
+}
+
+function showReport(e) {
+  lastReport = e;
+  $('repTitle').textContent = `Day ${e.day} — ${e.name} 리포트`;
+  $('repSub').innerHTML = `${e.note} · 막아냈습니다.`;
+  $('repKill').textContent = `${e.killed}마리`;
+  $('repTrap').textContent = `${e.trapPct}%`;
+  $('repSold').textContent = `${e.soldPct}%`;
+  $('repMvp').textContent = e.mvp;
+  $('repOnPath').innerHTML = e.trapsTotal
+    ? `<b style="color:${e.trapsOn === e.trapsTotal ? '#5FAE72' : e.trapsOn === 0 ? '#C6412F' : '#E0B44A'}">`
+      + `${e.trapsOn}/${e.trapsTotal}</b>`
+    : '<b style="color:#9E9384">함정 없음</b>';
+  $('repDmg').textContent = e.baseDmg;
+  $('repShard').textContent = `+${e.reward}`;
+  let adv = `<h3>다음 판을 위한 조언</h3>${e.advice}`;
+  /* 함정 처치 비율의 "정상 범위" 는 일차마다 다릅니다.
+     초반에는 적이 약해 장수가 거의 다 잡으므로 0~5% 가 정상입니다.
+     그걸 모르고 낮다고 다그치면 플레이어가 없는 잘못을 고치려 듭니다. */
+  const early = e.day <= 44;
+  if (e.trapsTotal === 0) {
+    adv += `<div style="margin-top:8px;color:#E0B44A;font-weight:700;">함정을 하나도 깔지 않았습니다. `
+      + `바닥의 <b style="color:#E0554A">붉은 화살표</b> 위에 깔아야 적이 밟습니다.</div>`;
+  } else if (e.trapsOn < e.trapsTotal) {
+    adv += `<div style="margin-top:8px;color:#E0B44A;font-weight:700;">`
+      + `함정 ${e.trapsTotal}개 중 <b>${e.trapsTotal - e.trapsOn}개가 침공로에서 벗어나</b> 있었습니다. `
+      + `벗어난 함정은 한 마리도 못 잡습니다 — <b>⛏️ 철거</b>로 회수해 화살표 위로 옮기세요.</div>`;
+  } else if (early) {
+    adv += `<div style="margin-top:8px;color:#9fdcae;font-weight:700;">함정 처치 ${e.trapPct}% — `
+      + `<b>이 구간에서는 이게 정상입니다.</b> 아직 적이 약해 장수가 거의 다 잡습니다. `
+      + `함정이 판을 가르기 시작하는 건 3막(77일~)입니다.</div>`;
+  } else if (e.trapPct >= 30) {
+    adv += `<div style="margin-top:8px;color:#5FAE72;font-weight:700;">함정 처치 ${e.trapPct}% — 경로 유도가 제대로 먹혔습니다.</div>`;
+  } else {
+    adv += `<div style="margin-top:8px;color:#E0B44A;font-weight:700;">함정 처치 ${e.trapPct}%. `
+      + `이 구간이라면 <b>30%</b> 까지 올릴 수 있습니다. 목책으로 길을 더 좁히고 `
+      + `<b>같은 줄에 두세 칸을 잇대어</b> 깔아보세요 — 한 칸으로는 단단한 적을 못 잡습니다.</div>`;
+  }
+  /* ★ 다음 대란이 몇 방향인지 미리 알려줍니다.
+     자동 플레이에서 방향이 늘어나는 순간 깔아둔 함정 12개가 통째로 길 밖이 됐습니다.
+     "다시 배치해야 한다" 를 리포트에서 미리 말해줘야 합니다. */
+  if (e.nextDay) {
+    const more = e.nextSides > e.sides;
+    adv += `<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--line);">`
+      + `<b style="color:${more ? '#E0554A' : 'var(--gold)'}">다음 대란 — ${e.nextDay}일 ${e.nextName}</b><br>`
+      + `공격 방향 <b>${e.nextDirs.join(' · ')}</b> (${e.nextSides}방향)`
+      + (more
+          ? `<div style="margin-top:5px;color:#E0554A;font-weight:700;">방향이 ${e.sides} → ${e.nextSides}개로 늘어납니다. `
+            + `새 길이 열리므로 <b>지금 깔아둔 함정 상당수가 길 밖이 됩니다.</b> `
+            + `바닥의 붉은 화살표를 다시 보고, 벗어난 함정은 <b>⛏️ 철거</b>로 회수해 옮기세요.</div>`
+          : `<div style="margin-top:5px;color:var(--dim);">방향은 그대로입니다. 지금 배치를 유지하면 됩니다.</div>`)
+      + `</div>`;
+  }
+  $('repAdvice').innerHTML = adv;
+  openScreen('scReport');
+
+  /* 자동으로 날이 밝습니다 — 남은 시간을 버튼에 적어 "곧 넘어간다" 를 보이게 합니다 */
+  if (dawnTimer) clearTimeout(dawnTimer);
+  dawnHold = false;
+  const hold = $('btnRepHold');
+  if (hold) {
+    hold.textContent = '⏸ 잠깐 — 더 볼게요';
+    hold.onclick = () => {
+      dawnHold = !dawnHold;
+      hold.textContent = dawnHold ? '⏵ 다시 시간 흐르게' : '⏸ 잠깐 — 더 볼게요';
+      Audio.play(dawnHold ? 'deny' : 'objective');
+    };
+  }
+  const btn = $('btnRepClose');
+  let left = C.REPORT_AUTO_SEC;
+  const tick = () => {
+    if (!S || S.phase !== 'report') return;
+    /* ★ 일시정지 중에는 시간이 흐르면 안 됩니다.
+       천천히 읽으려고 멈췄는데 저절로 넘어가 버리면, 멈춘 의미가 없습니다.
+       (검수에서 "갇히지 않는다" 만 봤더니 이걸 통과로 셌습니다 — 질문이 틀렸던 겁니다) */
+    if (paused || dawnHold) {
+      if (btn) btn.textContent = '▶ 준비되면 눌러서 다음 날로';
+      dawnTimer = setTimeout(tick, 400);
+      return;
+    }
+    if (btn) btn.textContent = `▶ 날이 밝습니다 — ${left}초 (눌러서 바로)`;
+    if (left-- <= 0) { closeReportNow(); return; }
+    dawnTimer = setTimeout(tick, 1000);
+  };
+  tick();
+}
+
+function showEnd(e) {
+  wallet += S.shard;
+  localStorage.setItem('sg3d_shard', String(wallet));
+  const best = Math.max(numStore('sg3d_best'), e.day);
+  localStorage.setItem('sg3d_best', String(best));
+  if (e.win) localStorage.setItem('sg3d_wins', String(numStore('sg3d_wins') + 1));
+
+  const act = C.actOf(Math.min(e.day, C.TOTAL_DAYS));
+  $('endTitle').innerHTML = e.win
+    ? '<span style="color:#E0B44A">99일 완주</span>'
+    : '<span style="color:#C6412F">거점 함락</span>';
+  $('endSub').innerHTML = e.win
+    ? `Day ${C.TOTAL_DAYS}까지 버텨냈습니다. 9번의 대란을 전부 막아냈습니다.`
+    : `Day ${e.day}일차 (${act.act}막 ${act.name})에 거점이 무너졌습니다. 져도 기록은 남습니다.`;
+  $('endStats').innerHTML = '<h3>기록</h3>'
+    + `<div class="repRow"><span>버틴 일차</span><b>Day ${e.day} / ${C.TOTAL_DAYS}</b></div>`
+    + `<div class="repRow"><span>최고 기록</span><b>Day ${best}</b></div>`
+    + `<div class="repRow"><span>막아낸 대란</span><b>${e.waveIdx} / ${C.WAVES.length}</b></div>`
+    + `<div class="repRow"><span>장수</span><b>${e.hero} (${e.grade})</b></div>`
+    + `<div class="repRow" style="border-bottom:none;"><span>세운 목책 · 함정</span><b>${e.walls} · ${e.traps}</b></div>`;
+  $('endNote').innerHTML = '<h3>기획 검증 체크</h3>이번 판에서 아래 중 하나라도 느끼셨나요?<ul>'
+    + '<li><b>장면 A</b> — 함정 배치를 바꿨더니 리포트의 함정 처치 비율이 눈에 띄게 뛰었다</li>'
+    + '<li><b>장면 B</b> — "그때 자원을 더 모을걸" 하는 후회가 들었다</li>'
+    + '<li><b>장면 C</b> — 거점 체력이 바닥일 때 최후의 저항으로 막아냈다</li>'
+    + '<li><b>장면 D</b> — 목책을 옮겼더니 바닥의 붉은 침공로가 내가 원하는 길목으로 휘었다</li></ul>'
+    + '하나도 안 나왔다면 시스템을 더 붙이지 말고 핵심 루프를 다시 설계해야 합니다.';
+  openScreen('scEnd');
+}
+
+/* ---------------- 시작 화면 ---------------- */
+/* 시작 화면의 적 목록 — 안내 화면과 같은 자료에서 만듭니다 */
+function renderTitleMonList() {
+  const box = $('titleMonList');
+  if (!box) return;
+  const firstDay = k => {
+    const w = C.WAVES.find(w => w.mix.some(([kk]) => kk === k));
+    return w ? `${w.day}일~` : '';
+  };
+  const keys = Object.keys(C.MONSTER_KINDS);
+  box.innerHTML = keys.map((k, i) => {
+    const m = C.MONSTER_KINDS[k];
+    return `<div class="repRow"${i === keys.length - 1 ? ' style="border-bottom:none;"' : ''}>`
+      + `<span><b style="color:#${m.color.toString(16).padStart(6, '0')}">${m.name}</b> — ${m.tip}</span>`
+      + `<b>${firstDay(k)}</b></div>`;
+  }).join('');
+}
+
+function renderHeroCards() {
+  const box = $('heroCards');
+  const open = unlockedHeroes();
+  box.innerHTML = '';
+  // 잠긴 장수도 보여줍니다 — 뽑을 이유가 눈에 보여야 가챠가 의미를 가집니다
+  if (!open.has(C.GENERALS[selHero].id)) selHero = 0;
+  C.GENERALS.forEach((g, i) => {
+    const locked = !open.has(g.id);
+    const el = document.createElement('button');
+    el.className = 'gcard' + (i === selHero ? ' on' : '') + (locked ? ' locked' : '');
+    el.style.borderTopColor = g.color;
+    el.innerHTML = (locked ? '<div class="lockTag">🔒 가챠로 획득</div>' : '')
+      + `<div class="gTop">${heroPortrait(g, 52)}<div class="gTopTx">`
+      + `<div class="gr" style="color:${g.color}">${g.grade} · ${g.tag}`
+      + (awakenOf(g.id) ? ` <span style="color:var(--gold)">${'★'.repeat(awakenOf(g.id))}</span>` : '')
+      + `</div>`
+      + `<div class="nm">${g.name}</div></div></div>`
+      + `<div class="ds">${g.desc}</div>`
+      + (g.look && g.look.note ? `<div class="gNote">${g.look.note}</div>` : '')
+      + `<div class="stat"><span>전투 스탯</span><b>${Math.round(g.combat * (1 + C.AWAKEN_BONUS * awakenOf(g.id)) * 100)}%</b>`
+      + (awakenOf(g.id) ? `<span style="color:var(--good);font-size:10px;"> ★${awakenOf(g.id)}</span>` : '') + `</div>`
+      + `<div class="stat"><span>시작 자원</span><b class="${g.startRes > 1 ? 'up' : 'down'}">${Math.round(g.startRes * 100)}%</b></div>`
+      + `<div class="stat"><span>웨이브 강도</span><b class="${g.waveMul > 1 ? 'down' : 'up'}">${Math.round(g.waveMul * 100)}%</b></div>`
+      + `<div class="stat"><span>22일 이후 성장</span><b class="${g.lateGrow > 0 ? 'up' : ''}">${g.lateGrow > 0 ? '+' + Math.round(g.lateGrow * 100) + '%' : '없음'}</b></div>`
+      + `<div class="stat" style="border-top:none;"><span style="color:${g.color}">${g.skill}</span><b></b></div>`;
+    el.onclick = () => {
+      if (locked) { toast(`<b>${g.name}</b>은(는) 가챠로 뽑아야 열립니다`); return; }
+      selHero = i; renderHeroCards();
+    };
+    box.appendChild(el);
+  });
+  const best = numStore('sg3d_best');
+  const wins = numStore('sg3d_wins');
+  $('bestRec').innerHTML = best ? `최고 기록 <b style="color:#E0B44A">Day ${best}</b> · 완주 ${wins}회` : '';
+}
+
+/* ==================================================================
+   뽑기 · 보석 상점 (프로토타입)
+   ------------------------------------------------------------------
+   ※ 실제 결제는 붙어 있지 않습니다. 보석 충전 버튼은 그냥 지급합니다.
+   ※ 확률은 아래 GACHA 배열 하나에서만 나오고, 화면의 확률표도 같은 값을
+     그대로 적어둡니다. 두 곳이 어긋나면 그게 바로 확률 조작이 됩니다.
+   ================================================================== */
+const GACHA = [
+  { g: '일반', p: .55,  c: '#9aa7b0', pool: ['주창','부첨','장익','마대','왕평','유봉','곽준','요화'] },
+  { g: '희귀', p: .30,  c: '#5B8FC7', pool: ['태사자','장료','서황','감녕'] },
+  { g: '영웅', p: .12,  c: '#9B6FC9', pool: ['하후돈','황충','위연','방덕'] },   // 하후돈·황충은 플레이 가능
+  { g: '전설', p: .027, c: '#E08B3C', pool: ['관우','조운','장비','허저'] },     // 관우는 플레이 가능
+  { g: '신화', p: .003, c: '#E0B44A', pool: ['여포','제갈량','조조'] }
+];
+/* 도감 저장 구조
+   예전에는 ['전설 관우', ...] 문자열 배열이라 "몇 장 나왔는지"를 셀 수 없었습니다.
+   {"전설 관우": 3} 형태로 바꾸고, 예전 저장본은 자동으로 변환합니다. */
+function getDex() {
+  let raw;
+  try { raw = JSON.parse(localStorage.getItem('sg3d_dex') || '{}'); } catch { raw = {}; }
+  if (Array.isArray(raw)) {                       // 옛 저장본 변환
+    const o = {};
+    for (const k of raw) o[k] = (o[k] || 0) + 1;
+    localStorage.setItem('sg3d_dex', JSON.stringify(o));
+    return o;
+  }
+  return raw || {};
+}
+const saveDex = d => localStorage.setItem('sg3d_dex', JSON.stringify(d));
+
+let souls = numStore('sg3d_souls');
+const saveSouls = () => localStorage.setItem('sg3d_souls', String(souls));
+
+function getAwaken() {
+  try { return JSON.parse(localStorage.getItem('sg3d_awaken') || '{}') || {}; } catch { return {}; }
+}
+function awakenOf(id) {
+  const v = Number(getAwaken()[id]);
+  // 저장값이 망가져 있어도 ★0~★5 사이의 멀쩡한 숫자만 돌려줍니다
+  return Number.isFinite(v) ? Math.max(0, Math.min(C.AWAKEN_MAX, Math.floor(v))) : 0;
+}
+function doAwaken(id) {
+  const lv = awakenOf(id);
+  if (lv >= C.AWAKEN_MAX) { toast('이미 <b>★5</b> 입니다'); Audio.play('deny'); return; }
+  const cost = C.AWAKEN_COST[lv];
+  if (souls < cost) { toast(`혼백이 부족합니다 — <b>${cost}</b> 필요 (보유 ${souls})`); Audio.play('deny'); return; }
+  souls -= cost; saveSouls();
+  const a = getAwaken(); a[id] = lv + 1;
+  localStorage.setItem('sg3d_awaken', JSON.stringify(a));
+  const g = C.GENERALS.find(x => x.id === id);
+  toast(`<b style="color:${g.color}">${g.name}</b> 각성 <b>★${lv + 1}</b> — 전투력 +${Math.round(C.AWAKEN_BONUS * (lv + 1) * 100)}%`);
+  Audio.play('objective');
+  refreshShop(); renderHeroCards();
+}
+
+let gems = numStore('sg3d_gem');
+const saveGems = () => localStorage.setItem('sg3d_gem', String(gems));
+
+/** 한 번 뽑습니다. 천장은 뽑기 전체에 걸쳐 누적됩니다. */
+/* ★ 천장은 **두 개**여야 합니다 (2026-09 수정).
+   예전에는 카운터가 하나뿐이었고, 90회 천장이 **전설·신화 둘 다** 그 카운터를 0으로
+   되돌렸습니다. 그래서 180회 하드 천장에 **영원히 도달할 수 없었습니다** —
+   200만 회를 돌려보니 하드 천장은 한 번도 발동하지 않았고, 도달한 최대치가 89 였습니다.
+   그런데 확률표에는 "180회 이내 신화 확정" 이라고 적혀 있었습니다.
+   확률형 아이템의 천장 고지는 **법적 의무**입니다(게임산업법 제33조).
+   지킬 수 없는 약속을 적어두면 그냥 버그가 아니라 허위 고지입니다.
+
+   이제 카운터를 나눕니다.
+     · pity     — 전설 이상이 나오면 0 (90회 천장)
+     · mythPity — **신화가 나와야만** 0 (180회 천장)
+   실측으로 신화 없이 2,469회까지 간 구간이 있었습니다. 그게 이제 180에서 끊깁니다. */
+function rollOnce() {
+  let pity = numStore('sg3d_pity') + 1;
+  let mythPity = numStore('sg3d_pity_myth') + 1;
+  let pick;
+  if (mythPity >= C.GACHA_PITY_HARD) pick = GACHA[4];
+  else if (pity >= C.GACHA_PITY) pick = GACHA[Math.random() < .1 ? 4 : 3];
+  else {
+    const r = Math.random(); let acc = 0;
+    pick = GACHA.find(g => (acc += g.p) >= r) || GACHA[0];
+  }
+  if (pick.g === '전설' || pick.g === '신화') pity = 0;
+  if (pick.g === '신화') mythPity = 0;
+  localStorage.setItem('sg3d_pity', String(pity));
+  localStorage.setItem('sg3d_pity_myth', String(mythPity));
+
+  const name = pick.pool[Math.floor(Math.random() * pick.pool.length)];
+  const dex = getDex(), key = `${pick.g} ${name}`;
+  const dup = !!dex[key];
+  dex[key] = (dex[key] || 0) + 1;
+  saveDex(dex);
+
+  // 중복은 혼백으로 바뀝니다 — 같은 카드가 또 나와도 각성 재료가 쌓입니다
+  let soul = 0;
+  if (dup) { soul = C.SOUL_BY_GRADE[pick.g] || 2; souls += soul; saveSouls(); }
+
+  const hero = C.GENERALS.find(h => h.name === name);
+  let newlyUnlocked = false;
+  if (hero) newlyUnlocked = unlockHero(hero.id);
+  return { pick, name, dup, soul, playable: !!hero, newlyUnlocked, count: dex[key] };
+}
+
+const gradeIcon = g => g === '신화' ? '🐉' : g === '전설' ? '⚔️' : g === '영웅' ? '🏹' : g === '희귀' ? '🗡️' : '🛡️';
+
+function resultLine(r) {
+  return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.06);">
+      <span style="font-size:20px;">${gradeIcon(r.pick.g)}</span>
+      <b style="color:${r.pick.c};min-width:38px;font-size:11.5px;">${r.pick.g}</b>
+      <b style="font-size:14px;">${r.name}</b>
+      <span style="margin-left:auto;font-size:11px;color:${r.newlyUnlocked ? '#5FAE72' : r.soul ? '#c9a3e8' : '#9E9384'};">
+        ${r.newlyUnlocked ? '새 장수 해금!'
+          : r.soul ? `중복 ×${r.count} → 혼백 +${r.soul}`
+          : '도감 등록'}</span>
+    </div>`;
+}
+
+function showPulls(results) {
+  const box = $('pullResult');
+  box.style.display = 'block';
+  const best = results.reduce((a, b) => (GACHA.indexOf(b.pick) > GACHA.indexOf(a.pick) ? b : a));
+  box.style.borderColor = best.pick.c;
+  const unlocked = results.filter(r => r.newlyUnlocked);
+  const gained = results.reduce((a, r) => a + (r.soul || 0), 0);
+  box.innerHTML = results.map(resultLine).join('')
+    + (unlocked.length
+        ? `<div style="margin-top:8px;font-size:12px;color:#5FAE72;font-weight:800;">
+             ${unlocked.map(r => r.name).join(' · ')} — 출전 화면에서 고를 수 있습니다</div>`
+        : '')
+    + (gained
+        ? `<div style="margin-top:6px;font-size:12px;color:#c9a3e8;font-weight:800;">
+             중복 ${results.filter(r => r.soul).length}장 → 혼백 <b>+${gained}</b> (보유 ${souls})
+             <span style="color:var(--dim);font-weight:600;">— 아래에서 장수를 각성시키세요</span></div>`
+        : '');
+  if (unlocked.length) renderHeroCards();
+  Audio.play(best.pick.g === '전설' || best.pick.g === '신화' ? 'objective' : 'craft');
+  refreshShop();
+  refreshHUD();
+}
+
+function pullShard() {
+  if (totalShard() < C.GACHA_COST_SHARD) { toast('옥새 조각이 부족합니다 (10 필요)'); Audio.play('deny'); return; }
+  if (S && pullShardIntoRun(C.GACHA_COST_SHARD)) S.shard -= C.GACHA_COST_SHARD;
+  else { wallet -= C.GACHA_COST_SHARD; localStorage.setItem('sg3d_shard', String(wallet)); }
+  showPulls([rollOnce()]);
+}
+
+function pullGem(times) {
+  const cost = times === 10 ? C.GACHA_COST_GEM10 : C.GACHA_COST_GEM;
+  if (gems < cost) { toast(`보석이 부족합니다 (<b>${cost}</b> 필요)`); Audio.play('deny'); return; }
+  gems -= cost; saveGems();
+  const out = [];
+  for (let i = 0; i < times; i++) out.push(rollOnce());
+  showPulls(out);
+}
+
+function buyPack(pk) {
+  gems += pk.gem + pk.bonus; saveGems();
+  Audio.play('coin');
+  toast(`💎 <b>${pk.gem + pk.bonus}</b> 지급 — <span style="color:#9E9384">프로토타입이라 실제 결제는 없습니다</span>`);
+  refreshShop();
+}
+
+function claimFreeGem() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (localStorage.getItem('sg3d_freegem') === today) { toast('오늘은 이미 받았습니다'); Audio.play('deny'); return; }
+  localStorage.setItem('sg3d_freegem', today);
+  gems += C.GEM_FREE_DAILY; saveGems();
+  Audio.play('coin');
+  toast(`🎁 무료 보석 <b>${C.GEM_FREE_DAILY}</b> 지급`);
+  refreshShop();
+}
+
+function refreshShop() {
+  $('shopShard').textContent = totalShard();
+  $('shopGem').textContent = gems;
+  $('pityLeft').textContent = Math.max(0, C.GACHA_PITY - numStore('sg3d_pity'));
+  const pm = $('pityMythLeft');
+  if (pm) pm.textContent = Math.max(0, C.GACHA_PITY_HARD - numStore('sg3d_pity_myth'));
+
+  /* ★ 확률표를 코드에서 만들어 냅니다.
+     예전에는 HTML 에 55.000% … 가 손으로 박혀 있어서, 확률을 바꾸면
+     표시와 실제가 어긋날 수 있었습니다. 확률 공개는 법적 의무라 어긋나면 안 됩니다. */
+  const rt = $('rateTable');
+  if (rt) rt.innerHTML = GACHA.map((g, i) => `
+    <div class="repRow"${i === GACHA.length - 1 ? ' style="border-bottom:none;"' : ''}>
+      <span style="color:${g.c};">${g.g}</span><b>${(g.p * 100).toFixed(3)}%</b></div>`).join('');
+
+  const packs = $('packRow');
+  if (packs && !packs.dataset.built) {
+    packs.dataset.built = '1';
+    C.GEM_PACKS.forEach(pk => {
+      const el = document.createElement('button');
+      el.className = 'packCard';
+      el.innerHTML = `<div class="pg">💎 ${pk.gem + pk.bonus}</div>
+        <div class="pb">${pk.bonus ? `+${pk.bonus} ${pk.tag}` : (pk.tag || '')}</div>
+        <div class="pp">${pk.price}</div>`;
+      el.onclick = () => buyPack(pk);
+      packs.appendChild(el);
+    });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const free = $('btnFreeGem');
+  if (free) {
+    const done = localStorage.getItem('sg3d_freegem') === today;
+    free.disabled = done;
+    free.textContent = done ? '🎁 오늘 수령 완료' : `🎁 오늘의 무료 보석 +${C.GEM_FREE_DAILY}`;
+  }
+
+  $('shopSoul').textContent = souls;
+
+  /* ── 출전 가능한 장수 카드 — 각성 버튼까지 여기서 ── */
+  const unlocked = unlockedHeroes();
+  const dex = getDex();
+  $('playableList').innerHTML = C.GENERALS.map(g => {
+    const have = unlocked.has(g.id);
+    const lv = awakenOf(g.id);
+    const cost = lv < C.AWAKEN_MAX ? C.AWAKEN_COST[lv] : null;
+    const cnt = dex[`${g.grade} ${g.name}`] || 0;
+    return `<div class="heroDex${have ? '' : ' locked'}" style="border-top-color:${g.color}">
+      ${heroFace(g, have)}
+      <div class="hdBody">
+        <div class="hdTop"><b class="hdName">${g.name}</b>
+          <span class="hdGrade" style="color:${g.color}">${g.grade}</span>
+          <span class="hdStar">${'★'.repeat(lv)}${'☆'.repeat(C.AWAKEN_MAX - lv)}</span></div>
+        <div class="hdTag">${g.tag}${cnt ? ` · 뽑은 횟수 ${cnt}` : ''}</div>
+        <div class="hdSkill">${g.skill}</div>
+        ${g.look && g.look.note ? `<div class="hdNote">${g.look.note}</div>` : ''}
+        ${have
+          ? (lv >= C.AWAKEN_MAX
+              ? '<div class="hdMax">각성 완료 — 전투력 +30%</div>'
+              : `<button class="btn awBtn" data-awaken="${g.id}" ${souls >= cost ? '' : 'disabled'}>
+                   ★${lv + 1} 각성 — 혼백 ${cost}</button>
+                 <div class="hdNow">현재 전투력 +${Math.round(C.AWAKEN_BONUS * lv * 100)}%</div>`)
+          : '<div class="hdLock">🔒 뽑아야 열립니다</div>'}
+      </div>
+    </div>`;
+  }).join('');
+  $('playableList').querySelectorAll('[data-awaken]').forEach(b =>
+    b.onclick = () => doAwaken(b.dataset.awaken));
+
+  /* ── 전체 도감 (플레이 불가 인물 포함) ── */
+  const keys = Object.keys(dex).sort();
+  const GC = { 일반:'#9aa7b0', 희귀:'#5B8FC7', 영웅:'#9B6FC9', 전설:'#E08B3C', 신화:'#E0B44A' };
+  const total = GACHA.reduce((a, g) => a + g.pool.length, 0);
+  $('dexList').innerHTML = keys.length
+    ? `<div class="dexCount">수집 <b>${keys.length}</b> / ${total}종 · 총 <b>${keys.reduce((a,k)=>a+dex[k],0)}</b>장</div>`
+      + '<div class="dexGrid">' + keys.map(k => {
+          const grade = k.split(' ')[0], name = k.slice(grade.length + 1);
+          return `<div class="dexCard" style="border-color:${GC[grade] || '#3a342c'}">
+            <div class="dg" style="color:${GC[grade]}">${gradeIcon(grade)}</div>
+            <div class="dn">${name}</div>
+            <div class="dc">×${dex[k]}</div></div>`;
+        }).join('') + '</div>'
+    : '아직 없습니다. 뽑기를 돌려보세요.';
+}
+
+/* ==================================================================
+   장수 초상 — SVG 로 그립니다 (이미지 파일 0장)
+   ------------------------------------------------------------------
+   왜 그림 파일을 안 쓰나:
+     ① 이 프로젝트는 빌드가 없고 저장소에 그림을 넣으면 무거워집니다
+     ② 남의 그림은 상업적 이용 라이선스를 일일이 확인해야 합니다
+     ③ 3D 장수와 도감이 **같은 look 데이터**를 읽으면 둘이 절대 어긋나지 않습니다
+   그래서 투구·수염·안대·갑옷을 config 의 look 대로 조립해 그립니다.
+   나중에 진짜 일러스트가 생기면 look.portrait 에 경로만 넣으면 됩니다.
+   ================================================================== */
+const WEAPON_ICON = { sword: '🗡️', bow: '🏹', halberd: '🔱' };
+
+function heroPortrait(g, size = 58) {
+  const L = g.look || {};
+  const skin = L.skin || '#e8c9a0';
+  const hair = L.hair || '#1f1812';
+  const cloth = L.cloth || g.color;
+  const acc = g.accent || g.color;
+  const P = [];
+
+  // 배경 — 등급 색 그라데이션
+  P.push(`<defs><linearGradient id="bg${g.id}" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="${g.color}"/><stop offset="1" stop-color="${acc}"/></linearGradient></defs>`);
+  P.push(`<rect width="100" height="120" fill="url(#bg${g.id})"/>`);
+  P.push(`<ellipse cx="50" cy="28" rx="46" ry="34" fill="#fff" opacity="0.16"/>`);
+
+  // 몸통·갑옷
+  P.push(`<path d="M18 120 Q22 84 50 80 Q78 84 82 120 Z" fill="${cloth}"/>`);
+  if (L.shoulder) {
+    P.push(`<ellipse cx="22" cy="92" rx="13" ry="10" fill="${acc}" stroke="rgba(0,0,0,.25)"/>`);
+    P.push(`<ellipse cx="78" cy="92" rx="13" ry="10" fill="${acc}" stroke="rgba(0,0,0,.25)"/>`);
+  }
+  if (L.armor === 'scale') {
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++)
+      P.push(`<circle cx="${34 + c * 8}" cy="${94 + r * 8}" r="3.4" fill="rgba(0,0,0,.18)"/>`);
+  } else if (L.armor === 'heavy') {
+    P.push(`<path d="M34 90 H66 V118 H34 Z" fill="rgba(255,255,255,.15)" stroke="rgba(0,0,0,.25)"/>`);
+  }
+
+  // 목·얼굴
+  P.push(`<rect x="44" y="70" width="12" height="14" fill="${skin}"/>`);
+  P.push(`<ellipse cx="50" cy="52" rx="21" ry="24" fill="${skin}"/>`);
+
+  // 수염
+  if (L.beard === 'long')
+    P.push(`<path d="M36 62 Q50 118 64 62 Q50 76 36 62 Z" fill="${hair}"/>`);
+  else if (L.beard === 'white')
+    P.push(`<path d="M34 60 Q50 96 66 60 Q50 74 34 60 Z" fill="#ded8ca"/>`);
+  else
+    P.push(`<path d="M38 64 Q50 78 62 64 Q50 72 38 64 Z" fill="${hair}" opacity=".85"/>`);
+
+  // 눈
+  if (L.eyepatch) {
+    P.push(`<circle cx="58" cy="50" r="2.6" fill="#1a1410"/>`);
+    P.push(`<path d="M28 44 L72 40" stroke="#15120f" stroke-width="3.5" fill="none"/>`);
+    P.push(`<ellipse cx="42" cy="49" rx="7" ry="6" fill="#15120f"/>`);
+  } else {
+    P.push(`<circle cx="42" cy="50" r="2.6" fill="#1a1410"/>`);
+    P.push(`<circle cx="58" cy="50" r="2.6" fill="#1a1410"/>`);
+  }
+  // 눈썹
+  P.push(`<path d="M36 43 Q42 40 47 43" stroke="${hair}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`);
+  P.push(`<path d="M53 43 Q58 40 64 43" stroke="${hair}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`);
+
+  // 투구
+  if (L.helm === 'horned') {
+    P.push(`<path d="M27 40 Q50 16 73 40 L73 32 Q50 8 27 32 Z" fill="${acc}" stroke="rgba(0,0,0,.3)"/>`);
+    P.push(`<path d="M27 34 Q16 16 24 10 Q34 18 33 34 Z" fill="${acc}"/>`);
+    P.push(`<path d="M73 34 Q84 16 76 10 Q66 18 67 34 Z" fill="${acc}"/>`);
+    P.push(`<path d="M50 18 L46 2 L54 2 Z" fill="#C6412F"/>`);
+  } else if (L.helm === 'crest') {
+    P.push(`<path d="M27 40 Q50 18 73 40 Z" fill="${acc}" stroke="rgba(0,0,0,.3)"/>`);
+    P.push(`<path d="M46 20 Q50 4 54 20 Z" fill="#C6412F"/>`);
+  } else if (L.helm === 'hood') {
+    P.push(`<path d="M24 46 Q26 14 50 14 Q74 14 76 46 Q64 30 50 30 Q36 30 24 46 Z" fill="${cloth}"/>`);
+  } else if (L.helm === 'cap') {
+    P.push(`<path d="M29 40 Q50 22 71 40 Z" fill="${acc}" stroke="rgba(0,0,0,.25)"/>`);
+    P.push(`<rect x="27" y="38" width="46" height="4" rx="2" fill="rgba(0,0,0,.28)"/>`);
+  } else {
+    P.push(`<path d="M29 42 Q50 24 71 42 Z" fill="${acc}" stroke="rgba(0,0,0,.25)"/>`);
+  }
+  // 머리카락이 투구 밖으로
+  if (L.helm !== 'hood')
+    P.push(`<path d="M30 44 Q30 62 26 70 Q34 62 33 46 Z M70 44 Q70 62 74 70 Q66 62 67 46 Z" fill="${hair}"/>`);
+
+  // 장비 — 방패 / 화살통
+  if (L.shield) {
+    P.push(`<ellipse cx="17" cy="100" rx="14" ry="17" fill="${cloth}" stroke="rgba(0,0,0,.3)" stroke-width="2"/>`);
+    P.push(`<circle cx="17" cy="100" r="4.5" fill="${acc}"/>`);
+  }
+  if (L.quiver) {
+    P.push(`<rect x="76" y="76" width="11" height="30" rx="4" fill="#6b4a2c" transform="rotate(14 81 91)"/>`);
+    for (let i = 0; i < 3; i++)
+      P.push(`<rect x="${77 + i * 3.4}" y="68" width="2" height="12" fill="#d8cdb6" transform="rotate(14 81 74)"/>`);
+  }
+
+  return `<svg class="hdSvg" viewBox="0 0 100 120" width="${size}" height="${Math.round(size * 1.2)}"
+      role="img" aria-label="${g.name} 초상" preserveAspectRatio="xMidYMid slice">${P.join('')}</svg>`;
+}
+
+function heroFace(g, have) {
+  return `<div class="hdFace${have ? '' : ' off'}">${heroPortrait(g)}
+      <span class="hdWeapon">${WEAPON_ICON[g.weapon] || ''}</span></div>`;
+}
+
+/* ==================================================================
+   조작
+   ================================================================== */
+const keys = {};
+const stickVec = { x: 0, y: 0 };
+
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (!keys[k]) {                       // 꾹 눌러도 한 번만 발동합니다
+    if (k === ' ') doSkill(2);            // Space = 궁극기
+    // 숫자키로 건설 카드를 고릅니다 — 화면 밖으로 마우스를 내릴 필요가 없습니다
+    if (k >= '1' && k <= '9' && S && !uiOpen && !S.over) {
+      const n = Number(k);
+      if (n === C.BUILDS.length + 1) selectBuild(DEMOLISH);
+      else if (n === C.BUILDS.length + 2) toggleTroop();
+      else { const b = C.BUILDS[n - 1]; if (b) selectBuild(b.id); }
+    }
+    if (k === 'q') doSkill(0);
+    if (k === 'e') doSkill(1);
+    if (k === 'h') { Sim.usePotion(S); handleEvents(); refreshHUD(); }
+  }
+  keys[k] = true;
+  if (e.key === 'Escape') {
+    if ($('troopPanel').classList.contains('on')) { toggleTroop(false); return; }
+    buildSel = null; refreshBuildCards(); R3.setBuildMode(false); cancelBuild();
+  }
+  if (e.key === 'Enter' && pending) confirmBuild();
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+});
+
+function doSkill(slot) {
+  if (!S || uiOpen || paused || S.over) return;
+  Sim.useSkill(S, slot);
+  handleEvents();
+  refreshSkillBar();
+}
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+/** 입력을 카메라 기준 방향으로 바꿉니다 — 3D에서는 이게 없으면 조작이 뒤집힙니다 */
+function applyInput() {
+  let ix = 0, iz = 0;
+  if (keys['a'] || keys['arrowleft']) ix -= 1;
+  if (keys['d'] || keys['arrowright']) ix += 1;
+  if (keys['w'] || keys['arrowup']) iz -= 1;
+  if (keys['s'] || keys['arrowdown']) iz += 1;
+  ix += stickVec.x; iz += stickVec.y;
+
+  const len = Math.hypot(ix, iz);
+  if (len < 0.01) { S.input.x = 0; S.input.y = 0; return; }
+  if (len > 1) { ix /= len; iz /= len; }
+
+  /* 카메라는 target 기준 (sin(yaw), cos(yaw)) 방향에 서서 안쪽을 봅니다.
+     따라서 화면의 "앞"은 그 반대인 (-sin, -cos) 입니다.
+     예전 식은 부호가 뒤집혀 W를 누르면 카메라 쪽(뒤)으로 갔습니다. */
+  const yaw = R3.getCameraYaw();
+  const sin = Math.sin(yaw), cos = Math.cos(yaw);
+  S.input.x = ix * cos + iz * sin;
+  S.input.y = -ix * sin + iz * cos;
+}
+
+/* ==================================================================
+   모바일 — 전체 화면 게임으로 바꿉니다
+   ------------------------------------------------------------------
+   예전에는 PC 배치를 그대로 좁은 화면에 밀어 넣었습니다.
+   그 결과 문서 높이가 1841px(화면은 844px)이 되어서
+   **조이스틱과 스킬 버튼이 화면 밖**에 있었습니다 — 스크롤해야 눌렀습니다.
+   body 에 .mob 을 붙이면 CSS 가 무대를 화면 전체로 깔고 조작을 그 위에 겹칩니다.
+   ================================================================== */
+export const isMobile = () =>
+  (navigator.maxTouchPoints > 0 || 'ontouchstart' in window) &&
+  Math.min(window.innerWidth, window.innerHeight) < 900;
+
+function applyMobileLayout() {
+  const on = isMobile();
+  document.body.classList.toggle('mob', on);
+  if (on) {
+    /* 주소창이 나타났다 사라지면 높이가 바뀝니다.
+       100dvh 가 대부분 처리하지만, 안 되는 브라우저를 위해 값도 직접 넣어둡니다. */
+    document.documentElement.style.setProperty('--vh', window.innerHeight + 'px');
+  }
+  if (typeof R3 !== 'undefined' && R3.resize) R3.resize();
+}
+applyMobileLayout();
+window.addEventListener('resize', applyMobileLayout);
+
+/* 모바일 전용 ✕ — 열려 있는 화면을 그 화면의 '닫기' 와 똑같이 닫습니다.
+   각 화면마다 닫기 동작이 다르므로(상점은 시작 화면으로 돌아가기도 합니다)
+   버튼을 새로 만들지 않고 **원래 닫기 버튼을 대신 눌러줍니다.** */
+(function () {
+  const x = $('btnScreenX');
+  if (!x) return;
+  const CLOSER = { scGuide:'btnGuideClose', scCraft:'btnCraftClose', scShop:'btnShopClose',
+                   scReport:'btnRepClose', scEnd:'btnAgain' };
+  x.onclick = () => {
+    const open = document.querySelector('.screen.on');
+    if (!open) return;
+    const btn = $(CLOSER[open.id]);
+    if (btn) btn.click(); else open.classList.remove('on');
+  };
+  /* 화면이 열려 있을 때만 보이게 — 시작 화면에서는 닫을 게 없으므로 숨깁니다 */
+  const sync = () => {
+    const open = document.querySelector('.screen.on');
+    x.classList.toggle('on', !!open && open.id !== 'scTitle' && isMobile());
+  };
+  new MutationObserver(sync).observe(document.body,
+    { subtree:true, attributes:true, attributeFilter:['class'] });
+  sync();
+})();
+window.addEventListener('orientationchange', () => setTimeout(applyMobileLayout, 250));
+
+/* ==================================================================
+   모바일 겹침 정리 — HUD **아래**에 자동으로 붙입니다
+   ------------------------------------------------------------------
+   실제 기기 화면을 보니 「지금 할 일」이 왼쪽 HUD 상자를 덮어
+   장수 이름("태사자")이 잘려 있었습니다.
+
+   CSS 에 top 을 숫자로 박아두면 계속 어긋납니다 —
+   HUD 상자의 높이가 **내용에 따라 변하기** 때문입니다.
+   (1일차와 4일차의 높이가 다르고, 밤에는 한 줄이 더 붙습니다)
+   그래서 실제 높이를 재서 그 아래에 붙입니다.
+   ================================================================== */
+function layoutMobileOverlays() {
+  if (!document.body.classList.contains('mob')) return;
+  const boxes = document.querySelectorAll('#hud .hudBox');
+  if (boxes.length < 2) return;
+  const L = boxes[0].getBoundingClientRect(), Rt = boxes[1].getBoundingClientRect();
+  const todo = $('todo'), mini = $('minimapWrap'), obj = $('objective');
+  if (todo) todo.style.top = Math.round(L.bottom + 6) + 'px';
+  if (mini) mini.style.top = Math.round(Rt.bottom + 6) + 'px';
+  if (obj) {
+    const below = Math.max(todo ? todo.getBoundingClientRect().bottom : 0,
+                           mini ? mini.getBoundingClientRect().bottom : 0);
+    obj.style.top = Math.round(below + 6) + 'px';
+  }
+}
+
+/* 「지금 할 일」 접기 — 좁은 화면에서 자리를 많이 먹습니다 */
+(function () {
+  const head = document.querySelector('#todo .tdHead');
+  if (!head) return;
+  head.innerHTML = '지금 할 일 <span style="margin-left:auto;opacity:.7">▾</span>';
+  head.onclick = () => {
+    const t = $('todo');
+    t.classList.toggle('folded');
+    head.querySelector('span').textContent = t.classList.contains('folded') ? '▸' : '▾';
+    layoutMobileOverlays();          // 펼치면 아래 것들이 밀려나야 합니다
+  };
+  /* 좁은 화면에서는 접힌 채로 시작합니다 — 펼쳐두면 화면 위쪽 1/3 을 덮습니다.
+     한 번 누르면 펼쳐지고, 그 선택은 그대로 유지됩니다. */
+  if (isMobile()) { $('todo').classList.add('folded'); head.querySelector('span').textContent = '▸'; }
+})();
+
+/* 조이스틱 */
+(function () {
+  const el = $('stick'), knob = $('knob');
+  let active = false;
+  /* ★ 예전에는 가운데를 56px 로 **박아뒀습니다** (112px 짜리 기준).
+     모바일에서 조이스틱을 104px 로 줄이면 손잡이가 한쪽으로 치우칩니다.
+     실제 크기에서 계산합니다. */
+  const half = () => el.offsetWidth / 2;
+  const radius = () => el.offsetWidth * 0.32;
+  const setKnob = (dx, dy) => { knob.style.left = (half() + dx) + 'px'; knob.style.top = (half() + dy) + 'px'; };
+  function onMove(e) {
+    if (!active) return;
+    const R = radius();
+    const r = el.getBoundingClientRect();
+    let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    const len = Math.hypot(dx, dy);
+    if (len > R) { dx = dx / len * R; dy = dy / len * R; }
+    setKnob(dx, dy);
+    stickVec.x = dx / R; stickVec.y = dy / R;
+    e.preventDefault();
+  }
+  const stop = () => { active = false; stickVec.x = stickVec.y = 0; setKnob(0, 0); };
+  /* ★ setPointerCapture 는 던질 수 있습니다.
+     "No active pointer with the given id is found" — 그 손가락이 이미 떨어졌거나
+     브라우저가 다른 데로 캡처를 가져간 경우입니다. 폰에서 손가락을 여러 개 쓰면
+     실제로 납니다. 던지면 그 뒤의 onMove 가 통째로 날아가 **조이스틱이 먹통**이 됩니다.
+     캡처는 있으면 좋은 것일 뿐, 없다고 못 움직일 이유는 없습니다. */
+  const capture = (node, id) => { try { node.setPointerCapture(id); } catch (err) {} };
+  el.addEventListener('pointerdown', e => { active = true; capture(el, e.pointerId); onMove(e); });
+  el.addEventListener('pointermove', onMove);
+  ['pointerup','pointercancel','pointerleave'].forEach(t => el.addEventListener(t, stop));
+})();
+
+/* 화면 드래그 — 건설 모드면 위치 잡기, 아니면 카메라 회전 */
+(function () {
+  const stage = $('stage');
+  let dragging = false, lastX = 0, lastY = 0;
+
+  /* 화면 위에 겹쳐 놓은 UI에서 시작한 입력은 땅 조준으로 넘기지 않습니다.
+     이게 없으면 "설치" 버튼을 누르는 순간 그 버튼 밑의 땅을 다시 조준해버립니다.
+
+     ★ #buildDock 이 빠져 있어서 건설이 통째로 막혔던 적이 있습니다.
+       건설 바가 #stage 안에 있으니, 버튼을 누르면 pointerdown 이 stage 까지 올라와
+       setPointerCapture 가 걸리고 → 버튼의 click 이 아예 발생하지 않았습니다.
+       화면 안에 UI를 새로 얹을 때는 반드시 이 목록에 넣어야 합니다. */
+  /* ★ 화면(#stage) 안에 얹은 UI 는 **빠짐없이** 여기 적어야 합니다.
+     빠뜨리면 그 UI 의 클릭이 통째로 죽습니다 —
+     pointerdown 이 stage 까지 올라와 setPointerCapture 가 걸리면서
+     버튼의 click 이 아예 발생하지 않기 때문입니다.
+     #buildDock 을 빠뜨려 건설이 막힌 적이 있고, #todo 로 같은 일을 또 겪었습니다.
+     그래서 이제 개별 선택자 대신 **공통 표시(data-ui)** 로 한 번에 잡습니다. */
+  const fromUI = e => !!(e.target && e.target.closest && e.target.closest('[data-ui]'));
+
+  /* ★ 마우스 오른쪽 버튼 = 취소.
+     건설 중이면 배치를 물리고, 아무것도 안 하고 있으면 건설 카드 선택 자체를 풉니다.
+     브라우저 기본 메뉴는 막습니다. */
+  stage.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    if (!S) return;
+    /* 한 번에 건설 모드에서 완전히 빠져나옵니다.
+       조준만 푸는 2단계로 만들었더니, 마우스가 화면 위에 있으면 pointermove 가
+       곧바로 다시 조준을 잡아서 두 번 눌러야 풀렸습니다. 취소는 한 번에 끝나야 합니다. */
+    const had = !!(buildSel || aim || pending);
+    buildSel = null;
+    cancelBuild();
+    refreshBuildCards();
+    R3.setBuildMode(false);
+    $('modeTag').innerHTML = '🖱 드래그 = 카메라 회전 · 휠 = 확대';
+    if (had) Audio.play('deny');
+  });
+
+  stage.addEventListener('pointerdown', e => {
+    if (!S || S.over || fromUI(e)) return;
+    if (e.button === 2) return;                   // 오른쪽 버튼은 contextmenu 가 처리합니다
+    // 건설 모드가 아닐 때의 좌클릭 = 직접 타격
+    if (!buildSel && e.button === 0 && !uiOpen && !paused) {
+      Sim.clickAttack(S);
+      handleEvents();
+    }
+    dragging = true;
+    lastX = e.clientX; lastY = e.clientY;
+    try { stage.setPointerCapture(e.pointerId); } catch (err) {}   // 위와 같은 이유
+    if (buildSel) aimAt(e.clientX, e.clientY);
+  });
+
+  stage.addEventListener('pointermove', e => {
+    if (!S || fromUI(e)) return;
+    if (buildSel && !dragging && !pending) { aimAt(e.clientX, e.clientY); return; }
+    if (!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    if (buildSel) aimAt(e.clientX, e.clientY);     // 끌어서 위치를 옮깁니다
+    else R3.orbitCamera(dx, dy);
+  });
+
+  ['pointerup','pointercancel'].forEach(t => stage.addEventListener(t, e => {
+    if (fromUI(e)) return;
+    if (!dragging) return;
+    dragging = false;
+    // 손을 떼면 그 자리에 고정하고 "설치할까요?"를 묻습니다
+    if (buildSel && aim) { pending = true; showConfirm(); }
+  }));
+
+  stage.addEventListener('wheel', e => {
+    e.preventDefault();
+    R3.zoomCamera(e.deltaY * 0.012);
+  }, { passive: false });
+
+  // 모바일 핀치 확대
+  let pinchDist = 0;
+  stage.addEventListener('touchmove', e => {
+    if (e.touches.length !== 2) return;
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                         e.touches[0].clientY - e.touches[1].clientY);
+    if (pinchDist) R3.zoomCamera((pinchDist - d) * 0.05);
+    pinchDist = d;
+  }, { passive: true });
+  stage.addEventListener('touchend', () => { pinchDist = 0; });
+
+  function aimAt(cx, cy) {
+    const t = R3.screenToTile(cx, cy);
+    if (!t || !Sim.inMap(t.tx, t.ty)) { aim = null; R3.hideGhost(); hideConfirm(); return; }
+    aim = t;
+    pending = false;
+    hideConfirm();
+    refreshGhost();
+  }
+})();
+
+/* ── 설치 확정 흐름 ──
+   바로 지어버리면 잘못 놓고 후회합니다.
+   위치를 잡아 보여주고, 확인을 눌러야 실제로 지어집니다.
+   (급할 땐 "바로 설치"를 켜면 확인 없이 지어집니다) */
+let aim = null, pending = false, instantBuild = false;
+
+function refreshGhost() {
+  if (!S || !buildSel || !aim) { R3.hideGhost(); return; }
+  if (buildSel === DEMOLISH) {
+    const d = Sim.canDemolish(S, aim.tx, aim.ty);
+    R3.showGhost(aim.tx, aim.ty, d.ok, 'demolish', pending);
+    const hint = $('buildHint');
+    if (hint) {
+      if (d.ok) {
+        const def = C.BUILDS.find(b => b.id === d.kind);
+        const back = Sim.refundOf(d.kind);
+        hint.innerHTML = `⛏️ ${def ? def.name : ''} 철거 — ${Sim.costText(back) || '회수 없음'} 돌려받습니다`;
+        hint.style.background = 'rgba(150,110,20,.92)';
+      } else {
+        hint.textContent = '여기에는 철거할 것이 없습니다';
+        hint.style.background = 'rgba(140,30,20,.9)';
+      }
+      hint.style.display = '';
+    }
+    return;
+  }
+  const chk = Sim.canBuildAt(S, aim.tx, aim.ty, buildSel);
+  R3.showGhost(aim.tx, aim.ty, chk.ok, buildSel, pending);
+  const hint = $('buildHint');
+  if (hint) {
+    if (!chk.ok) {
+      /* 막힌 이유를 그 자리에 구체적으로 적습니다.
+         "이미 무언가 있습니다" 로는 **무엇이** 막는지 몰라서 버그처럼 느껴집니다.
+         자원 부족이면 무엇이 몇 개 모자란지까지 적습니다. */
+      let msg = Sim.BUILD_DENY[chk.why] || '여기에는 지을 수 없습니다';
+      if (chk.why === 'cost') {
+        const def = C.BUILDS.find(x => x.id === buildSel);
+        const lack = Object.entries(def.cost)
+          .map(([k, v]) => [k, v - Math.floor(S.res[k])])
+          .filter(([, d]) => d > 0)
+          .map(([k, d]) => `${C.RESOURCES[k].icon} ${C.RESOURCES[k].name} ${d}`)
+          .join(' · ');
+        if (lack) msg = `자원이 모자랍니다 — ${lack} 더 필요`;
+      }
+      hint.textContent = msg;
+      hint.style.background = 'rgba(140,30,20,.9)';
+      hint.style.display = '';
+    } else if (buildSel === 'trap') {
+      /* ★ 함정은 "침공로 위인가" 가 전부입니다.
+         한 칸만 비껴도 한 마리도 못 잡으므로, 놓기 전에 알려줍니다. */
+      const onPath = Sim.pathTileSet(S).has(Sim.tkey(aim.tx, aim.ty));
+      hint.innerHTML = onPath ? '✓ 침공로 위입니다 — 적이 이 칸을 밟습니다'
+                              : '⚠ 침공로에서 벗어났습니다 — 붉은 화살표 위로 옮기세요';
+      hint.style.background = onPath ? 'rgba(30,110,60,.9)' : 'rgba(150,110,20,.92)';
+      hint.style.display = '';
+    } else {
+      hint.style.display = 'none';
+    }
+  }
+}
+
+function showConfirm() {
+  if (instantBuild) { confirmBuild(); return; }
+  const chk = buildSel === DEMOLISH
+    ? Sim.canDemolish(S, aim.tx, aim.ty)
+    : Sim.canBuildAt(S, aim.tx, aim.ty, buildSel);
+  const box = $('buildConfirm');
+  if (!box) return;
+  box.style.display = 'flex';
+  box.querySelector('.t').textContent = buildSel === DEMOLISH ? '여기를 부술까요?' : '여기에 지을까요?';
+  $('btnConfirmBuild').textContent = buildSel === DEMOLISH ? '⛏️ 철거 (Enter)' : '✔ 설치 (Enter)';
+  $('btnConfirmBuild').disabled = !chk.ok;
+  refreshGhost();
+}
+function hideConfirm() {
+  const box = $('buildConfirm');
+  if (box) box.style.display = 'none';
+}
+function confirmBuild() {
+  if (!aim || !buildSel) return;
+  const built = buildSel === DEMOLISH
+    ? Sim.demolish(S, aim.tx, aim.ty)
+    : Sim.tryBuild(S, aim.tx, aim.ty, buildSel);
+  handleEvents();
+  pending = false;
+  hideConfirm();
+  if (built) { aim = null; R3.hideGhost(); }
+  else refreshGhost();
+}
+function cancelBuild() {
+  pending = false; aim = null;
+  hideConfirm(); R3.hideGhost();
+}
+
+/* ---------------- 버튼 ---------------- */
+$('btnStart').onclick = () => startGame();
+$('btnAgain').onclick = () => { renderDiffCards(); renderHeroCards(); openScreen('scTitle'); };
+$('btnRepClose').onclick = closeReportNow;
+$('btnCancel').onclick = () => { buildSel = null; refreshBuildCards(); R3.setBuildMode(false); cancelBuild(); };
+if ($('btnConfirmBuild')) $('btnConfirmBuild').onclick = confirmBuild;
+if ($('btnCancelBuild')) $('btnCancelBuild').onclick = cancelBuild;
+if ($('chkInstant')) $('chkInstant').onchange = e => { instantBuild = e.target.checked; };
+$('btnHire').onclick = () => { Sim.hireSoldier(S); handleEvents(); refreshSoldiers(); refreshHUD(); };
+$('btnTroopClose').onclick = () => toggleTroop(false);
+$('btnCraft').onclick = () => { if (!S) return; refreshCraft(); openScreen('scCraft'); };
+$('btnGuide').onclick = () => { refreshGuide(); openScreen('scGuide'); };
+$('btnGuideClose').onclick = () => closeAll();
+$('btnCraftClose').onclick = () => closeAll();
+function openShop(fromTitle) {
+  $('pullResult').style.display = 'none';
+  refreshShop();
+  $('scShop').dataset.from = fromTitle ? 'title' : '';
+  openScreen('scShop');
+}
+$('btnShop').onclick = () => openShop(false);
+$('btnTitleShop').onclick = () => openShop(true);
+$('btnShopClose').onclick = () => {
+  if ($('scShop').dataset.from === 'title') { renderHeroCards(); openScreen('scTitle'); return; }
+  if (S && !S.over) closeAll(); else openScreen(S && S.over ? 'scEnd' : 'scTitle');
+};
+$('btnPull').onclick = pullShard;
+$('btnPullGem').onclick = () => pullGem(1);
+$('btnPull10').onclick = () => pullGem(10);
+$('btnFreeGem').onclick = claimFreeGem;
+$('btnPause').onclick = () => {
+  paused = !paused;
+  $('btnPause').textContent = paused ? '▶ 계속하기' : '⏸ 일시정지';
+};
+$('btnSound').onclick = () => {
+  soundOn = !soundOn;
+  Audio.setSfx(soundOn);
+  $('btnSound').textContent = soundOn ? '🔊 효과음' : '🔇 효과음';
+};
+$('btnMusic').onclick = () => {
+  soundOnMusic = !soundOnMusic;
+  Audio.setMusic(soundOnMusic);
+  $('btnMusic').textContent = soundOnMusic ? '🎵 음악' : '🎵̶ 음악 끔';
+};
+
+/* ==================================================================
+   메인 루프 — 고정 타임스텝
+   프레임이 흔들려도 물리·AI가 일정하게 돌도록 합니다.
+   ================================================================== */
+const STEP = 1 / 60;
+let acc = 0, last = 0;
+
+/* ★ 루프는 절대로 죽으면 안 됩니다.
+   예전에는 requestAnimationFrame(frame) 이 함수의 **마지막 줄**에 있었습니다.
+   그래서 화면 갱신 중에 오류가 하나 나면 그 줄에 도달하지 못하고
+   **다음 프레임이 예약되지 않아 게임이 통째로 얼어붙었습니다.**
+   (실제로 HUD 의 null 참조 하나 때문에 11일에서 게임이 멈췄습니다.)
+
+   이제 다음 프레임 예약을 finally 에 두어, 무슨 일이 있어도 루프는 계속 돕니다.
+   오류는 삼키지 않고 화면에 띄웁니다 — 조용히 이상해지는 것이 제일 나쁩니다. */
+let frameErrs = 0;
+function frame(ts) {
+  try {
+    const raw = last ? Math.min((ts - last) / 1000, 0.25) : 0;
+    last = ts;
+
+    if (S) {
+      if (!uiOpen && !paused && !S.over) {
+        applyInput();
+        acc += raw;
+        let guard = 0;
+        while (acc >= STEP && guard++ < 8) { Sim.update(S, STEP); acc -= STEP; }
+        handleEvents();
+      }
+      R3.sync(S, raw);
+      updateFloaters(raw);
+      updateHpBars();
+      updateRespawnBox();
+      updateGuideArrow();
+      hudTimer += raw;
+      if (hudTimer > 0.12) { hudTimer = 0; refreshHUD(); refreshSkillBar(); refreshWarBar(); }
+    }
+  } catch (err) {
+    frameErrs++;
+    if (frameErrs <= 3) {
+      console.error('[프레임 오류]', err);
+      toast(`<b style="color:#E0554A">화면 오류</b> — 게임은 계속됩니다 (${err && err.message ? err.message : err})`);
+    }
+  } finally {
+    requestAnimationFrame(frame);        // ← 무슨 일이 있어도 다음 프레임은 돕니다
+  }
+}
+let hudTimer = 0;
+
+/* ★ 리포트 단계인데 리포트 화면이 안 보이면 게임이 영구 정지합니다
+   (update() 가 phase==='report' 에서 곧바로 빠져나오기 때문입니다).
+   화면을 여는 쪽에서 무슨 문제가 생겨도 플레이어가 갇히지 않도록 되살립니다. */
+setInterval(() => {
+  if (!S || S.over) return;
+  if (S.phase !== 'report') return;
+  const rep = $('scReport');
+  if (rep && getComputedStyle(rep).display !== 'none') return;
+  if ($('scGuide').classList.contains('on') || $('scCraft').classList.contains('on')
+      || $('scShop').classList.contains('on')) return;   // 다른 화면을 보는 중이면 그대로 둡니다
+  console.warn('[복구] 리포트 단계인데 화면이 없어 다시 엽니다');
+  if (lastReport) showReport(lastReport);
+  else { Sim.closeReport(S); handleEvents(); closeAll(); }
+}, 1500);
+
+/* ---------------- 부팅 ---------------- */
+R3.initRenderer($('stage'));
+R3.attachMinimap($('minimap'));
+
+/* models/manifest.json 에 등록된 3D 모델이 있으면 먼저 읽어옵니다.
+   없으면 아무 일도 없이 지나가고 도형으로 그립니다. */
+$('btnStart').disabled = true;
+Models.load().then(m => {
+  $('btnStart').disabled = false;
+  if (m.size) toast(`3D 모델 ${m.size}종을 불러왔습니다`);
+}).catch(() => { $('btnStart').disabled = false; });
+renderDiffCards();
+renderTitleMonList();
+renderHeroCards();
+refreshBuildCards();
+refreshSoldiers();
+requestAnimationFrame(frame);
+
+// 개발자 검수용
+window.__sg = { get S() { return S; }, Sim, R3, C, startGame };

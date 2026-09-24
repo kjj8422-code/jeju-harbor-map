@@ -1,0 +1,6 @@
+{
+  "_설명": "여기에 .glb 파일을 등록하면 도형 대신 그 모델이 나옵니다. 아래 예시의 주석(_)을 지우고 파일명을 적으세요.",
+  "_예시_tree": { "file": "tree.glb", "height": 3.2 },
+  "_예시_hero_sword": { "file": "hero.glb", "height": 1.8 },
+  "_예시_monster": { "file": "grunt.glb", "height": 1.7 }
+}
