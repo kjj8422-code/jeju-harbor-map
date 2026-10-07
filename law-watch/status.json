@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-06",
+  "checkedAt": "2026-10-07",
   "sources": {
     "fisheries-decree": {
       "label": "수산자원관리법 시행령 (금어기·금지체장 별표2의 모법)",
@@ -9,7 +9,7 @@
       "status": "ok",
       "hash": "4ad1c0537a724b4f979209f937c31bf0a60917d360b6f6fcac16a7f46edb676e",
       "length": 1632,
-      "lastCheckedAt": "2026-10-06",
+      "lastCheckedAt": "2026-10-07",
       "lastChangedAt": null,
       "failCount": 0
     },
@@ -21,7 +21,7 @@
       "status": "ok",
       "hash": "ee4ec2cd9d92a7a6fde78e7478cb5319e7ffe784859f3a0706a21bcbb1b7ae65",
       "length": 1648,
-      "lastCheckedAt": "2026-10-06",
+      "lastCheckedAt": "2026-10-07",
       "lastChangedAt": null,
       "failCount": 0
     },
@@ -30,23 +30,24 @@
       "url": "https://law.go.kr/LSW/lsInfoP.do?lsiSeq=194016",
       "affects": "② 야간 해루질 안전기준(야간 금지시간·안전관리요원 배치 기준)",
       "priority": "high",
-      "status": "ok",
+      "status": "error",
       "hash": "c43672bf69633f12d57cb9a6505a9f513db16df4e45afb845e308edab6233a23",
       "length": 1702,
-      "lastCheckedAt": "2026-10-06",
+      "lastCheckedAt": "2026-10-07",
       "lastChangedAt": null,
-      "failCount": 0
+      "failCount": 1,
+      "error": "fetch failed"
     },
     "fipa-jeju-village-harbors": {
       "label": "한국어촌어항공단 정주어항 현황(제주)",
       "url": "https://www.fipa.or.kr/fipa/pgm/i-248/fixed/front/list.do?searchCl1=17",
       "affects": "④ 어항구역 지도의 어촌정주어항 46곳 목록",
       "priority": "medium",
-      "status": "ok",
-      "hash": "08c9f1b8f3d63cb2fdf44f1a43df78e363286bd54341dcb472db6b6b8ffed13e",
-      "length": 2838,
-      "lastCheckedAt": "2026-10-06",
-      "lastChangedAt": null,
+      "status": "changed",
+      "hash": "77617fb9ce1bc8cda8b1eac9b0310409ad3d7af835881a4d194ea3ceebb6a724",
+      "length": 2857,
+      "lastCheckedAt": "2026-10-07",
+      "lastChangedAt": "2026-10-07",
       "failCount": 0
     },
     "mof-press": {
@@ -57,7 +58,7 @@
       "status": "ok",
       "hash": "4dda758b029250b938202f23a37973b1a93b65fe4d5e9c3e45fbb792edbf6196",
       "length": 63,
-      "lastCheckedAt": "2026-10-06",
+      "lastCheckedAt": "2026-10-07",
       "lastChangedAt": "2026-09-22",
       "failCount": 0
     },
@@ -67,10 +68,10 @@
       "affects": "제주 전용 기준(소라·전복·오분자기·참문어·넓미역) 고시 변경",
       "priority": "medium",
       "status": "changed",
-      "hash": "d3d9c2528551a140e9a5e67d062f3a1c63097a5cc1ed8ad019999d93a24ddb5f",
-      "length": 228,
-      "lastCheckedAt": "2026-10-06",
-      "lastChangedAt": "2026-10-06",
+      "hash": "6fb2bb1b75fa031ae760149cd6b656960c88c61c55e508bf337351fc156567b3",
+      "length": 177,
+      "lastCheckedAt": "2026-10-07",
+      "lastChangedAt": "2026-10-07",
       "failCount": 0
     }
   }
