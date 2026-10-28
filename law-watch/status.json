@@ -1,17 +1,18 @@
 {
-  "checkedAt": "2026-10-27",
+  "checkedAt": "2026-10-28",
   "sources": {
     "fisheries-decree": {
       "label": "수산자원관리법 시행령 (금어기·금지체장 별표2의 모법)",
       "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=287151",
       "affects": "① 금어기·금지체장 표 전체",
       "priority": "high",
-      "status": "ok",
+      "status": "error",
       "hash": "4ad1c0537a724b4f979209f937c31bf0a60917d360b6f6fcac16a7f46edb676e",
       "length": 1632,
-      "lastCheckedAt": "2026-10-27",
+      "lastCheckedAt": "2026-10-28",
       "lastChangedAt": null,
-      "failCount": 0
+      "failCount": 1,
+      "error": "fetch failed"
     },
     "fisheries-enforcement-rule": {
       "label": "수산자원관리법 시행규칙 (비어업인 사용 가능 어구 별표1 포함)",
@@ -21,7 +22,7 @@
       "status": "ok",
       "hash": "ee4ec2cd9d92a7a6fde78e7478cb5319e7ffe784859f3a0706a21bcbb1b7ae65",
       "length": 1648,
-      "lastCheckedAt": "2026-10-27",
+      "lastCheckedAt": "2026-10-28",
       "lastChangedAt": null,
       "failCount": 0
     },
@@ -30,13 +31,12 @@
       "url": "https://law.go.kr/LSW/lsInfoP.do?lsiSeq=194016",
       "affects": "② 야간 해루질 안전기준(야간 금지시간·안전관리요원 배치 기준)",
       "priority": "high",
-      "status": "error",
+      "status": "ok",
       "hash": "c43672bf69633f12d57cb9a6505a9f513db16df4e45afb845e308edab6233a23",
       "length": 1702,
-      "lastCheckedAt": "2026-10-27",
+      "lastCheckedAt": "2026-10-28",
       "lastChangedAt": null,
-      "failCount": 2,
-      "error": "fetch failed"
+      "failCount": 0
     },
     "fipa-jeju-village-harbors": {
       "label": "한국어촌어항공단 정주어항 현황(제주)",
@@ -46,7 +46,7 @@
       "status": "ok",
       "hash": "aed2bbf1f3124c880d8c5b4ddd17cf2c976e4e284461f94771d28b471ecc6286",
       "length": 2853,
-      "lastCheckedAt": "2026-10-27",
+      "lastCheckedAt": "2026-10-28",
       "lastChangedAt": "2026-10-14",
       "failCount": 0
     },
@@ -58,7 +58,7 @@
       "status": "ok",
       "hash": "4dda758b029250b938202f23a37973b1a93b65fe4d5e9c3e45fbb792edbf6196",
       "length": 63,
-      "lastCheckedAt": "2026-10-27",
+      "lastCheckedAt": "2026-10-28",
       "lastChangedAt": "2026-10-16",
       "failCount": 0
     },
@@ -70,7 +70,7 @@
       "status": "ok",
       "hash": "5e3915e959216e31397dede509bd2cb1f172850b2b2ac1099d81ca6830a2fa98",
       "length": 43,
-      "lastCheckedAt": "2026-10-27",
+      "lastCheckedAt": "2026-10-28",
       "lastChangedAt": "2026-10-26",
       "failCount": 0
     }
