@@ -1,16 +1,16 @@
 {
-  "checkedAt": "2026-11-17",
+  "checkedAt": "2026-11-18",
   "sources": {
     "fisheries-decree": {
       "label": "수산자원관리법 시행령 (금어기·금지체장 별표2의 모법)",
       "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=287151",
       "affects": "① 금어기·금지체장 표 전체",
       "priority": "high",
-      "status": "ok",
-      "hash": "d415bd7e3c9c0df5afbce807b5cb745a64266a8b95ac78c753828a7aaabdacb3",
-      "length": 1907,
-      "lastCheckedAt": "2026-11-17",
-      "lastChangedAt": "2026-11-15",
+      "status": "changed",
+      "hash": "fb59843b11a2060e6c56a6670f491c367956f56aadf32494fad799aea5317ee7",
+      "length": 1919,
+      "lastCheckedAt": "2026-11-18",
+      "lastChangedAt": "2026-11-18",
       "failCount": 0
     },
     "fisheries-enforcement-rule": {
@@ -18,11 +18,11 @@
       "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=262229",
       "affects": "③ 추천장비 탭의 금지장비 안내",
       "priority": "high",
-      "status": "ok",
-      "hash": "55f52c3649d82d1fd60dfc02be8f32b3234f089f149f159b19d02897e2f739a6",
-      "length": 1918,
-      "lastCheckedAt": "2026-11-17",
-      "lastChangedAt": "2026-11-15",
+      "status": "changed",
+      "hash": "40a478fee8b314e86d11406bdc4fd687bdaf5ad6d6aff44804cd9c7081e5e06f",
+      "length": 1930,
+      "lastCheckedAt": "2026-11-18",
+      "lastChangedAt": "2026-11-18",
       "failCount": 0
     },
     "underwater-leisure-rule": {
@@ -30,13 +30,12 @@
       "url": "https://law.go.kr/LSW/lsInfoP.do?lsiSeq=194016",
       "affects": "② 야간 해루질 안전기준(야간 금지시간·안전관리요원 배치 기준)",
       "priority": "high",
-      "status": "error",
-      "hash": "c01cbc60a113f024ecd234affa7edee461654392400899cfe4691fcc014e6dc4",
-      "length": 1990,
-      "lastCheckedAt": "2026-11-17",
-      "lastChangedAt": "2026-11-15",
-      "failCount": 1,
-      "error": "fetch failed"
+      "status": "changed",
+      "hash": "0f080d88badb8298d09318a37c5b288b568c22fdf1e034fe978e62aa866157e2",
+      "length": 2002,
+      "lastCheckedAt": "2026-11-18",
+      "lastChangedAt": "2026-11-18",
+      "failCount": 0
     },
     "fipa-jeju-village-harbors": {
       "label": "한국어촌어항공단 정주어항 현황(제주)",
@@ -46,7 +45,7 @@
       "status": "ok",
       "hash": "aed2bbf1f3124c880d8c5b4ddd17cf2c976e4e284461f94771d28b471ecc6286",
       "length": 2853,
-      "lastCheckedAt": "2026-11-17",
+      "lastCheckedAt": "2026-11-18",
       "lastChangedAt": "2026-10-14",
       "failCount": 0
     },
@@ -56,10 +55,10 @@
       "affects": "금어기 고시 변경·항포구 물놀이 금지법 시행 관련 발표",
       "priority": "medium",
       "status": "changed",
-      "hash": "310281fb1d11bf1e054214f9976903e62ae7d2c68f53312c243483db019066af",
-      "length": 177,
-      "lastCheckedAt": "2026-11-17",
-      "lastChangedAt": "2026-11-17",
+      "hash": "50adea8fea6ed9a7c027b66a61e012ab10e2ce4ff6ad740ca923c04b983ed916",
+      "length": 120,
+      "lastCheckedAt": "2026-11-18",
+      "lastChangedAt": "2026-11-18",
       "failCount": 0
     },
     "jeju-notice": {
@@ -70,7 +69,7 @@
       "status": "ok",
       "hash": "5e3915e959216e31397dede509bd2cb1f172850b2b2ac1099d81ca6830a2fa98",
       "length": 43,
-      "lastCheckedAt": "2026-11-17",
+      "lastCheckedAt": "2026-11-18",
       "lastChangedAt": "2026-11-09",
       "failCount": 0
     }
