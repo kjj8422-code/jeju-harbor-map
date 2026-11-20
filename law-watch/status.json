@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-11-19",
+  "checkedAt": "2026-11-20",
   "sources": {
     "fisheries-decree": {
       "label": "수산자원관리법 시행령 (금어기·금지체장 별표2의 모법)",
@@ -9,7 +9,7 @@
       "status": "ok",
       "hash": "fb59843b11a2060e6c56a6670f491c367956f56aadf32494fad799aea5317ee7",
       "length": 1919,
-      "lastCheckedAt": "2026-11-19",
+      "lastCheckedAt": "2026-11-20",
       "lastChangedAt": "2026-11-18",
       "failCount": 0
     },
@@ -21,7 +21,7 @@
       "status": "ok",
       "hash": "40a478fee8b314e86d11406bdc4fd687bdaf5ad6d6aff44804cd9c7081e5e06f",
       "length": 1930,
-      "lastCheckedAt": "2026-11-19",
+      "lastCheckedAt": "2026-11-20",
       "lastChangedAt": "2026-11-18",
       "failCount": 0
     },
@@ -33,7 +33,7 @@
       "status": "ok",
       "hash": "0f080d88badb8298d09318a37c5b288b568c22fdf1e034fe978e62aa866157e2",
       "length": 2002,
-      "lastCheckedAt": "2026-11-19",
+      "lastCheckedAt": "2026-11-20",
       "lastChangedAt": "2026-11-18",
       "failCount": 0
     },
@@ -45,7 +45,7 @@
       "status": "ok",
       "hash": "aed2bbf1f3124c880d8c5b4ddd17cf2c976e4e284461f94771d28b471ecc6286",
       "length": 2853,
-      "lastCheckedAt": "2026-11-19",
+      "lastCheckedAt": "2026-11-20",
       "lastChangedAt": "2026-10-14",
       "failCount": 0
     },
@@ -57,7 +57,7 @@
       "status": "ok",
       "hash": "50adea8fea6ed9a7c027b66a61e012ab10e2ce4ff6ad740ca923c04b983ed916",
       "length": 120,
-      "lastCheckedAt": "2026-11-19",
+      "lastCheckedAt": "2026-11-20",
       "lastChangedAt": "2026-11-18",
       "failCount": 0
     },
@@ -69,7 +69,7 @@
       "status": "ok",
       "hash": "5e3915e959216e31397dede509bd2cb1f172850b2b2ac1099d81ca6830a2fa98",
       "length": 43,
-      "lastCheckedAt": "2026-11-19",
+      "lastCheckedAt": "2026-11-20",
       "lastChangedAt": "2026-11-09",
       "failCount": 0
     }
