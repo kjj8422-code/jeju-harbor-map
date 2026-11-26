@@ -1,31 +1,29 @@
 {
-  "checkedAt": "2026-11-25",
+  "checkedAt": "2026-11-26",
   "sources": {
     "fisheries-decree": {
       "label": "수산자원관리법 시행령 (금어기·금지체장 별표2의 모법)",
       "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=287151",
       "affects": "① 금어기·금지체장 표 전체",
       "priority": "high",
-      "status": "error",
+      "status": "ok",
       "hash": "fb59843b11a2060e6c56a6670f491c367956f56aadf32494fad799aea5317ee7",
       "length": 1919,
-      "lastCheckedAt": "2026-11-25",
+      "lastCheckedAt": "2026-11-26",
       "lastChangedAt": "2026-11-18",
-      "failCount": 1,
-      "error": "fetch failed"
+      "failCount": 0
     },
     "fisheries-enforcement-rule": {
       "label": "수산자원관리법 시행규칙 (비어업인 사용 가능 어구 별표1 포함)",
       "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=262229",
       "affects": "③ 추천장비 탭의 금지장비 안내",
       "priority": "high",
-      "status": "error",
+      "status": "ok",
       "hash": "40a478fee8b314e86d11406bdc4fd687bdaf5ad6d6aff44804cd9c7081e5e06f",
       "length": 1930,
-      "lastCheckedAt": "2026-11-25",
+      "lastCheckedAt": "2026-11-26",
       "lastChangedAt": "2026-11-18",
-      "failCount": 1,
-      "error": "fetch failed"
+      "failCount": 0
     },
     "underwater-leisure-rule": {
       "label": "수중레저활동의 안전 및 활성화 등에 관한 법률 시행규칙",
@@ -35,7 +33,7 @@
       "status": "ok",
       "hash": "0f080d88badb8298d09318a37c5b288b568c22fdf1e034fe978e62aa866157e2",
       "length": 2002,
-      "lastCheckedAt": "2026-11-25",
+      "lastCheckedAt": "2026-11-26",
       "lastChangedAt": "2026-11-18",
       "failCount": 0
     },
@@ -47,7 +45,7 @@
       "status": "ok",
       "hash": "aed2bbf1f3124c880d8c5b4ddd17cf2c976e4e284461f94771d28b471ecc6286",
       "length": 2853,
-      "lastCheckedAt": "2026-11-25",
+      "lastCheckedAt": "2026-11-26",
       "lastChangedAt": "2026-10-14",
       "failCount": 0
     },
@@ -59,7 +57,7 @@
       "status": "ok",
       "hash": "4dda758b029250b938202f23a37973b1a93b65fe4d5e9c3e45fbb792edbf6196",
       "length": 63,
-      "lastCheckedAt": "2026-11-25",
+      "lastCheckedAt": "2026-11-26",
       "lastChangedAt": "2026-11-24",
       "failCount": 0
     },
@@ -71,7 +69,7 @@
       "status": "ok",
       "hash": "5e3915e959216e31397dede509bd2cb1f172850b2b2ac1099d81ca6830a2fa98",
       "length": 43,
-      "lastCheckedAt": "2026-11-25",
+      "lastCheckedAt": "2026-11-26",
       "lastChangedAt": "2026-11-09",
       "failCount": 0
     }
